@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # FILE: core/trade_manager.py
-# V3.2.0: LOGIC UPGRADE - SMART R CALCULATION (REAL SL PRIORITY)
+# V4.1: BASKET MANAGEMENT & AVERAGE PRICE TSL (MASTER-WORKER)
 
 import logging
 import config
@@ -16,9 +16,10 @@ class TradeManager:
         self.log_callback = log_callback 
         self.state = load_state()
         
-        # --- INIT STATE ---
         if "daily_loss_count" not in self.state: self.state["daily_loss_count"] = 0
         if "trade_tactics" not in self.state: self.state["trade_tactics"] = {} 
+        if "initial_r_dist" not in self.state: self.state["initial_r_dist"] = {}
+        
         if self.state.get("trades_today_count", 0) == 0: self.state["daily_loss_count"] = 0
 
     def log(self, msg):
@@ -26,11 +27,9 @@ class TradeManager:
         else: print(msg)
 
     def get_trade_tactic(self, ticket):
-        """Lấy combo tactic đang chạy cho lệnh"""
         return self.state.get("trade_tactics", {}).get(str(ticket), "OFF")
 
     def update_trade_tactic(self, ticket, new_tactic_str):
-        """Cập nhật chiến thuật mới cho lệnh"""
         if "trade_tactics" not in self.state: self.state["trade_tactics"] = {}
         self.state["trade_tactics"][str(ticket)] = new_tactic_str
         save_state(self.state)
@@ -61,7 +60,6 @@ class TradeManager:
         lot_size = 0.0
         sl_distance = 0.0
         
-        # 1. Tính Lot/SL
         if manual_sl > 0: sl_distance = abs(price - manual_sl)
         else:
             sl_percent = params["SL_PERCENT"] / 100.0
@@ -70,8 +68,6 @@ class TradeManager:
         if manual_lot > 0: lot_size = manual_lot
         else:
             if sl_distance == 0: return "ERR_CALC_SL"
-            
-            # --- DYNAMIC RISK CALCULATION ---
             current_risk_pct = params.get("RISK_PERCENT", config.RISK_PER_TRADE_PERCENT)
             risk_usd = equity * (current_risk_pct / 100.0)
             
@@ -83,7 +79,6 @@ class TradeManager:
         lot_size = min(lot_size, config.MAX_LOT_SIZE)
         if lot_size < config.MIN_LOT_SIZE: lot_size = config.MIN_LOT_SIZE
 
-        # 2. Tính TP
         rr_ratio = params["TP_RR_RATIO"]
         sl_price = manual_sl if manual_sl > 0 else (price - sl_distance if direction == "BUY" else price + sl_distance)
 
@@ -92,19 +87,25 @@ class TradeManager:
             real_sl_dist = abs(price - sl_price)
             tp_price = price + (real_sl_dist * rr_ratio) if direction == "BUY" else price - (real_sl_dist * rr_ratio)
 
-        # 3. Gửi lệnh
         order_type = mt5.ORDER_TYPE_BUY if direction == "BUY" else mt5.ORDER_TYPE_SELL
-        comment = f"V8_{preset_name}" 
-        
-        self.log(f"🚀 Exec {direction} {symbol} | Vol: {lot_size} | Risk: {params.get('RISK_PERCENT', config.RISK_PER_TRADE_PERCENT)}% | TSL: [{tsl_mode.replace('+', '/')}]")
+        comment = f"V4_{preset_name}" 
         
         result = self.connector.place_order(symbol, order_type, lot_size, sl_price, tp_price, config.MAGIC_NUMBER, comment)
         if result and result.retcode == 10009:
+            ticket_id = result.order
             self.state["trades_today_count"] += 1
-            if result.order not in self.state["active_trades"]:
-                self.state["active_trades"].append(result.order)
-            self.update_trade_tactic(result.order, tsl_mode)
-            return "SUCCESS"
+            if ticket_id not in self.state["active_trades"]:
+                self.state["active_trades"].append(ticket_id)
+            
+            self.update_trade_tactic(ticket_id, tsl_mode)
+            
+            actual_1r_dist = abs(price - sl_price)
+            if "initial_r_dist" not in self.state: self.state["initial_r_dist"] = {}
+            self.state["initial_r_dist"][str(ticket_id)] = actual_1r_dist
+            save_state(self.state)
+
+            self.log(f"🚀 Exec {direction} {symbol} [#{ticket_id}] | Vol: {lot_size} | Risk: {params.get('RISK_PERCENT', config.RISK_PER_TRADE_PERCENT)}% | TSL: [{tsl_mode.replace('+', '/')}]")
+            return f"SUCCESS|{ticket_id}"
         
         err_msg = result.comment if result else 'Unknown Error'
         return f"ERR_MT5: {err_msg}"
@@ -116,13 +117,14 @@ class TradeManager:
             current_tickets = [p.ticket for p in current_positions]
             tracked_tickets = list(self.state["active_trades"])
             
-            # --- Xử lý lệnh đã đóng ---
+            # 1. XỬ LÝ LỆNH ĐÓNG (Legacy giữ nguyên)
             closed_tickets = [t for t in tracked_tickets if t not in current_tickets]
             if closed_tickets:
                 for ticket in closed_tickets:
                     s_ticket = str(ticket)
-                    if s_ticket in self.state.get("trade_tactics", {}):
-                         del self.state["trade_tactics"][s_ticket]
+                    if s_ticket in self.state.get("trade_tactics", {}): del self.state["trade_tactics"][s_ticket]
+                    # KHÔNG XÓA initial_r_dist ngay, phòng trường hợp Basket vẫn còn lệnh khác cần tham chiếu
+                    # Sẽ dọn dẹp định kỳ hoặc khi toàn bộ Basket đóng. Tạm thời giữ lại cho an toàn.
                          
                     deals = mt5.history_deals_get(position=ticket)
                     if deals:
@@ -149,144 +151,163 @@ class TradeManager:
                             
                     if ticket in self.state["active_trades"]:
                         self.state["active_trades"].remove(ticket)
-
                 save_state(self.state)
 
-            # --- Cập nhật TSL cho lệnh đang chạy ---
-            for pos in current_positions:
-                if pos.magic == config.MAGIC_NUMBER: 
-                    status = self._apply_trailing_logic_parallel(pos, account_type)
-                    tsl_status_map[pos.ticket] = status
+            # 2. [V4.1 BASKET LOGIC] GOM CỤM LỆNH
+            bot_positions = [p for p in current_positions if p.magic == config.MAGIC_NUMBER]
+            baskets = {} # Key: (symbol, order_type) -> Value: list of positions
+            
+            for pos in bot_positions:
+                key = (pos.symbol, pos.type)
+                if key not in baskets:
+                    baskets[key] = []
+                baskets[key].append(pos)
+
+            # 3. [V4.1 BASKET LOGIC] THỰC THI TSL THEO CỤM
+            for key, basket_positions in baskets.items():
+                # Phân tích Cụm lệnh, lấy trạng thái TSL cho toàn cụm, sau đó map lại cho từng ticket để UI hiển thị
+                basket_status = self._apply_basket_trailing_logic(basket_positions)
+                for pos in basket_positions:
+                    tsl_status_map[pos.ticket] = basket_status
 
         except Exception as e:
             self.log(f"Lỗi update loop: {e}")
         
         return tsl_status_map
 
-    def _apply_trailing_logic_parallel(self, position, account_type="STANDARD"):
-        tactic_str = self.get_trade_tactic(position.ticket)
+    def _apply_basket_trailing_logic(self, basket_positions):
+        """[V4.1 BASKET LOGIC] Tính toán TSL dựa trên Average Price của cả Cụm lệnh"""
+        if not basket_positions: return "Monitoring..."
+
+        # Xác định Lệnh Mẹ (Lệnh mở đầu tiên trong cụm, ticket nhỏ nhất)
+        basket_positions.sort(key=lambda x: x.time)
+        master_pos = basket_positions[0]
+        
+        tactic_str = self.get_trade_tactic(master_pos.ticket)
         if tactic_str == "OFF": return "TSL OFF"
 
         active_modes = tactic_str.split("+")
-        symbol, entry, current_sl, current_price = position.symbol, position.price_open, position.sl, position.price_current
-        volume, is_buy = position.volume, (position.type == mt5.ORDER_TYPE_BUY)
+        symbol = master_pos.symbol
+        is_buy = (master_pos.type == mt5.ORDER_TYPE_BUY)
+        current_price = master_pos.price_current # Mọi lệnh trong cụm đều có chung current_price
+        
+        # SL hiện tại (Tham chiếu theo lệnh Mẹ)
+        current_sl = master_pos.sl 
         
         sym_info = mt5.symbol_info(symbol)
         point = sym_info.point if sym_info else 0.00001
         
-        preset_name = position.comment.split("_")[1] if (position.comment and "_" in position.comment) else "SCALPING"
-        params = config.PRESETS.get(preset_name, config.PRESETS["SCALPING"])
+        # --- TÍNH TOÁN CÁC CHỈ SỐ CỦA CỤM LỆNH (BASKET METRICS) ---
+        total_volume = sum(p.volume for p in basket_positions)
+        avg_entry = sum(p.price_open * p.volume for p in basket_positions) / total_volume
+        total_profit_usd = sum(p.profit + getattr(p, 'swap', 0.0) + getattr(p, 'commission', 0.0) for p in basket_positions)
         
-        # --- [UPGRADE V3.2.0] SMART R CALCULATION ---
-        # Ưu tiên lấy R thực tế từ SL trên lệnh (Manual/Edited SL)
-        # Nếu ko có SL (SL=0) mới dùng công thức cũ từ Config
-        if current_sl > 0:
-            one_r_dist = abs(entry - current_sl)
-        else:
-            one_r_dist = entry * (params["SL_PERCENT"] / 100.0)
-            
-        if one_r_dist == 0: return "Err R"
+        # Lấy quãng đường 1R gốc của Lệnh Mẹ làm chuẩn cho cả Cụm
+        s_ticket = str(master_pos.ticket)
+        one_r_dist = self.state.get("initial_r_dist", {}).get(s_ticket, 0.0)
 
-        curr_dist = current_price - entry if is_buy else entry - current_price
+        if one_r_dist == 0:
+            preset_name = master_pos.comment.split("_")[1] if (master_pos.comment and "_" in master_pos.comment) else "SCALPING"
+            params = config.PRESETS.get(preset_name, config.PRESETS["SCALPING"])
+            one_r_dist = avg_entry * (params["SL_PERCENT"] / 100.0)
+            if "initial_r_dist" not in self.state: self.state["initial_r_dist"] = {}
+            self.state["initial_r_dist"][s_ticket] = one_r_dist 
+
+        if one_r_dist <= 0: return "Err R"
+
+        # Tính khoảng cách hiện tại từ giá trung bình
+        curr_dist = current_price - avg_entry if is_buy else avg_entry - current_price
         curr_r = curr_dist / one_r_dist
         
         candidates = []
         milestones = [] 
         tsl_cfg = config.TSL_CONFIG
 
-        # ---------------------------------------------------------
-        # 1. BREAK-EVEN (BE)
-        # ---------------------------------------------------------
+        # 1. BREAK-EVEN (BE) - Dựa trên Avg Entry
         if "BE" in active_modes:
-            comm_rate = 0.0 if account_type in ["PRO", "STANDARD"] else \
-                        config.COMMISSION_RATES.get(symbol, config.ACCOUNT_TYPES_CONFIG.get(account_type, {}).get("COMMISSION_PER_LOT", 0.0))
-            
-            total_fee = (comm_rate * volume) + abs(getattr(position, 'swap', 0))
-            fee_dist = total_fee / (volume * sym_info.trade_contract_size) if sym_info.trade_contract_size > 0 else 0
+            # Tính tổng chi phí để tính khoảng cách bù lỗ (Break-even mềm/cứng)
+            total_fee_usd = abs(sum(getattr(p, 'commission', 0.0) + getattr(p, 'swap', 0.0) for p in basket_positions))
+            fee_dist = total_fee_usd / (total_volume * sym_info.trade_contract_size) if sym_info.trade_contract_size > 0 else 0
             
             mode = tsl_cfg.get("BE_MODE", "SOFT")
-            base = entry - fee_dist if (is_buy and mode=="SOFT") else (entry + fee_dist if (is_buy and mode=="SMART") else entry)
-            if not is_buy: base = entry + fee_dist if mode=="SOFT" else (entry - fee_dist if mode=="SMART" else entry)
+            base = avg_entry - fee_dist if (is_buy and mode=="SOFT") else (avg_entry + fee_dist if (is_buy and mode=="SMART") else avg_entry)
+            if not is_buy: base = avg_entry + fee_dist if mode=="SOFT" else (avg_entry - fee_dist if mode=="SMART" else avg_entry)
 
             be_sl = base + (tsl_cfg.get("BE_OFFSET_POINTS", 0) * point) if is_buy else base - (tsl_cfg.get("BE_OFFSET_POINTS", 0) * point)
             trig_r = tsl_cfg.get("BE_OFFSET_RR", 0.8)
-            trig_p = entry + (one_r_dist * trig_r) if is_buy else entry - (one_r_dist * trig_r)
+            trig_p = avg_entry + (one_r_dist * trig_r) if is_buy else avg_entry - (one_r_dist * trig_r)
             
             if curr_r >= trig_r:
-                candidates.append((be_sl, "BE"))
+                candidates.append((be_sl, "BE (Basket)"))
             else:
                 dist_to_trig = abs(current_price - trig_p)
                 milestones.append((dist_to_trig, f"BE | {trig_p:.2f} -> {be_sl:.2f}"))
 
-        # ---------------------------------------------------------
-        # 2. STEP R (Logic nâng cấp theo R thực tế)
-        # ---------------------------------------------------------
+        # 2. STEP R - Dựa trên Avg Entry
         if "STEP_R" in active_modes:
             sz, rt = tsl_cfg.get("STEP_R_SIZE", 1.0), tsl_cfg.get("STEP_R_RATIO", 0.8)
-            
-            # Tính số bước đã đạt được
             steps = max(0, math.floor(curr_r / sz))
             
             if steps >= 1:
-                # Tính SL mới dựa trên R thực tế (Dời SL lên mức khoá lợi nhuận)
-                step_sl = entry + (steps * one_r_dist * rt) if is_buy else entry - (steps * one_r_dist * rt)
-                candidates.append((step_sl, f"STEP {steps}"))
+                step_sl = avg_entry + (steps * one_r_dist * rt) if is_buy else avg_entry - (steps * one_r_dist * rt)
+                candidates.append((step_sl, f"STEP {steps} (Basket)"))
             
-            # Tính mốc tiếp theo để hiển thị Status
             next_step = int(steps + 1)
-            n_trig = entry + (next_step * sz * one_r_dist) if is_buy else entry - (next_step * sz * one_r_dist)
-            n_sl = entry + (next_step * one_r_dist * rt) if is_buy else entry - (next_step * one_r_dist * rt)
+            n_trig = avg_entry + (next_step * sz * one_r_dist) if is_buy else avg_entry - (next_step * sz * one_r_dist)
+            n_sl = avg_entry + (next_step * one_r_dist * rt) if is_buy else avg_entry - (next_step * one_r_dist * rt)
             
             dist_to_step = abs(current_price - n_trig)
             milestones.append((dist_to_step, f"Step {next_step} | {n_trig:.2f} -> {n_sl:.2f}"))
 
-        # ---------------------------------------------------------
-        # 3. PNL LOCK
-        # ---------------------------------------------------------
+        # 3. PNL LOCK - Dựa trên Total Profit của Basket
         if "PNL" in active_modes:
             acc = self.connector.get_account_info()
             if acc:
-                pnl_pct = ((position.profit + getattr(position, 'swap', 0)) / acc['balance']) * 100
+                pnl_pct = (total_profit_usd / acc['balance']) * 100
                 levels = sorted(tsl_cfg["PNL_LEVELS"], key=lambda x: x[0])
                 
                 best_pnl_sl = None
                 for lvl in levels:
                     if pnl_pct >= lvl[0]:
-                        lock_dist = (acc['balance'] * (lvl[1]/100.0)) / (volume * sym_info.trade_contract_size)
-                        best_pnl_sl = entry + lock_dist if is_buy else entry - lock_dist
+                        lock_dist = (acc['balance'] * (lvl[1]/100.0)) / (total_volume * sym_info.trade_contract_size)
+                        best_pnl_sl = avg_entry + lock_dist if is_buy else avg_entry - lock_dist
                     else:
                         req_profit_usd = acc['balance'] * (lvl[0]/100.0)
-                        trig_p = entry + (req_profit_usd / (volume * sym_info.trade_contract_size)) if is_buy else \
-                                 entry - (req_profit_usd / (volume * sym_info.trade_contract_size))
+                        trig_p = avg_entry + (req_profit_usd / (total_volume * sym_info.trade_contract_size)) if is_buy else \
+                                 avg_entry - (req_profit_usd / (total_volume * sym_info.trade_contract_size))
                         
                         dist_to_pnl = abs(current_price - trig_p)
                         milestones.append((dist_to_pnl, f"PnL {lvl[0]}% | {trig_p:.2f}"))
                         break
-                if best_pnl_sl: candidates.append((best_pnl_sl, "PNL"))
+                if best_pnl_sl: candidates.append((best_pnl_sl, "PNL (Basket)"))
 
-        # ---------------------------------------------------------
-        # THỰC THI DỜI SL
-        # ---------------------------------------------------------
+        # THỰC THI DỜI SL (TÌM SL TỐT NHẤT CHO TOÀN CỤM)
         valid_moves = []
         for price, rule in candidates:
             price = round(price / point) * point
-            # Chỉ dời SL theo chiều hướng có lợi (Buy: Tăng, Sell: Giảm)
             if is_buy and price > current_sl + point: valid_moves.append((price, rule))
             elif not is_buy and (current_sl == 0 or price < current_sl - point): valid_moves.append((price, rule))
 
         if valid_moves:
-            # Chọn mức SL tốt nhất (an toàn nhất cho lợi nhuận - cao nhất cho Buy, thấp nhất cho Sell)
             best_move = max(valid_moves, key=lambda x: x[0]) if is_buy else min(valid_moves, key=lambda x: x[0])
-            self.log(f"⚡ [TSL] #{position.ticket} [{best_move[1]}] ➔ SL: {best_move[0]}")
-            self.connector.modify_position(position.ticket, best_move[0], position.tp)
-            return f"MOVED {best_move[1]}"
+            target_sl = best_move[0]
+            action_rule = best_move[1]
+            
+            # --- KIỂM TRA CHÊNH LỆCH ĐỂ TRÁNH SPAM ---
+            if abs(target_sl - current_sl) > (point / 2):
+                self.log(f"⚡ [BASKET TSL] {symbol} [{action_rule}] ➔ Sync SL toàn cụm về: {target_sl}")
+                
+                # [V4.1 BASKET LOGIC] Lặp qua tất cả lệnh trong Cụm và dời SL đồng loạt
+                for pos in basket_positions:
+                     self.connector.modify_position(pos.ticket, target_sl, pos.tp)
+                     
+                return f"MOVED {action_rule}"
+            else:
+                return action_rule # Trả về trạng thái nếu không cần gửi lệnh API
 
-        # ---------------------------------------------------------
-        # HIỂN THỊ STATUS
-        # ---------------------------------------------------------
+        # Nếu không có ứng viên dời SL, trả về milestone gần nhất
         if milestones:
-            # Sắp xếp theo khoảng cách giá (distance) tăng dần -> lấy cái nhỏ nhất (Mục tiêu gần nhất)
             closest_milestone = sorted(milestones, key=lambda x: x[0])[0][1]
             return closest_milestone
 
-        return "Monitoring..."
+        return "Monitoring Basket..."

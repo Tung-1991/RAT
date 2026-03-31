@@ -1,20 +1,33 @@
-# 1. Bỏ qua Môi trường ảo (QUAN TRỌNG)
+# 1. Môi trường ảo (Đã cập nhật theo tên mới của Ngài)
+ratvenv/
 exnessvenv/
 venv/
 env/
-__pycache__/
-*.pyc
 
-# 2. Bỏ qua Dữ liệu Bot & Log (QUAN TRỌNG)
-# Chặn cả thư mục data để không lộ file bot_state.json và log lãi lỗ
+# 2. Xử lý triệt để Cache (Áp dụng cho core/ và mọi thư mục con)
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 3. Dữ liệu Bot & Log (Bỏ qua toàn bộ thư mục data)
 data/
 *.log
+# Chỉ bỏ qua các file json phát sinh trong quá trình chạy, 
+# nếu có file json cấu hình quan trọng Ngài nên cân nhắc.
 *.json
 
-# 3. Bỏ qua file rác của IDE (VS Code, PyCharm)
+# 4. Cấu hình nhạy cảm (Cảnh báo DevSecOps)
+# Nếu config.py chứa API Key hoặc Password của Ngài, nên bỏ qua nó 
+# và dùng một file config.py.example để push lên.
+# config.py 
+
+# 5. IDE & Hệ thống
 .vscode/
 .idea/
-
-# 4. Bỏ qua file hệ thống
 .DS_Store
 Thumbs.db
+*.swp

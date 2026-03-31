@@ -1,99 +1,124 @@
 # -*- coding: utf-8 -*-
 # FILE: config.py
-# V3.1.0: Config cleaned up & Added Risk per Preset
+# V4.1.1: HỢP NHẤT MASTER-WORKER (FIXED UI CRASH)
 
-# === 1. KẾT NỐI & HỆ THỐNG ===
-COIN_LIST = ["BTCUSD", "ETHUSD", "XAUUSD", "USOIL", "UKOIL"] # Danh sách coin hiển thị trên UI
-DEFAULT_SYMBOL = "ETHUSD"        # Coin mặc định khi mở bot
-MAGIC_NUMBER = 8888              # ID nhận diện lệnh của Bot
-LOOP_SLEEP_SECONDS = 0.25           # Tốc độ làm mới vòng lặp (giây)
-RESET_HOUR = 6                   # Giờ bắt đầu ngày mới (6h sáng)
+# ==============================================================================
+# 1. HỆ THỐNG & KẾT NỐI (CORE)
+# ==============================================================================
+COIN_LIST = ["BTCUSD", "ETHUSD", "XAUUSD", "EURUSD", "GBPUSD"]
+DEFAULT_SYMBOL = "ETHUSD"           # Coin mặc định khi mở app
+MAGIC_NUMBER = 8888                 # ID nhận diện lệnh của Bot
+LOOP_SLEEP_SECONDS = 0.25           # Tốc độ làm mới vòng lặp UI (giây)
+RESET_HOUR = 6                      # Giờ bắt đầu tính ngày mới (6h sáng)
 
-# === 1.1 LOẠI TÀI KHOẢN (Tính phí Commission) ===
+DATA_DIR = "data"                   # Thư mục chứa JSON, DB, Logs
+STRICT_MODE_DEFAULT = True          # Bật kiểm tra an toàn trước khi trade
+MAX_PING_MS = 150                   # Ping tối đa cho phép (ms)
+MAX_SPREAD_POINTS = 150             # Spread tối đa cho phép (Points)
+
+# ==============================================================================
+# 2. TÀI KHOẢN & GIỚI HẠN GIAO DỊCH (CORE)
+# ==============================================================================
 ACCOUNT_TYPES_CONFIG = {
-    "STANDARD": {"DESC": "No Comm", "COMMISSION_PER_LOT": 0.0},
-    "PRO":      {"DESC": "No Comm", "COMMISSION_PER_LOT": 0.0},
-    "RAW":      {"DESC": "Comm Fix", "COMMISSION_PER_LOT": 7.0},
-    "ZERO":     {"DESC": "Comm High", "COMMISSION_PER_LOT": 7.0}
+    "STANDARD": {"COMMISSION_PER_LOT": 0.0},
+    "PRO":      {"COMMISSION_PER_LOT": 0.0},
+    "RAW":      {"COMMISSION_PER_LOT": 7.0},
+    "ZERO":     {"COMMISSION_PER_LOT": 7.0}
 }
 DEFAULT_ACCOUNT_TYPE = "STANDARD"
+COMMISSION_RATES = {"BTCUSD": 16.5, "ETHUSD": 1.25, "XAUUSD": 7.0} # Ghi đè phí cho Raw/Zero
 
-# === 2. AN TOÀN & KẾT NỐI ===
-STRICT_MODE_DEFAULT = True       # Mặc định bật chế độ kiểm tra nghiêm ngặt
-MAX_PING_MS = 150                # Ping tối đa cho phép (ms)
-MAX_SPREAD_POINTS = 150          # Spread tối đa cho phép (Points)
+MAX_DAILY_LOSS_PERCENT = 1.5        # % Lỗ tối đa/ngày -> Dừng bot
+LOSS_COUNT_MODE = "TOTAL"           # "TOTAL" (Tổng thua) hoặc "STREAK" (Thua liên tiếp)
+MAX_LOSING_STREAK = 3               # Số lệnh thua cho phép
+MAX_TRADES_PER_DAY = 15             # Tổng số lệnh tối đa/ngày
+MAX_OPEN_POSITIONS = 2              # Số lệnh (hoặc cụm lệnh) chạy cùng lúc
 
-# === 3. QUẢN LÝ VỐN (GLOBAL) ===
-LOT_SIZE_MODE = "DYNAMIC"        # "FIXED" (Lot cố định) hoặc "DYNAMIC" (Tính theo Risk)
-COMMISSION_RATES = {
-    "BTCUSD": 16.5,   # check qua exness
-    "ETHUSD": 1.25,   # check qua exness
-    "XAUUSD": 7.0,    # Vàng: Raw/Zero thường là $7 (Có tài khoản Zero có thể lên $16)
-    "USOIL": 0.0,     # Dầu: Exness thường miễn phí Comm (chỉ ăn Spread)
-    "UKOIL": 0.0      # Dầu Brent: Tương tự USOIL
-}
-FIXED_LOT_VOLUME = 0.01          # Khối lượng nếu dùng chế độ FIXED
-RISK_PER_TRADE_PERCENT = 0.30    # % Rủi ro mặc định (Fallback nếu Preset ko có)
-RISK_PER_TRADE_USD = 10.0        # $ Rủi ro tối đa (Dự phòng an toàn)
+MIN_LOT_SIZE, MAX_LOT_SIZE = 0.01, 200.0
+LOT_STEP = 0.01
 
-# === 4. KỶ LUẬT & KILL SWITCH ===
-MAX_DAILY_LOSS_PERCENT = 1.5     # % Lỗ tối đa/ngày -> Dừng bot
-LOSS_COUNT_MODE = "TOTAL"        # Cách đếm: "TOTAL" (Tổng thua) hoặc "STREAK" (Thua liên tiếp)
-MAX_LOSING_STREAK = 3            # Số lệnh thua cho phép (theo mode trên)
-MAX_TRADES_PER_DAY = 15          # Tổng số lệnh tối đa/ngày
-MAX_OPEN_POSITIONS = 2           # Số lệnh được chạy cùng lúc
+MANUAL_CONFIG = {"BYPASS_CHECKLIST": False, "DEFAULT_LOT": 0.0}
 
-# === 5. CẤU HÌNH MANUAL ===
-MANUAL_CONFIG = {
-    "BYPASS_CHECKLIST": False,   # Mặc định tích ô Force hay không
-    "DEFAULT_LOT": 0.0,          # Lot mặc định khi mở app (0 = Auto)
-}
-
-# === 6. CHIẾN THUẬT TRAILING STOP (TSL) ===
-TSL_CONFIG = {
-    # --- RULE 1: BREAK-EVEN (Hoà Vốn) ---
-    "BE_MODE": "SOFT",           # "SOFT" (Entry-Fee) hoặc "SMART" (Entry+Fee)
-    "BE_OFFSET_RR": 0.8,         # Lãi 0.8R -> Kích hoạt BE
-    "BE_OFFSET_POINTS": 0,       # Cộng thêm point an toàn khi dời BE
-
-    # --- RULE 2: PNL LOCK (% Lãi -> % Lock) ---
-    "PNL_LEVELS": [
-        [0.5, 0.1],              # Lãi 0.5% vốn -> Lock 0.1% vốn
-        [1.0, 0.5],              # Lãi 1.0% vốn -> Lock 0.5% vốn
-        [2.0, 1.2]               # Lãi 2.0% vốn -> Lock 1.2% vốn
-    ],
-
-    # --- RULE 3: STEP R (Nuôi Lệnh) ---
-    "STEP_R_SIZE": 1.0,          # Bước nhảy (Ví dụ: mỗi 1R)
-    "STEP_R_RATIO": 0.8          # Tỷ lệ giữ lợi nhuận mỗi bước (0.8 = giữ 80%)
-}
-
-# === 7. GÓI CÀI ĐẶT (PRESETS) ===
+# ==============================================================================
+# 3. QUẢN LÝ VỐN & TRAILING STOP (CORE)
+# ==============================================================================
 DEFAULT_PRESET = "SCALPING"
 
+# --- CÁC BIẾN GỐC DỰ PHÒNG (TRÁNH CRASH GIAO DIỆN) ---
+RISK_PER_TRADE_PERCENT = 0.30    # % Rủi ro mặc định (Fallback nếu Preset ko có)
+RISK_PER_TRADE_USD = 10.0        # $ Rủi ro tối đa (Dự phòng an toàn)
+MAX_RISK_ALLOWED = 2.0           # Giới hạn cứng % rủi ro
+# ----------------------------------------------------
+
 PRESETS = {
-    "SCALPING": {
-        "DESC": "Nhanh, SL ngắn",
-        "SL_PERCENT": 0.4,       # Khoảng cách SL (% giá)
-        "TP_RR_RATIO": 1.5,      # Tỷ lệ Reward/Risk (TP)
-        "RISK_PERCENT": 0.3      # % Vốn rủi ro cho lệnh Scalp
-    },
-    "SAFE": {
-        "DESC": "An toàn",
-        "SL_PERCENT": 0.8,       # SL xa hơn
-        "TP_RR_RATIO": 1.2,      # TP ngắn hơn
-        "RISK_PERCENT": 0.2      # Rủi ro thấp hơn
-    },
-    "BREAKOUT": {
-        "DESC": "Săn trend lớn",
-        "SL_PERCENT": 1.0,       # SL rất xa để tránh quét
-        "TP_RR_RATIO": 3.0,      # Ăn dày (3R)
-        "RISK_PERCENT": 0.5      # Chấp nhận rủi ro cao
-    }
+    "SCALPING": {"DESC": "Nhanh, SL ngắn", "SL_PERCENT": 0.4, "TP_RR_RATIO": 1.5, "RISK_PERCENT": 0.3},
+    "SAFE":     {"DESC": "An toàn",        "SL_PERCENT": 0.8, "TP_RR_RATIO": 1.2, "RISK_PERCENT": 0.2},
+    "BREAKOUT": {"DESC": "Săn trend lớn",  "SL_PERCENT": 1.0, "TP_RR_RATIO": 3.0, "RISK_PERCENT": 0.5}
 }
 
-# === 8. GIỚI HẠN SÀN ===
-MIN_LOT_SIZE = 0.01              # Lot tối thiểu sàn cho phép
-MAX_LOT_SIZE = 200.0             # Lot tối đa sàn cho phép
-LOT_STEP = 0.01                  # Bước nhảy lot
-MAX_RISK_ALLOWED = 2.0           # Giới hạn cứng % rủi ro (để tránh nhập nhầm số lớn)
+TSL_CONFIG = {
+    "BE_MODE": "SOFT",              # "SOFT" (Entry-Fee) hoặc "SMART" (Entry+Fee)
+    "BE_OFFSET_RR": 0.8,            # Lãi 0.8R -> Kéo SL về Entry
+    "BE_OFFSET_POINTS": 0,          # Point cộng thêm cho an toàn
+    "PNL_LEVELS": [[0.5, 0.1], [1.0, 0.5], [2.0, 1.2]], # [%Lãi, %Khóa]
+    "STEP_R_SIZE": 1.0,             # Bước nhảy TSL (Ví dụ: 1R)
+    "STEP_R_RATIO": 0.8             # Tỷ lệ giữ lại (0.8 = 80% của bước)
+}
+
+# ==============================================================================
+# 4. BỘ NÃO PHÂN TÍCH - BRAIN DAEMON (P1)
+# ==============================================================================
+trend_timeframe = "1H"              # Khung xét Trend
+entry_timeframe = "15M"             # Khung xét Entry
+NUM_H1_BARS, NUM_M15_BARS = 70, 70  # Số nến cần tải
+COOLDOWN_MINUTES = 1                # Thời gian chờ sau khi đóng lệnh
+
+ALLOW_LONG_TRADES = True            # Cho phép đánh Lên
+ALLOW_SHORT_TRADES = True           # Cho phép đánh Xuống
+
+# --- Cấu hình Logic Entry & Trend ---
+ENTRY_LOGIC_MODE = "DYNAMIC"        # "BREAKOUT", "PULLBACK", "DYNAMIC"
+USE_TREND_FILTER = True
+USE_SUPERTREND_FILTER = True
+USE_EMA_TREND_FILTER = True
+USE_ADX_FILTER = True               # Dùng ADX lọc Sideways
+
+# --- Vùng xám ADX (Bảo vệ lúc nhiễu) ---
+USE_ADX_GREY_ZONE = False           
+ADX_WEAK, ADX_STRONG = 18, 23       # Dưới 18: Sideways | Trên 23: Trend
+ADX_MIN_LEVEL = 20                  # Dùng nếu TẮT Grey Zone
+
+# --- Cấu hình Nến & Volume ---
+USE_CANDLE_FILTER = True            
+min_body_percent = 50.0             # % thân nến tối thiểu (Breakout)
+PULLBACK_CANDLE_PATTERN = "ENGULFING" # Mẫu nến đảo chiều
+USE_VOLUME_FILTER = True            
+volume_ma_period, volume_sd_multiplier = 20, 0.5
+
+# --- Chu kỳ Indicator ---
+atr_period, swing_period = 14, 5
+ST_ATR_PERIOD, ST_MULTIPLIER = 10, 3.0
+DI_PERIOD, ADX_PERIOD = 14, 14
+TREND_EMA_PERIOD, ENTRY_EMA_PERIOD = 50, 21
+
+# --- SL Kỹ thuật (Brain Toán học) ---
+sl_atr_multiplier = 0.2             # SwingPoint +/- (0.2 * ATR)
+USE_EMERGENCY_EXIT = True           # Thoát sớm nếu H1 đảo chiều
+
+# ==============================================================================
+# 5. CHIẾN THUẬT NÂNG CAO - DCA & PCA (BRAIN DAEMON) 
+# ==============================================================================
+# [ĐANG UPDATE] - Các thông số dưới đây sẽ được tích hợp vào Brain để nhồi lệnh
+DCA_CONFIG = {
+    "ENABLED": False,               # Bật/Tắt trung bình giá xuống
+    "MAX_STEPS": 3,                 # Số lệnh nhồi tối đa
+    "STEP_MULTIPLIER": 1.5,         # Hệ số Lot nhồi (Martingale nhẹ)
+    "DISTANCE_ATR_R": 1.0           # Khoảng cách nhồi (Tính theo R hoặc ATR)
+}
+
+PCA_CONFIG = {
+    "ENABLED": False,               # Bật/Tắt nhồi lệnh thuận xu hướng (Pyramiding)
+    "MAX_STEPS": 2,                 # Số lệnh nhồi tối đa
+    "STEP_MULTIPLIER": 0.5,         # Giảm lot khi nhồi thuận trend để giảm rủi ro
+    "CONFIRM_INDICATOR": "ADX"      # Điều kiện nhồi (VD: ADX > 25, Volume Spike)
+}
