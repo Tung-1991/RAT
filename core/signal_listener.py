@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # FILE: core/signal_listener.py
-# V4.1: Master-Worker Architecture - Signal Consumer
+# V5.3: FINAL REFACTOR - PERFECT SYNC WITH BOT_TRADE_MANAGER
 
 import json
 import os
@@ -26,12 +26,10 @@ class SignalListener:
     ):
         """
         Khởi tạo Listener đọc tín hiệu từ bot_daemon.
-        - trade_manager: Tham chiếu đến bộ máy thực thi.
-        - get_auto_trade_cb: Hàm lấy trạng thái Auto-Trade từ UI (True/False).
-        - get_preset_cb: Hàm lấy tên Preset đang chọn trên UI.
-        - get_tsl_mode_cb: Hàm lấy chuỗi TSL Mode đang bật trên UI (VD: "BE+STEP_R").
-        - ui_heartbeat_cb: Hàm cập nhật UI trạng thái của Brain.
-        - log_cb: Hàm in log lên UI.
+        - trade_manager: Bộ máy thực thi lệnh.
+        - get_auto_trade_cb: Trạng thái nút gạt Auto-Trade trên UI.
+        - get_preset_cb: Preset đang chọn trên UI (Dùng làm nhãn, không dùng chia lot cho bot).
+        - get_tsl_mode_cb: TSL Mode đang bật trên UI.
         """
         self.trade_manager = trade_manager
         
@@ -44,7 +42,7 @@ class SignalListener:
         self.running = False
         self.thread = None
         
-        # In-Memory Tracking: Lưu UUID các tín hiệu đã xử lý để không vào lệnh 2 lần
+        # Lưu UUID các tín hiệu đã xử lý để tránh lặp lệnh (Idempotency)
         self.processed_signals = set()
 
     def start(self):
@@ -52,7 +50,7 @@ class SignalListener:
             self.running = True
             self.thread = threading.Thread(target=self._listen_loop, daemon=True)
             self.thread.start()
-            self.log_ui("📡 Signal Listener Started. Đang lắng nghe bot_daemon...", error=False)
+            self.log_ui("📡 Signal Listener Online. Đang đợi tín hiệu từ Brain...", error=False)
 
     def stop(self):
         self.running = False
@@ -66,83 +64,84 @@ class SignalListener:
                     time.sleep(1)
                     continue
 
-                # Đọc file JSON (Chỉ Đọc - Read Only)
+                # Đọc tín hiệu từ file JSON do bot_daemon ghi ra
                 with open(SIGNAL_FILE, "r", encoding="utf-8") as f:
                     try:
                         payload = json.load(f)
                     except json.JSONDecodeError:
-                        # Bỏ qua nếu P1 đang ghi dở file (Atomic write lỗi nhẹ)
+                        # Tránh lỗi khi Daemon đang ghi file dở (Atomic write)
                         time.sleep(0.5)
                         continue
 
-                # 1. Cập nhật trạng thái Brain (Heartbeat) lên UI
+                # 1. Cập nhật Heartbeat (Dữ liệu thị trường, trạng thái Daemon) lên UI
                 heartbeat = payload.get("brain_heartbeat", {})
                 if heartbeat:
                     self.update_ui_heartbeat(heartbeat)
 
-                # 2. Xử lý các tín hiệu mới
+                # 2. Quét danh sách tín hiệu chờ (Pending Signals)
                 pending_signals = payload.get("pending_signals", [])
                 for sig in pending_signals:
                     sig_id = sig.get("signal_id")
                     
-                    # Bỏ qua nếu đã xử lý
                     if not sig_id or sig_id in self.processed_signals:
                         continue
                     
-                    # Ghi nhận vào RAM ngay lập tức
                     self.processed_signals.add(sig_id)
 
-                    # Kiểm tra TTL (Hết hạn)
+                    # Kiểm tra thời hạn hiệu lực của tín hiệu (TTL)
                     sig_time = sig.get("timestamp", 0)
                     valid_for = sig.get("valid_for", 300)
                     if time.time() - sig_time > valid_for:
-                        self.log_ui(f"⚠️ Bỏ qua tín hiệu {sig.get('action')} do đã quá hạn (EXPIRED).", error=True)
+                        self.log_ui(f"⚠️ Bỏ qua tín hiệu {sig.get('action')} {sig.get('symbol')}: Đã hết hạn (EXPIRED).", error=True)
                         continue
 
-                    # Nếu hợp lệ, chuyển sang xử lý thực thi
+                    # Xử lý thực thi lệnh
                     self._process_signal(sig)
 
             except Exception as e:
                 logger.error(f"[Listener] Lỗi vòng lặp: {e}")
             
-            # Quét file mỗi giây
             time.sleep(1)
 
     def _process_signal(self, signal: dict):
-        """Xử lý logic khi có 1 tín hiệu mới và còn hạn"""
+        """Xử lý thực thi khi có tín hiệu hợp lệ"""
         action = signal.get("action")
         symbol = signal.get("symbol")
         sl_price = float(signal.get("sl_price", 0.0))
         sig_class = signal.get("signal_class", "ENTRY")
+        
+        # [V5.3 MỚI] - Đọc rủi ro và TP (luôn = 0.0) từ JSON do Daemon gửi
+        bot_risk = float(signal.get("bot_risk_percent", 0.3))
+        tp_price = float(signal.get("tp_price", 0.0))
 
-        self.log_ui(f"🧠 [BRAIN SIGNAL] Phân tích thấy lệnh {sig_class} {action} {symbol} | SL Toán học: {sl_price:.5f}", error=False)
+        self.log_ui(f"🧠 [BRAIN] Phát hiện lệnh {sig_class} {action} {symbol} | SL: {sl_price:.5f}", error=False)
 
-        # Kiểm tra trạng thái UI
+        # Kiểm tra công tắc Auto-Trade trên giao diện
         if not self.get_auto_trade():
-            self.log_ui(f"⏸️ Auto-Trade đang TẮT. Chỉ cảnh báo, không vào lệnh.", error=True)
+            self.log_ui(f"⏸️ Chế độ AUTO đang TẮT. Chỉ hiển thị cảnh báo.", error=True)
             return
 
-        # Gọi TradeManager để vào lệnh
-        preset = self.get_preset()
-        tsl_mode = self.get_tsl_mode()
+        # Lấy chiến thuật TSL từ giao diện
+        current_ui_tsl = self.get_tsl_mode()
         
-        self.log_ui(f"🤖 Auto-Trade kích hoạt! Bắn lệnh {action} {symbol} theo Preset [{preset}]...", error=False)
+        self.log_ui(f"🤖 Bot chuẩn bị bóp cò! Risk: {bot_risk}% | TP: Không cài (Ăn TSL)...", error=False)
         
-        # Tái sử dụng hàm execute_manual_trade nhưng truyền manual_sl là SL kỹ thuật từ Brain
-        # Bỏ qua manual_lot, manual_tp để hệ thống tự tính dựa vào Preset Risk & RR
-        result = self.trade_manager.execute_manual_trade(
-            direction=action,
-            preset_name=preset,
-            symbol=symbol,
-            strict_mode=True,      # Luôn check an toàn (Ping, Spread, Daily Loss)
-            manual_lot=0.0,        # Auto tính theo Risk
-            manual_sl=sl_price,    # SL ép buộc từ Brain (Toán học)
-            manual_tp=0.0,         # Auto tính theo RR của Preset
-            bypass_checklist=False,# Bot tự đánh thì không được bypass rủi ro
-            tsl_mode=tsl_mode      # Kéo TSL mode hiện tại của UI vào lệnh
-        )
+        # [V5.3 QUAN TRỌNG] Chạy luồng riêng gọi ĐÚNG hàm execute_bot_trade
+        def run_bot_trade():
+            result = self.trade_manager.execute_bot_trade(
+                direction=action,
+                symbol=symbol,
+                sl_price=sl_price,
+                tp_price=tp_price,
+                bot_risk_percent=bot_risk,
+                tactic_str=current_ui_tsl
+            )
+            
+            if "SUCCESS" in result:
+                # Log thành công đã được in bên trong TradeManager
+                pass
+            else:
+                self.log_ui(f"❌ Bot vào lệnh thất bại: {result}", error=True)
 
-        if "SUCCESS" in result:
-             self.log_ui(f"✅ Bot vào lệnh tự động thành công! Ticket: {result.split('|')[1]}", error=False)
-        else:
-             self.log_ui(f"❌ Bot vào lệnh THẤT BẠI (Checklist/Lỗi): {result}", error=True)
+        # Chạy ẩn bằng Thread để không làm đơ vòng lặp lắng nghe tín hiệu
+        threading.Thread(target=run_bot_trade, daemon=True).start()
