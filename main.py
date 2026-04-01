@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # FILE: main.py
 # V6.0: REFACTORED CORE - DEPENDENCY INJECTION & LOG INTERCEPTOR (KAISER EDITION)
+# UPDATE: LIVE COUNTDOWN BRAIN & DYNAMIC MARKET CONTEXT UI
 
 import customtkinter as ctk
 import tkinter as tk
@@ -22,7 +23,6 @@ from core.trade_manager import TradeManager
 from core.storage_manager import load_state, save_state
 from core.signal_listener import SignalListener
 
-# Import các module UI mới (Giải phóng hàng trăm dòng code tĩnh)
 import ui_panels
 import ui_popups
 
@@ -33,7 +33,6 @@ BRAIN_SETTINGS_FILE = "data/brain_settings.json"
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("dark-blue")
 
-# --- QUY HOẠCH HẰNG SỐ GIAO DIỆN (Giữ lại để logic update_ui dùng) ---
 FONT_MAIN = ("Roboto", 13)
 FONT_BOLD = ("Roboto", 13, "bold")
 FONT_EQUITY = ("Roboto", 36, "bold")
@@ -50,15 +49,10 @@ COL_GRAY_BTN = "#424242"
 COL_WARN = "#FFAB00"
 COL_BOT_TAG = "#E040FB" 
 
-# ==============================================================================
-# LOG INTERCEPTOR: BỘ LỌC CHỐNG NHIỄU RETCODE 10025
-# ==============================================================================
 class Suppress10025Filter(logging.Filter):
     def filter(self, record):
-        # Từ chối ghi log nếu trong chuỗi lỗi có chứa Retcode 10025
         return "Retcode: 10025" not in record.getMessage()
 
-# Gắn bộ lọc vào logger hệ thống
 main_logger = logging.getLogger("ExnessBot")
 main_logger.addFilter(Suppress10025Filter())
 
@@ -69,7 +63,6 @@ class BotUI(ctk.CTk):
         self.title("RiceAutoTrading - Master Control V6.0 (Kaiser Edition)")
         self.geometry("1650x950")
         
-        # --- 1. BIẾN TRẠNG THÁI (STATE VARIABLES) ---
         self.var_auto_trade = tk.BooleanVar(value=False)
         self.var_assist_math_sl = tk.BooleanVar(value=False)
         self.var_assist_preset_tp = tk.BooleanVar(value=False)
@@ -91,18 +84,22 @@ class BotUI(ctk.CTk):
         self.tsl_states_map = {} 
         self.last_price_val = 0.0
         self.latest_market_context = {} 
+        
+        # Biến phục vụ Live Countdown của Brain
+        self.brain_status = "CHỜ KẾT NỐI..."
+        self.brain_wakeup_time = 0
+        self.brain_active_symbols = []
+        
         self.daemon_process = None
         
         self.load_settings()
         setattr(config, "UI_ACTIVE_SYMBOL", config.DEFAULT_SYMBOL)
 
-        # --- 2. KHỞI TẠO CORE ENGINE ---
         self.connector = ExnessConnector()
         self.connector.connect()
         self.checklist_mgr = ChecklistManager(self.connector)
         self.trade_mgr = TradeManager(self.connector, self.checklist_mgr, log_callback=self.log_message)
 
-        # --- 3. DỰNG KHUNG GIAO DIỆN CHÍNH ---
         self.grid_columnconfigure(0, weight=0, minsize=420)
         self.grid_columnconfigure(1, weight=1) 
         self.grid_rowconfigure(0, weight=1)
@@ -114,13 +111,11 @@ class BotUI(ctk.CTk):
         self.frm_right = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
         self.frm_right.grid(row=0, column=1, sticky="nswe", padx=10, pady=10)
 
-        # Bơm Dependencies (self) vào 2 file giao diện để vẽ tĩnh
         ui_panels.setup_left_panel(self, self.frm_left)
         ui_panels.setup_right_panel(self, self.frm_right)
 
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
         
-        # --- 4. KHỞI ĐỘNG CÁC LUỒNG CHẠY NGẦM ---
         self.start_daemon_process()
         self.thread = threading.Thread(target=self.bg_update_loop, daemon=True)
         self.thread.start()
@@ -137,9 +132,6 @@ class BotUI(ctk.CTk):
         
         self.log_message("Hệ thống V6.0 (Tái cấu trúc UI) đã sẵn sàng.")
 
-    # ==============================================================================
-    # CORE PROCESS MANGEMENT
-    # ==============================================================================
     def start_daemon_process(self):
         try:
             self.daemon_process = subprocess.Popen([sys.executable, "bot_daemon.py"])
@@ -173,35 +165,14 @@ class BotUI(ctk.CTk):
         except Exception as e:
             self.log_message(f"Lỗi đồng bộ cấu hình (Hot-Reload): {e}", error=True)
 
-    # ==============================================================================
-    # UI STATE UPDATE LOGIC
-    # ==============================================================================
     def update_brain_heartbeat(self, heartbeat: dict):
-        status = heartbeat.get("status", "UNKNOWN")
-        symbol = heartbeat.get("active_symbols", [""])[0]
-        
-        if "SLEEPING" in status:
-            self.lbl_brain_status.configure(text=f"🧠 BRAIN: {status} ({symbol})", text_color="#2196F3")
-        elif status == "HEALTHY" or status == "MONITORING":
-            self.lbl_brain_status.configure(text=f"🧠 BRAIN: ONLINE ({symbol})", text_color=COL_GREEN)
-        else:
-            self.lbl_brain_status.configure(text=f"🧠 BRAIN: {status}", text_color=COL_RED)
+        self.brain_status = heartbeat.get("status", "UNKNOWN")
+        self.brain_wakeup_time = heartbeat.get("wakeup_time", 0)
+        self.brain_active_symbols = heartbeat.get("active_symbols", [])
             
         context = heartbeat.get("context", {})
         if context:
             self.latest_market_context = context
-            tr = context.get("trend", "--")
-            sh = context.get("swing_high", "--")
-            sl = context.get("swing_low", "--")
-            atr = context.get("atr", "--")
-            
-            sh_str = f"{sh:.2f}" if isinstance(sh, (int, float)) and sh > 0 else "--"
-            sl_str = f"{sl:.2f}" if isinstance(sl, (int, float)) and sl > 0 else "--"
-            atr_str = f"{atr:.2f}" if isinstance(atr, (int, float)) and atr > 0 else "--"
-            
-            self.lbl_market_context.configure(text=f"Trend: {tr} | SHigh: {sh_str} | SLow: {sl_str} | ATR: {atr_str}")
-        else:
-            self.lbl_market_context.configure(text="Trend: -- | SHigh: -- | SLow: -- | ATR: --")
 
     def on_auto_trade_toggle(self):
         if self.var_auto_trade.get():
@@ -242,9 +213,6 @@ class BotUI(ctk.CTk):
         if value == "BUY": self.btn_action.configure(text=f"VÀO LỆNH MUA {sym}", fg_color=COL_GREEN, hover_color="#009624")
         else: self.btn_action.configure(text=f"VÀO LỆNH BÁN {sym}", fg_color=COL_RED, hover_color="#B71C1C")
 
-    # ==============================================================================
-    # BỘ MÁY GỌI POPUPS (Truyền lệnh sang ui_popups.py)
-    # ==============================================================================
     def open_bot_setting_popup(self):
         ui_popups.open_bot_setting_popup(self)
 
@@ -260,9 +228,6 @@ class BotUI(ctk.CTk):
     def show_history_popup(self):
         ui_popups.show_history_popup(self)
 
-    # ==============================================================================
-    # BACKGROUND LOOPS & CORE FUNCTIONALITY
-    # ==============================================================================
     def load_settings(self):
         if os.path.exists(TSL_SETTINGS_FILE):
             try:
@@ -313,7 +278,36 @@ class BotUI(ctk.CTk):
             time.sleep(config.LOOP_SLEEP_SECONDS)
 
     def update_ui(self, acc, state, check_res, tick, preset, sym, positions):
-        # ... (Phần logic render động số liệu, màu sắc vào List/Tree/Dashboard - Giữ nguyên tuyệt đối)
+        # 1. LIVE COUNTDOWN & COIN INFO (Brain Status)
+        sym_count = len(self.brain_active_symbols)
+        if "SLEEPING" in self.brain_status:
+            rem = int(self.brain_wakeup_time - time.time())
+            if rem > 0:
+                self.lbl_brain_status.configure(text=f"🧠 BRAIN: SLEEPING ({rem}s) [Quét {sym_count} Coins]", text_color="#2196F3")
+            else:
+                self.lbl_brain_status.configure(text=f"🧠 BRAIN: SYNCING... [Quét {sym_count} Coins]", text_color=COL_WARN)
+        elif self.brain_status in ["HEALTHY", "MONITORING"]:
+            self.lbl_brain_status.configure(text=f"🧠 BRAIN: ONLINE [Quét {sym_count} Coins]", text_color=COL_GREEN)
+        else:
+            self.lbl_brain_status.configure(text=f"🧠 BRAIN: {self.brain_status}", text_color=COL_RED)
+
+        # 2. MARKET CONTEXT DYNAMIC COLOR
+        if self.latest_market_context:
+            tr = self.latest_market_context.get("trend", "--")
+            sh = self.latest_market_context.get("swing_high", "--")
+            sl = self.latest_market_context.get("swing_low", "--")
+            atr = self.latest_market_context.get("atr", "--")
+            
+            sh_str = f"{sh:.2f}" if isinstance(sh, (int, float)) and sh > 0 else "--"
+            sl_str = f"{sl:.2f}" if isinstance(sl, (int, float)) and sl > 0 else "--"
+            atr_str = f"{atr:.2f}" if isinstance(atr, (int, float)) and atr > 0 else "--"
+            
+            m_color = COL_GREEN if tr == "UP" else (COL_RED if tr == "DOWN" else "#78909C")
+            self.lbl_market_context.configure(text=f"Trend: {tr} | SHigh: {sh_str} | SLow: {sl_str} | ATR: {atr_str}", text_color=m_color)
+        else:
+            self.lbl_market_context.configure(text="Trend: -- | SHigh: -- | SLow: -- | ATR: --", text_color="#78909C")
+
+        # 3. EXISTING RENDER LOGIC
         d = self.seg_direction.get()
         self.var_direction.set(d)
         cur_tactic_str = self.get_current_tactic_string()
@@ -525,11 +519,7 @@ class BotUI(ctk.CTk):
 
         threading.Thread(target=run_trade_thread).start()
 
-    # ==============================================================================
-    # LOGGING RENDERER
-    # ==============================================================================
     def log_message(self, msg, error=False):
-        # LỌC LOG UI (Chặn hiển thị lỗi Retcode 10025 lên cửa sổ phần mềm)
         if "Retcode: 10025" in msg:
             return 
 
@@ -545,9 +535,6 @@ class BotUI(ctk.CTk):
             self.txt_log.see("end")
             self.txt_log.configure(state="disabled")
 
-    # ==============================================================================
-    # QUẢN LÝ LỆNH TỪ TREEVIEW
-    # ==============================================================================
     def reset_daily_stats(self):
         if messagebox.askyesno("Xác nhận", "Reset thống kê ngày?"):
             self.trade_mgr.state.update({"pnl_today": 0.0, "trades_today_count": 0, "daily_loss_count": 0, "daily_history": []})

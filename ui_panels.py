@@ -1,13 +1,14 @@
 # -*- coding: utf-8 -*-
 # FILE: ui_panels.py
 # V6.0: STATIC UI PANELS - DEPENDENCY INJECTION (KAISER EDITION)
+# UPDATE: BOLD FONT FOR MARKET CONTEXT
 
 import customtkinter as ctk
 import tkinter as tk
 from tkinter import ttk
 import config
 
-# --- HẰNG SỐ UI (Chuyển sang đây để dùng nội bộ vẽ UI) ---
+# --- HẰNG SỐ UI ---
 FONT_MAIN = ("Roboto", 13)
 FONT_BOLD = ("Roboto", 13, "bold")
 FONT_EQUITY = ("Roboto", 36, "bold")
@@ -117,7 +118,8 @@ def setup_left_panel(app, parent):
     make_inp(f_input, "TP (Price)", app.var_manual_tp, 1)
     make_inp(f_input, "SL (Price)", app.var_manual_sl, 2)
 
-    app.lbl_market_context = ctk.CTkLabel(parent, text="Trend: -- | SHigh: -- | SLow: -- | ATR: --", font=("Roboto", 11, "italic"), text_color="#78909C")
+    # ĐỔI FONT CHỮ TO, BỎ IN NGHIÊNG ĐỂ DỄ NHÌN HƠN
+    app.lbl_market_context = ctk.CTkLabel(parent, text="Trend: -- | SHigh: -- | SLow: -- | ATR: --", font=("Roboto", 13, "bold"), text_color="#78909C")
     app.lbl_market_context.pack(pady=(2, 5))
 
     # 4. LIVE DASHBOARD

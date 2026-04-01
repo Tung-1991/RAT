@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # FILE: core/trade_manager.py
-# V5.3: FINAL REFACTOR - PERFECT ISOLATION FOR BOT & MANUAL TRADES
+# V6.4: REFACTORED TSL - INDIVIDUAL TICKET TRACKING (KAISER EDITION)
 
 import logging
 import config
@@ -37,14 +37,13 @@ class TradeManager:
         save_state(self.state)
 
     # ====================================================================================
-    # 1. HÀM THỰC THI LỆNH CHO BOT (CHỈ DAEMON GỌI)
+    # 1. HÀM THỰC THI LỆNH CHO BOT
     # ====================================================================================
     def execute_bot_trade(self, direction, symbol, sl_price, tp_price, bot_risk_percent, tactic_str):
         """Hàm chuyên dụng bóp cò cho Bot. Nhận tham số trực tiếp từ Daemon."""
         config.SYMBOL = symbol 
         acc_info = self.connector.get_account_info()
         
-        # Vẫn phải qua vòng kiểm tra an toàn (Max lệnh, Max Loss ngày...)
         res = self.checklist.run_pre_trade_checks(acc_info, self.state, symbol, strict_mode=True)
         if not res["passed"]:
             fail_reasons = [c['msg'] for c in res['checks'] if c['status'] == 'FAIL']
@@ -61,7 +60,6 @@ class TradeManager:
         equity = acc_info['equity']
         contract_size = sym_info.trade_contract_size
 
-        # 1. Tính toán Lot size dựa trên Rủi ro Bot và Math SL
         sl_distance = abs(current_price - sl_price)
         if sl_distance <= 0: 
             self.log("❌ [BOT] Lỗi Math SL: Khoảng cách SL = 0", error=True)
@@ -72,10 +70,8 @@ class TradeManager:
         lot_size = round(raw_lot / config.LOT_STEP) * config.LOT_STEP
         lot_size = max(config.MIN_LOT_SIZE, min(lot_size, config.MAX_LOT_SIZE))
 
-        # 2. Đảm bảo tuyệt đối Bot đánh không có TP
         enforced_tp = 0.0
 
-        # 3. Gửi lệnh
         order_type = mt5.ORDER_TYPE_BUY if direction == "BUY" else mt5.ORDER_TYPE_SELL
         comment = "[BOT]_AUTO_ENTRY"
         
@@ -89,7 +85,6 @@ class TradeManager:
             
             self.update_trade_tactic(ticket_id, tactic_str)
             
-            # Lưu 1R để dùng cho TSL
             actual_1r_dist = abs(current_price - sl_price)
             if "initial_r_dist" not in self.state: self.state["initial_r_dist"] = {}
             self.state["initial_r_dist"][str(ticket_id)] = actual_1r_dist
@@ -189,7 +184,7 @@ class TradeManager:
         return f"ERR_MT5: {err_msg}"
 
     # ====================================================================================
-    # 3. LOGIC CẬP NHẬT TRẠNG THÁI VÀ DỜI TSL (BASKET LOGIC TỪ BÁC - GIỮ NGUYÊN)
+    # 3. LOGIC CẬP NHẬT TRẠNG THÁI VÀ DỜI TSL ĐỘC LẬP TỪNG TICKET (KAISER FIX)
     # ====================================================================================
     def update_running_trades(self, account_type="STANDARD", market_context=None):
         tsl_status_map = {} 
@@ -234,60 +229,51 @@ class TradeManager:
                         self.state["active_trades"].remove(ticket)
                 save_state(self.state)
 
-            # 2. GOM CỤM LỆNH (Basket Logic)
+            # 2. XỬ LÝ TSL CHO TỪNG LỆNH ĐỘC LẬP (ĐÃ PHÁ VỠ BASKET)
             bot_positions = [p for p in current_positions if p.magic == config.MAGIC_NUMBER]
-            baskets = {}
+            
             for pos in bot_positions:
-                key = (pos.symbol, pos.type)
-                if key not in baskets: baskets[key] = []
-                baskets[key].append(pos)
-
-            # 3. THỰC THI TSL CHO TỪNG CỤM
-            for key, basket_positions in baskets.items():
-                basket_status = self._apply_basket_trailing_logic(basket_positions, market_context)
-                for pos in basket_positions:
-                    tsl_status_map[pos.ticket] = basket_status
+                status = self._apply_individual_trailing_logic(pos, market_context)
+                tsl_status_map[pos.ticket] = status
 
         except Exception as e:
             self.log(f"❌ Lỗi TSL update loop: {e}", error=True)
         
         return tsl_status_map
 
-    def _apply_basket_trailing_logic(self, basket_positions, market_context):
-        if not basket_positions: return "Monitoring..."
-
-        basket_positions.sort(key=lambda x: x.time)
-        master_pos = basket_positions[0] 
-        
-        tactic_str = self.get_trade_tactic(master_pos.ticket)
+    def _apply_individual_trailing_logic(self, pos, market_context):
+        """Xử lý TSL độc lập cho một Ticket cụ thể, đọc cấu hình riêng biệt."""
+        tactic_str = self.get_trade_tactic(pos.ticket)
         if tactic_str == "OFF": return "TSL OFF"
 
         active_modes = tactic_str.split("+")
-        symbol = master_pos.symbol
-        is_buy = (master_pos.type == mt5.ORDER_TYPE_BUY)
-        current_price = master_pos.price_current 
-        current_sl = master_pos.sl 
+        symbol = pos.symbol
+        is_buy = (pos.type == mt5.ORDER_TYPE_BUY)
+        current_price = pos.price_current 
+        current_sl = pos.sl 
         
         sym_info = mt5.symbol_info(symbol)
         point = sym_info.point if sym_info else 0.00001
+        contract_size = sym_info.trade_contract_size if sym_info else 1.0
         
-        total_volume = sum(p.volume for p in basket_positions)
-        avg_entry = sum(p.price_open * p.volume for p in basket_positions) / total_volume
-        total_profit_usd = sum(p.profit + getattr(p, 'swap', 0.0) + getattr(p, 'commission', 0.0) for p in basket_positions)
+        entry_price = pos.price_open
+        volume = pos.volume
+        profit_usd = pos.profit + getattr(pos, 'swap', 0.0) + getattr(pos, 'commission', 0.0)
         
-        s_ticket = str(master_pos.ticket)
+        s_ticket = str(pos.ticket)
         one_r_dist = self.state.get("initial_r_dist", {}).get(s_ticket, 0.0)
 
+        # Trích xuất 1R mặc định nếu thiếu
         if one_r_dist == 0:
-            preset_name = master_pos.comment.split("_")[1] if (master_pos.comment and "_" in master_pos.comment) else "SCALPING"
+            preset_name = pos.comment.split("_")[1] if (pos.comment and "_" in pos.comment) else "SCALPING"
             params = config.PRESETS.get(preset_name, config.PRESETS["SCALPING"])
-            one_r_dist = avg_entry * (params["SL_PERCENT"] / 100.0)
+            one_r_dist = entry_price * (params["SL_PERCENT"] / 100.0)
             if "initial_r_dist" not in self.state: self.state["initial_r_dist"] = {}
             self.state["initial_r_dist"][s_ticket] = one_r_dist 
 
         if one_r_dist <= 0: return "Err R Dist"
 
-        curr_dist = current_price - avg_entry if is_buy else avg_entry - current_price
+        curr_dist = current_price - entry_price if is_buy else entry_price - current_price
         curr_r = curr_dist / one_r_dist
         
         candidates = []
@@ -296,18 +282,18 @@ class TradeManager:
 
         # 1. BREAK-EVEN
         if "BE" in active_modes:
-            total_fee_usd = abs(sum(getattr(p, 'commission', 0.0) + getattr(p, 'swap', 0.0) for p in basket_positions))
-            fee_dist = total_fee_usd / (total_volume * sym_info.trade_contract_size) if sym_info.trade_contract_size > 0 else 0
+            total_fee_usd = abs(getattr(pos, 'commission', 0.0) + getattr(pos, 'swap', 0.0))
+            fee_dist = total_fee_usd / (volume * contract_size) if contract_size > 0 else 0
             
             mode = tsl_cfg.get("BE_MODE", "SOFT")
-            base = avg_entry - fee_dist if (is_buy and mode=="SOFT") else (avg_entry + fee_dist if (is_buy and mode=="SMART") else avg_entry)
-            if not is_buy: base = avg_entry + fee_dist if mode=="SOFT" else (avg_entry - fee_dist if mode=="SMART" else avg_entry)
+            base = entry_price - fee_dist if (is_buy and mode=="SOFT") else (entry_price + fee_dist if (is_buy and mode=="SMART") else entry_price)
+            if not is_buy: base = entry_price + fee_dist if mode=="SOFT" else (entry_price - fee_dist if mode=="SMART" else entry_price)
 
             be_sl = base + (tsl_cfg.get("BE_OFFSET_POINTS", 0) * point) if is_buy else base - (tsl_cfg.get("BE_OFFSET_POINTS", 0) * point)
             trig_r = tsl_cfg.get("BE_OFFSET_RR", 0.8)
-            trig_p = avg_entry + (one_r_dist * trig_r) if is_buy else avg_entry - (one_r_dist * trig_r)
+            trig_p = entry_price + (one_r_dist * trig_r) if is_buy else entry_price - (one_r_dist * trig_r)
             
-            if curr_r >= trig_r: candidates.append((be_sl, "BE (Basket)"))
+            if curr_r >= trig_r: candidates.append((be_sl, "BE"))
             else: milestones.append((abs(current_price - trig_p), f"BE | {trig_p:.2f} -> {be_sl:.2f}"))
 
         # 2. STEP R
@@ -315,32 +301,32 @@ class TradeManager:
             sz, rt = tsl_cfg.get("STEP_R_SIZE", 1.0), tsl_cfg.get("STEP_R_RATIO", 0.8)
             steps = max(0, math.floor(curr_r / sz))
             if steps >= 1:
-                step_sl = avg_entry + (steps * one_r_dist * rt) if is_buy else avg_entry - (steps * one_r_dist * rt)
-                candidates.append((step_sl, f"STEP {steps} (Basket)"))
+                step_sl = entry_price + (steps * one_r_dist * rt) if is_buy else entry_price - (steps * one_r_dist * rt)
+                candidates.append((step_sl, f"STEP {steps}"))
             
             next_step = int(steps + 1)
-            n_trig = avg_entry + (next_step * sz * one_r_dist) if is_buy else avg_entry - (next_step * sz * one_r_dist)
-            n_sl = avg_entry + (next_step * one_r_dist * rt) if is_buy else avg_entry - (next_step * one_r_dist * rt)
+            n_trig = entry_price + (next_step * sz * one_r_dist) if is_buy else entry_price - (next_step * sz * one_r_dist)
+            n_sl = entry_price + (next_step * one_r_dist * rt) if is_buy else entry_price - (next_step * one_r_dist * rt)
             milestones.append((abs(current_price - n_trig), f"Step {next_step} | {n_trig:.2f} -> {n_sl:.2f}"))
 
         # 3. PNL LOCK
         if "PNL" in active_modes:
             acc = self.connector.get_account_info()
             if acc:
-                pnl_pct = (total_profit_usd / acc['balance']) * 100
+                pnl_pct = (profit_usd / acc['balance']) * 100
                 levels = sorted(tsl_cfg["PNL_LEVELS"], key=lambda x: x[0])
                 best_pnl_sl = None
                 for lvl in levels:
                     if pnl_pct >= lvl[0]:
-                        lock_dist = (acc['balance'] * (lvl[1]/100.0)) / (total_volume * sym_info.trade_contract_size)
-                        best_pnl_sl = avg_entry + lock_dist if is_buy else avg_entry - lock_dist
+                        lock_dist = (acc['balance'] * (lvl[1]/100.0)) / (volume * contract_size)
+                        best_pnl_sl = entry_price + lock_dist if is_buy else entry_price - lock_dist
                     else:
                         req_profit_usd = acc['balance'] * (lvl[0]/100.0)
-                        trig_p = avg_entry + (req_profit_usd / (total_volume * sym_info.trade_contract_size)) if is_buy else \
-                                 avg_entry - (req_profit_usd / (total_volume * sym_info.trade_contract_size))
+                        trig_p = entry_price + (req_profit_usd / (volume * contract_size)) if is_buy else \
+                                 entry_price - (req_profit_usd / (volume * contract_size))
                         milestones.append((abs(current_price - trig_p), f"PnL {lvl[0]}% | {trig_p:.2f}"))
                         break
-                if best_pnl_sl: candidates.append((best_pnl_sl, "PNL (Basket)"))
+                if best_pnl_sl: candidates.append((best_pnl_sl, "PNL"))
 
         # 4. TSL SWING
         if "SWING" in active_modes and market_context:
@@ -366,6 +352,7 @@ class TradeManager:
                     candidates.append((swing_sl, f"SWING ({tsl_mode})"))
                     milestones.append((0.0, f"SWING | {swing_sl:.2f}"))
 
+        # Xác định nước đi dời SL tối ưu nhất
         valid_moves = []
         for price, rule in candidates:
             price = round(price / point) * point
@@ -377,9 +364,8 @@ class TradeManager:
             target_sl, action_rule = best_move
             
             if abs(target_sl - current_sl) > (point / 2):
-                self.log(f"⚡ [TSL] {symbol} dời SL theo {action_rule} ➔ {target_sl:.5f}")
-                for pos in basket_positions:
-                     self.connector.modify_position(pos.ticket, target_sl, pos.tp)
+                self.log(f"⚡ [TSL] Lệnh #{pos.ticket} dời SL theo {action_rule} ➔ {target_sl:.5f}")
+                self.connector.modify_position(pos.ticket, target_sl, pos.tp)
                 return f"MOVED {action_rule}"
             else:
                 return action_rule

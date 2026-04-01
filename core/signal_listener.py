@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # FILE: core/signal_listener.py
-# V5.3: FINAL REFACTOR - PERFECT SYNC WITH BOT_TRADE_MANAGER
+# V6.3: DECOUPLED BOT TSL - READS DIRECTLY FROM CONFIG (KAISER EDITION)
 
 import json
 import os
@@ -20,7 +20,7 @@ class SignalListener:
         trade_manager: Any, 
         get_auto_trade_cb: Callable[[], bool],
         get_preset_cb: Callable[[], str],
-        get_tsl_mode_cb: Callable[[], str],
+        get_tsl_mode_cb: Callable[[], str], # (Legacy) Giữ nguyên signature để không lỗi main.py
         ui_heartbeat_cb: Callable[[dict], None],
         log_cb: Callable[[str, bool], None]
     ):
@@ -28,14 +28,14 @@ class SignalListener:
         Khởi tạo Listener đọc tín hiệu từ bot_daemon.
         - trade_manager: Bộ máy thực thi lệnh.
         - get_auto_trade_cb: Trạng thái nút gạt Auto-Trade trên UI.
-        - get_preset_cb: Preset đang chọn trên UI (Dùng làm nhãn, không dùng chia lot cho bot).
-        - get_tsl_mode_cb: TSL Mode đang bật trên UI.
+        - get_preset_cb: Preset đang chọn trên UI.
+        - get_tsl_mode_cb: (Legacy - Không còn dùng cho Bot).
         """
         self.trade_manager = trade_manager
         
         self.get_auto_trade = get_auto_trade_cb
         self.get_preset = get_preset_cb
-        self.get_tsl_mode = get_tsl_mode_cb
+        self.get_tsl_mode = get_tsl_mode_cb 
         self.update_ui_heartbeat = ui_heartbeat_cb
         self.log_ui = log_cb
         
@@ -110,7 +110,6 @@ class SignalListener:
         sl_price = float(signal.get("sl_price", 0.0))
         sig_class = signal.get("signal_class", "ENTRY")
         
-        # [V5.3 MỚI] - Đọc rủi ro và TP (luôn = 0.0) từ JSON do Daemon gửi
         bot_risk = float(signal.get("bot_risk_percent", 0.3))
         tp_price = float(signal.get("tp_price", 0.0))
 
@@ -121,12 +120,12 @@ class SignalListener:
             self.log_ui(f"⏸️ Chế độ AUTO đang TẮT. Chỉ hiển thị cảnh báo.", error=True)
             return
 
-        # Lấy chiến thuật TSL từ giao diện
-        current_ui_tsl = self.get_tsl_mode()
+        # [MỚI] - Đọc chiến thuật TSL độc lập dành riêng cho BOT từ config
+        # Không còn đọc từ self.get_tsl_mode() của UI nữa
+        bot_tsl_tactic = getattr(config, "BOT_DEFAULT_TSL", "BE+STEP_R+SWING")
         
-        self.log_ui(f"🤖 Bot chuẩn bị bóp cò! Risk: {bot_risk}% | TP: Không cài (Ăn TSL)...", error=False)
+        self.log_ui(f"🤖 Bot chuẩn bị bóp cò! Risk: {bot_risk}% | TP: Không cài | TSL: {bot_tsl_tactic}", error=False)
         
-        # [V5.3 QUAN TRỌNG] Chạy luồng riêng gọi ĐÚNG hàm execute_bot_trade
         def run_bot_trade():
             result = self.trade_manager.execute_bot_trade(
                 direction=action,
@@ -134,11 +133,10 @@ class SignalListener:
                 sl_price=sl_price,
                 tp_price=tp_price,
                 bot_risk_percent=bot_risk,
-                tactic_str=current_ui_tsl
+                tactic_str=bot_tsl_tactic  # Dùng TSL riêng của Bot
             )
             
             if "SUCCESS" in result:
-                # Log thành công đã được in bên trong TradeManager
                 pass
             else:
                 self.log_ui(f"❌ Bot vào lệnh thất bại: {result}", error=True)

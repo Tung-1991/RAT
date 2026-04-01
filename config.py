@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 # FILE: config.py
-# V6.1: GENTLE RULE UPDATE - INCREASE TRADE FREQUENCY FOR ETH TESTING
+# V6.5: STANDARDIZED TIMEFRAME STRINGS (KAISER EDITION)
+
+import os
 
 # ==============================================================================
 # 1. HỆ THỐNG & KẾT NỐI
@@ -10,7 +12,7 @@ COIN_LIST = [
     "EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "USDCAD"
 ]
 DEFAULT_SYMBOL = "ETHUSD"           
-BOT_ACTIVE_SYMBOLS = ["ETHUSD"]     # Mã Bot ngầm đang chạy
+BOT_ACTIVE_SYMBOLS = ["ETHUSD"]     
 MAGIC_NUMBER = 8888                 
 LOOP_SLEEP_SECONDS = 0.25           
 RESET_HOUR = 6                      
@@ -20,7 +22,7 @@ MAX_PING_MS = 150
 MAX_SPREAD_POINTS = 150             
 
 # ==============================================================================
-# 2. TÀI KHOẢN & GIỚI HẠN GIAO DỊCH (GENTLE SETTINGS)
+# 2. TÀI KHOẢN & GIỚI HẠN GIAO DỊCH 
 # ==============================================================================
 ACCOUNT_TYPES_CONFIG = {
     "STANDARD": {"COMMISSION_PER_LOT": 0.0},
@@ -44,11 +46,11 @@ COMMISSION_RATES = {
     "USDCAD": 7.0
 }
 
-MAX_DAILY_LOSS_PERCENT = 2.5        # Tăng từ 1.5 -> 2.5 (Gentle)
+MAX_DAILY_LOSS_PERCENT = 2.5        
 LOSS_COUNT_MODE = "TOTAL"           
 MAX_LOSING_STREAK = 3               
-MAX_TRADES_PER_DAY = 30             # Tăng từ 15 -> 30 (Gentle)
-MAX_OPEN_POSITIONS = 3              # Tăng từ 2 -> 3 (Gentle)
+MAX_TRADES_PER_DAY = 30             
+MAX_OPEN_POSITIONS = 3              
 
 MIN_LOT_SIZE, MAX_LOT_SIZE = 0.01, 200.0
 LOT_STEP = 0.01
@@ -73,6 +75,7 @@ PRESETS = {
 # ==============================================================================
 BOT_RISK_PERCENT = 0.30             
 BOT_TP_RR_RATIO = 1.5               
+BOT_DEFAULT_TSL = "BE+STEP_R+SWING" 
 
 # ==============================================================================
 # 5. LOGIC TRAILING STOP CƠ BẢN (BE & STEP & PNL)
@@ -95,10 +98,11 @@ be_atr_buffer = 0.8
 USE_DYNAMIC_ATR_BUFFER = False  
 
 # ==============================================================================
-# 7. BỘ NÃO PHÂN TÍCH - DAEMON & SIGNAL (GENTLE SETTINGS)
+# 7. BỘ NÃO PHÂN TÍCH - DAEMON & SIGNAL
 # ==============================================================================
-trend_timeframe = "1H"              
-entry_timeframe = "15M"             
+# FIX: Chuyển về định dạng chuẩn '1h' và '15m' để Connector không báo lỗi
+trend_timeframe = "1h"              
+entry_timeframe = "15m"             
 NUM_H1_BARS, NUM_M15_BARS = 70, 70  
 COOLDOWN_MINUTES = 1                
 
@@ -107,26 +111,26 @@ ALLOW_SHORT_TRADES = True
 
 # --- LỌC XU HƯỚNG (TREND H1) ---
 USE_TREND_FILTER = True
-USE_SUPERTREND_FILTER = False       # Tắt để tăng tần suất (Gentle)
+USE_SUPERTREND_FILTER = False       
 USE_EMA_TREND_FILTER = True
 USE_ADX_FILTER = True               
 
 # --- VÙNG XÁM ADX (LỌC NHIỄU) ---
-USE_ADX_GREY_ZONE = True            # Bật để linh hoạt Breakout/Pullback (Gentle)
+USE_ADX_GREY_ZONE = True            
 ADX_WEAK = 18                       
 ADX_STRONG = 23                     
-ADX_MIN_LEVEL = 15                  # Hạ từ 20 -> 15 (Gentle)
+ADX_MIN_LEVEL = 15                  
 
 # --- LOGIC VÀO LỆNH (ENTRY M15) ---
 ENTRY_LOGIC_MODE = "DYNAMIC"        
 
-# --- LỌC XÁC NHẬN NẾN & VOLUME (GENTLE SETTINGS) ---
+# --- LỌC XÁC NHẬN NẾN & VOLUME ---
 USE_CANDLE_FILTER = True            
-min_body_percent = 30.0             # Hạ từ 50.0 -> 30.0 (Gentle)
+min_body_percent = 30.0             
 PULLBACK_CANDLE_PATTERN = "ENGULFING" 
-USE_VOLUME_FILTER = False           # Tắt lọc Volume (Gentle)
+USE_VOLUME_FILTER = False           
 volume_ma_period = 20               
-volume_sd_multiplier = 0.1          # Giảm độ gắt của lọc volume
+volume_sd_multiplier = 0.1          
 
 # --- SL KỸ THUẬT (MATH SL) ---
 sl_atr_multiplier = 0.2             
@@ -148,7 +152,7 @@ TREND_EMA_PERIOD = 50
 ENTRY_EMA_PERIOD = 21           
 
 # ==============================================================================
-# 9. TÍNH NĂNG NHỒI LỆNH (ĐANG PHÁT TRIỂN)
+# 9. TÍNH NĂNG NHỒI LỆNH (AUTO DCA/PCA)
 # ==============================================================================
 DCA_CONFIG = {
     "ENABLED": False,               

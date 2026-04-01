@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # FILE: ui_popups.py
-# V6.2: DIALOGS & SETTINGS - ADDED SAFETY GUARD (KAISER EDITION)
+# V6.3: DIALOGS & SETTINGS - ADDED INDEPENDENT BOT TSL (KAISER EDITION)
 
 import customtkinter as ctk
 import tkinter as tk
@@ -22,7 +22,7 @@ COL_BOT_TAG = "#E040FB"
 def open_bot_setting_popup(app):
     top = ctk.CTkToplevel(app)
     top.title("Cấu hình Bộ não & Chiến thuật Bot")
-    top.geometry("850x850") # Mở rộng chiều dọc một chút để xem thoải mái
+    top.geometry("850x850") 
     top.attributes("-topmost", True)
     
     tabview = ctk.CTkTabview(top)
@@ -33,7 +33,7 @@ def open_bot_setting_popup(app):
     tabview.add("MANUAL ASSIST")
     
     # ----------------------------------------------------------------------
-    # TAB: CORE ENGINE (Nâng cấp thành Scrollable Frame)
+    # TAB: CORE ENGINE
     # ----------------------------------------------------------------------
     tab_core_parent = tabview.tab("CORE ENGINE")
     tab_core = ctk.CTkScrollableFrame(tab_core_parent, fg_color="transparent")
@@ -64,6 +64,24 @@ def open_bot_setting_popup(app):
     e_bot_risk = ctk.CTkEntry(f_bot_risk, width=80, justify="center")
     e_bot_risk.insert(0, str(getattr(config, "BOT_RISK_PERCENT", 0.3)))
     e_bot_risk.pack(side="right")
+
+    ctk.CTkFrame(tab_core, height=2, fg_color="#333").pack(fill="x", padx=30, pady=10)
+
+    # --- BOT TSL TACTIC (ĐỘC LẬP) ---
+    ctk.CTkLabel(tab_core, text="BOT TSL TACTIC (ĐỘC LẬP VỚI MANUAL)", font=FONT_BOLD, text_color="#29B6F6").pack(pady=(5, 5))
+    f_bot_tsl = ctk.CTkFrame(tab_core, fg_color="#2b2b2b", corner_radius=8)
+    f_bot_tsl.pack(fill="x", padx=15, pady=5)
+
+    current_bot_tsl = getattr(config, "BOT_DEFAULT_TSL", "BE+STEP_R+SWING")
+    app.var_bot_tsl_be = tk.BooleanVar(value="BE" in current_bot_tsl)
+    app.var_bot_tsl_pnl = tk.BooleanVar(value="PNL" in current_bot_tsl)
+    app.var_bot_tsl_step = tk.BooleanVar(value="STEP_R" in current_bot_tsl)
+    app.var_bot_tsl_swing = tk.BooleanVar(value="SWING" in current_bot_tsl)
+
+    ctk.CTkCheckBox(f_bot_tsl, text="BE", variable=app.var_bot_tsl_be).pack(side="left", expand=True, pady=10)
+    ctk.CTkCheckBox(f_bot_tsl, text="PNL", variable=app.var_bot_tsl_pnl).pack(side="left", expand=True, pady=10)
+    ctk.CTkCheckBox(f_bot_tsl, text="STEP_R", variable=app.var_bot_tsl_step).pack(side="left", expand=True, pady=10)
+    ctk.CTkCheckBox(f_bot_tsl, text="SWING", variable=app.var_bot_tsl_swing).pack(side="left", expand=True, pady=10)
 
     ctk.CTkFrame(tab_core, height=2, fg_color="#333").pack(fill="x", padx=30, pady=10)
 
@@ -106,7 +124,7 @@ def open_bot_setting_popup(app):
     e_cooldown.insert(0, str(getattr(config, "COOLDOWN_MINUTES", 1)))
     e_cooldown.grid(row=2, column=3, sticky="w", padx=10, pady=8)
 
-    # Row 3 (Dữ liệu Nến)
+    # Row 3
     ctk.CTkLabel(f_safety, text="Số nến H1 (Quét):").grid(row=3, column=0, sticky="w", padx=10, pady=8)
     e_num_h1 = ctk.CTkEntry(f_safety, width=70, justify="center")
     e_num_h1.insert(0, str(getattr(config, "NUM_H1_BARS", 70)))
@@ -127,7 +145,6 @@ def open_bot_setting_popup(app):
     app.bot_coin_vars = {}
     allowed_list = getattr(config, "BOT_ACTIVE_SYMBOLS", config.COIN_LIST)
     
-    # Chia coin thành 2 cột cho gọn vì form đã cuộn được
     f_coins.columnconfigure((0, 1), weight=1)
     for i, coin in enumerate(config.COIN_LIST):
         var = tk.BooleanVar(value=(coin in allowed_list))
@@ -136,7 +153,7 @@ def open_bot_setting_popup(app):
         chk.grid(row=i//2, column=i%2, sticky="w", pady=5, padx=10)
 
     # ----------------------------------------------------------------------
-    # TAB: INDICATORS (REFACTORED THÀNH GRID LAYOUT / TABLE)
+    # TAB: INDICATORS
     # ----------------------------------------------------------------------
     tab_ind = tabview.tab("INDICATORS")
     inner_tabview = ctk.CTkTabview(tab_ind)
@@ -170,54 +187,57 @@ def open_bot_setting_popup(app):
         parent.grid_columnconfigure(1, weight=0, minsize=140) 
         parent.grid_columnconfigure(2, weight=2, minsize=300) 
 
-    # 1. H1 Trend Tab
     tab_trend = inner_tabview.add("H1 Trend")
     scroll_trend = ctk.CTkScrollableFrame(tab_trend, fg_color="transparent")
     scroll_trend.pack(fill="both", expand=True)
     setup_grid_columns(scroll_trend)
 
-    v_ema_trend = add_setting_row(scroll_trend, 0, "Bật Lọc EMA Xu hướng", "switch", "USE_EMA_TREND_FILTER", "Lọc nhiễu bằng đường EMA khung H1.")
-    e_ema_trend_p = add_setting_row(scroll_trend, 1, "Chu kỳ TREND_EMA_PERIOD", "entry", "TREND_EMA_PERIOD", "Chu kỳ đường EMA tham chiếu (Mặc định: 50).")
-    
-    v_st_trend = add_setting_row(scroll_trend, 2, "Bật Lọc Supertrend", "switch", "USE_SUPERTREND_FILTER", "Sử dụng dải Supertrend làm bộ lọc thuận xu hướng.")
-    e_st_atr_p = add_setting_row(scroll_trend, 3, "Chu kỳ ST_ATR_PERIOD", "entry", "ST_ATR_PERIOD", "Chu kỳ đo độ giật ATR cấu thành Supertrend (Mặc định: 10).")
-    e_st_mult = add_setting_row(scroll_trend, 4, "Hệ số ST_MULTIPLIER", "entry", "ST_MULTIPLIER", "Khoảng rộng của dải Supertrend (Mặc định: 3.0).")
-    
-    v_adx = add_setting_row(scroll_trend, 5, "Bật Lọc Sức mạnh ADX", "switch", "USE_ADX_FILTER", "Kiểm tra độ mạnh của trend trước khi vảo lệnh.")
-    e_adx_p = add_setting_row(scroll_trend, 6, "Chu kỳ ADX_PERIOD", "entry", "ADX_PERIOD", "Chu kỳ chuẩn hóa sức mạnh trend (Mặc định: 14).")
-    e_di_p = add_setting_row(scroll_trend, 7, "Chu kỳ DI_PERIOD", "entry", "DI_PERIOD", "Chu kỳ đường chỉ báo hướng +DI/-DI (Mặc định: 14).")
-    e_adx_min = add_setting_row(scroll_trend, 8, "Ngưỡng ADX_MIN_LEVEL", "entry", "ADX_MIN_LEVEL", "Ngưỡng sức mạnh tối thiểu để đánh (Mặc định: 15).")
-    v_adx_grey = add_setting_row(scroll_trend, 9, "Bật Vùng Xám ADX", "switch", "USE_ADX_GREY_ZONE", "Nếu bật, ADX < 23 sẽ áp dụng luật riêng (Pullback/Breakout).")
+    v_ema_trend = add_setting_row(scroll_trend, 0, "Bật Lọc EMA", "switch", "USE_EMA_TREND_FILTER", "Lọc nhiễu bằng đường EMA khung H1.")
+    e_ema_trend_p = add_setting_row(scroll_trend, 1, "TREND_EMA_PERIOD", "entry", "TREND_EMA_PERIOD", "Chu kỳ đường EMA tham chiếu.")
+    v_st_trend = add_setting_row(scroll_trend, 2, "Bật Lọc Supertrend", "switch", "USE_SUPERTREND_FILTER", "Sử dụng dải Supertrend làm bộ lọc.")
+    e_st_atr_p = add_setting_row(scroll_trend, 3, "ST_ATR_PERIOD", "entry", "ST_ATR_PERIOD", "Chu kỳ đo độ giật ATR cấu thành Supertrend.")
+    e_st_mult = add_setting_row(scroll_trend, 4, "ST_MULTIPLIER", "entry", "ST_MULTIPLIER", "Khoảng rộng của dải Supertrend.")
+    v_adx = add_setting_row(scroll_trend, 5, "Bật Lọc ADX", "switch", "USE_ADX_FILTER", "Kiểm tra độ mạnh của trend.")
+    e_adx_p = add_setting_row(scroll_trend, 6, "ADX_PERIOD", "entry", "ADX_PERIOD", "Chu kỳ chuẩn hóa sức mạnh trend.")
+    e_di_p = add_setting_row(scroll_trend, 7, "DI_PERIOD", "entry", "DI_PERIOD", "Chu kỳ đường chỉ báo hướng +DI/-DI.")
+    e_adx_min = add_setting_row(scroll_trend, 8, "ADX_MIN_LEVEL", "entry", "ADX_MIN_LEVEL", "Ngưỡng sức mạnh tối thiểu.")
+    v_adx_grey = add_setting_row(scroll_trend, 9, "Bật Vùng Xám ADX", "switch", "USE_ADX_GREY_ZONE", "Áp dụng luật riêng (Pullback/Breakout).")
 
-    # 2. M15 Entry Tab
     tab_entry = inner_tabview.add("M15 Entry")
     scroll_entry = ctk.CTkScrollableFrame(tab_entry, fg_color="transparent")
     scroll_entry.pack(fill="both", expand=True)
     setup_grid_columns(scroll_entry)
 
-    c_entry_mode = add_setting_row(scroll_entry, 0, "ENTRY_LOGIC_MODE", "option", "ENTRY_LOGIC_MODE", "Cách bóp cò M15: DYNAMIC, BREAKOUT, hoặc PULLBACK.", ["DYNAMIC", "BREAKOUT", "PULLBACK"])
-    e_ema_entry_p = add_setting_row(scroll_entry, 1, "Chu kỳ ENTRY_EMA_PERIOD", "entry", "ENTRY_EMA_PERIOD", "Đường EMA đóng vai trò cản động tại M15 (Mặc định: 21).")
-    v_candle = add_setting_row(scroll_entry, 2, "Bật Lọc Thân nến", "switch", "USE_CANDLE_FILTER", "Bắt buộc nến breakout phải là nến có xung lực thân nến lớn.")
-    e_body_pct = add_setting_row(scroll_entry, 3, "min_body_percent (% Thân)", "entry", "min_body_percent", "Tỷ lệ thân nến/toàn bộ nến tối thiểu (Mặc định: 30.0).")
-    v_vol = add_setting_row(scroll_entry, 4, "Bật Lọc Khối lượng (Volume)", "switch", "USE_VOLUME_FILTER", "Kiểm tra volume nến breakout có đột biến không.")
-    e_vol_period = add_setting_row(scroll_entry, 5, "Chu kỳ volume_ma_period", "entry", "volume_ma_period", "Chu kỳ trung bình Volume để xét đột biến (Mặc định: 20).")
+    c_entry_mode = add_setting_row(scroll_entry, 0, "ENTRY_LOGIC_MODE", "option", "ENTRY_LOGIC_MODE", "Cách bóp cò M15.", ["DYNAMIC", "BREAKOUT", "PULLBACK"])
+    e_ema_entry_p = add_setting_row(scroll_entry, 1, "ENTRY_EMA_PERIOD", "entry", "ENTRY_EMA_PERIOD", "Đường EMA đóng vai trò cản động tại M15.")
+    v_candle = add_setting_row(scroll_entry, 2, "Bật Lọc Thân nến", "switch", "USE_CANDLE_FILTER", "Nến breakout phải có xung lực lớn.")
+    e_body_pct = add_setting_row(scroll_entry, 3, "min_body_percent", "entry", "min_body_percent", "Tỷ lệ thân nến tối thiểu.")
+    v_vol = add_setting_row(scroll_entry, 4, "Bật Lọc Volume", "switch", "USE_VOLUME_FILTER", "Kiểm tra volume đột biến.")
+    e_vol_period = add_setting_row(scroll_entry, 5, "volume_ma_period", "entry", "volume_ma_period", "Chu kỳ trung bình Volume.")
 
-    # 3. Math SL/ATR Tab
     tab_sl_atr = inner_tabview.add("Math SL/ATR")
     scroll_sl_atr = ctk.CTkScrollableFrame(tab_sl_atr, fg_color="transparent")
     scroll_sl_atr.pack(fill="both", expand=True)
     setup_grid_columns(scroll_sl_atr)
 
-    e_swing_p = add_setting_row(scroll_sl_atr, 0, "Chu kỳ swing_period", "entry", "swing_period", "Số nến quá khứ để quét tìm đỉnh/đáy cục bộ (Mặc định: 5).")
-    e_atr_p = add_setting_row(scroll_sl_atr, 1, "Chu kỳ atr_period", "entry", "atr_period", "Chu kỳ đo độ biến động ATR dùng cho Stoploss (Mặc định: 14).")
-    e_sl_atr_m = add_setting_row(scroll_sl_atr, 2, "Hệ số sl_atr_multiplier", "entry", "sl_atr_multiplier", "Cộng trừ thêm đoạn đệm này vào Math SL ban đầu (Mặc định: 0.2).")
-    c_tsl_logic = add_setting_row(scroll_sl_atr, 3, "TSL_LOGIC_MODE (Swing)", "option", "TSL_LOGIC_MODE", "Chế độ bám đuôi của TSL Swing: STATIC, DYNAMIC, AGGRESSIVE.", ["STATIC", "DYNAMIC", "AGGRESSIVE"])
-    e_trail_buf = add_setting_row(scroll_sl_atr, 4, "Hệ số trail_atr_buffer", "entry", "trail_atr_buffer", "Khoảng giãn đệm khi dời TSL Swing theo đáy mới (Mặc định: 0.2).")
+    e_swing_p = add_setting_row(scroll_sl_atr, 0, "swing_period", "entry", "swing_period", "Số nến quá khứ để quét đỉnh/đáy.")
+    e_atr_p = add_setting_row(scroll_sl_atr, 1, "atr_period", "entry", "atr_period", "Chu kỳ đo độ biến động ATR.")
+    e_sl_atr_m = add_setting_row(scroll_sl_atr, 2, "sl_atr_multiplier", "entry", "sl_atr_multiplier", "Khoảng đệm Math SL ban đầu.")
+    c_tsl_logic = add_setting_row(scroll_sl_atr, 3, "TSL_LOGIC_MODE", "option", "TSL_LOGIC_MODE", "Chế độ bám đuôi TSL Swing.", ["STATIC", "DYNAMIC", "AGGRESSIVE"])
+    e_trail_buf = add_setting_row(scroll_sl_atr, 4, "trail_atr_buffer", "entry", "trail_atr_buffer", "Khoảng giãn đệm khi dời TSL Swing.")
 
     def save_all_bot_settings():
         try:
-            # Cập nhật Bot Risk & Safety Guard
             config.BOT_RISK_PERCENT = float(e_bot_risk.get())
+            
+            # Lưu TSL Độc Lập cho Bot
+            active_bot_tsl = []
+            if app.var_bot_tsl_be.get(): active_bot_tsl.append("BE")
+            if app.var_bot_tsl_pnl.get(): active_bot_tsl.append("PNL")
+            if app.var_bot_tsl_step.get(): active_bot_tsl.append("STEP_R")
+            if app.var_bot_tsl_swing.get(): active_bot_tsl.append("SWING")
+            config.BOT_DEFAULT_TSL = "+".join(active_bot_tsl) if active_bot_tsl else "OFF"
+            
             config.MAX_DAILY_LOSS_PERCENT = float(e_max_loss.get())
             config.MAX_OPEN_POSITIONS = int(e_max_open.get())
             config.MAX_TRADES_PER_DAY = int(e_max_trades.get())
@@ -227,20 +247,16 @@ def open_bot_setting_popup(app):
             config.NUM_H1_BARS = int(e_num_h1.get())
             config.NUM_M15_BARS = int(e_num_m15.get())
             
-            # Cập nhật Watchlist Coin
             selected_coins = [coin for coin, var in app.bot_coin_vars.items() if var.get()]
             if not selected_coins:
                 messagebox.showwarning("Cảnh báo", "Bạn chưa chọn đồng coin nào cho Bot. Bot sẽ ngủ đông!")
             config.BOT_ACTIVE_SYMBOLS = selected_coins
             
-            # Cập nhật Indicators
             config.USE_EMA_TREND_FILTER = v_ema_trend.get()
             config.TREND_EMA_PERIOD = int(e_ema_trend_p.get())
-            
             config.USE_SUPERTREND_FILTER = v_st_trend.get()
             config.ST_ATR_PERIOD = int(e_st_atr_p.get())
             config.ST_MULTIPLIER = float(e_st_mult.get())
-            
             config.USE_ADX_FILTER = v_adx.get()
             config.ADX_PERIOD = int(e_adx_p.get())
             config.DI_PERIOD = int(e_di_p.get())
@@ -260,9 +276,8 @@ def open_bot_setting_popup(app):
             config.TSL_LOGIC_MODE = c_tsl_logic.get()
             config.trail_atr_buffer = float(e_trail_buf.get())
             
-            # Lưu file và đồng bộ (Không lưu đè COIN_LIST)
             app._save_brain_live_config()
-            app.log_message(f"✅ Đã lưu cấu hình BOT & SAFETY. Các cặp canh: {', '.join(selected_coins)}")
+            app.log_message(f"✅ Đã lưu cấu hình BOT. TSL Bot: {config.BOT_DEFAULT_TSL}")
             top.destroy()
         except ValueError:
             messagebox.showerror("Lỗi dữ liệu", "Vui lòng kiểm tra lại. Cấm nhập chữ vào ô số!")
@@ -520,7 +535,7 @@ def open_edit_popup(app, ticket):
     chk_dca = ctk.CTkCheckBox(f_chk, text="Cho phép Auto DCA", font=("Roboto", 11), text_color="gray"); chk_dca.pack(side="left", padx=10)
     chk_pca = ctk.CTkCheckBox(f_chk, text="Cho phép Auto PCA", font=("Roboto", 11), text_color="gray"); chk_pca.pack(side="left")
 
-    ctk.CTkLabel(top, text="GHI ĐÈ CHIẾN THUẬT (TACTIC OVERRIDE):", font=FONT_BOLD, text_color="#FFB300").pack(pady=(10, 5))
+    ctk.CTkLabel(top, text="GHI ĐÈ CHIẾN THUẬT CHO LỆNH NÀY:", font=FONT_BOLD, text_color="#FFB300").pack(pady=(10, 5))
     f_btns = ctk.CTkFrame(top, fg_color="transparent")
     f_btns.pack()
     
@@ -573,6 +588,7 @@ def open_edit_popup(app, ticket):
             if chk_dca.get(): new_t += "+AUTO_DCA"
             if chk_pca.get(): new_t += "+AUTO_PCA"
             
+            # Hàm này sẽ gọi vào core/trade_manager.py
             app.trade_mgr.update_trade_tactic(ticket, new_t)
             
             ent_sl.unbind("<KeyRelease>"); ent_tp.unbind("<KeyRelease>")
