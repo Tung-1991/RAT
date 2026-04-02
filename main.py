@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # FILE: main.py
 # V6.9: REFACTORED CORE - MULTI-COIN DICTIONARY SYNC (KAISER EDITION)
+# V6.9.1: HOTFIX UI DCA/PCA & TREEVIEW FORMATTING
 
 import customtkinter as ctk
 import tkinter as tk
@@ -77,7 +78,11 @@ class BotUI(ctk.CTk):
         self.var_bypass_checklist = tk.BooleanVar(value=config.MANUAL_CONFIG["BYPASS_CHECKLIST"])
         self.var_direction = tk.StringVar(value="BUY") 
         
-        self.tactic_states = {"BE": True, "PNL": False, "STEP_R": True, "SWING": True}
+        # [KAISER FIX] Thêm AUTO_DCA và AUTO_PCA vào dictionary khởi tạo để tránh KeyError
+        self.tactic_states = {
+            "BE": True, "PNL": False, "STEP_R": True, "SWING": True,
+            "AUTO_DCA": False, "AUTO_PCA": False
+        }
         self.running = True
         self.tsl_states_map = {} 
         self.last_price_val = 0.0
@@ -127,7 +132,7 @@ class BotUI(ctk.CTk):
         )
         self.signal_listener.start()
         
-        self.log_message("Hệ thống V6.9 (Multi-Coin Sync) đã sẵn sàng.")
+        self.log_message("Hệ thống V6.9.1 (Multi-Coin Sync & DCA/PCA) đã sẵn sàng.")
 
     def start_daemon_process(self):
         try:
@@ -182,8 +187,9 @@ class BotUI(ctk.CTk):
     def get_current_tactic_string(self):
         active = [k for k, v in self.tactic_states.items() if v]
         base_tactic = "+".join(active) if active else "OFF"
-        if self.var_assist_dca.get(): base_tactic += "+AUTO_DCA"
-        if self.var_assist_pca.get(): base_tactic += "+AUTO_PCA"
+        # Chống trùng lặp chuỗi nếu User bật cả nút ngang và Checkbox Manual
+        if self.var_assist_dca.get() and "AUTO_DCA" not in base_tactic: base_tactic += "+AUTO_DCA"
+        if self.var_assist_pca.get() and "AUTO_PCA" not in base_tactic: base_tactic += "+AUTO_PCA"
         return base_tactic
 
     def toggle_tactic(self, mode):
@@ -193,10 +199,16 @@ class BotUI(ctk.CTk):
     def update_tactic_buttons_ui(self):
         def set_btn(btn, is_active):
             btn.configure(fg_color=COL_BLUE_ACCENT if is_active else COL_GRAY_BTN)
+        
+        # Cập nhật màu các nút đang có
         set_btn(self.btn_tactic_be, self.tactic_states["BE"])
         set_btn(self.btn_tactic_pnl, self.tactic_states["PNL"])
         set_btn(self.btn_tactic_step, self.tactic_states["STEP_R"])
         set_btn(self.btn_tactic_swing, self.tactic_states["SWING"])
+        
+        # [KAISER FIX] Cập nhật màu cho nút DCA/PCA nếu chúng tồn tại
+        if hasattr(self, 'btn_tactic_dca'): set_btn(self.btn_tactic_dca, self.tactic_states["AUTO_DCA"])
+        if hasattr(self, 'btn_tactic_pca'): set_btn(self.btn_tactic_pca, self.tactic_states["AUTO_PCA"])
 
     def on_symbol_change(self, new_symbol):
         config.UI_ACTIVE_SYMBOL = new_symbol
@@ -287,7 +299,7 @@ class BotUI(ctk.CTk):
         else:
             self.lbl_brain_status.configure(text=f"🧠 BRAIN: {self.brain_status}", text_color=COL_RED)
 
-        # FIX UI: Lấy đúng Context của đồng coin đang chọn trên UI
+        # Lấy Context của đồng coin đang chọn trên UI
         sym_ctx = self.latest_market_context.get(sym, {})
         
         if sym_ctx:
@@ -441,6 +453,9 @@ class BotUI(ctk.CTk):
         existing_items = self.tree.get_children()
         current_tickets_on_chart = []
         
+        # [KAISER FIX] Trích xuất map Mẹ-Con
+        child_to_parent = self.trade_mgr.state.get("child_to_parent", {})
+        
         for p in positions:
             ticket_str = str(p.ticket)
             current_tickets_on_chart.append(ticket_str)
@@ -464,7 +479,22 @@ class BotUI(ctk.CTk):
             icon = "🟢" if is_buy else "🔴"
             side_txt = "BUY" if is_buy else "SELL"
             
-            order_str = f"{icon} {side_txt} {p.volume:.2f} {p.symbol} @ {p.price_open:.2f}"
+            # --- [KAISER FIX] Render Nguồn gốc & Thụt lề Lệnh Con ---
+            display_ticket = f"#{ticket_str}"
+            is_child = ticket_str in child_to_parent
+            
+            if is_child:
+                display_ticket = f" ┗━ #{ticket_str}"
+                
+            origin_tag = "[UI]"
+            if "[BOT]" in p.comment:
+                origin_tag = "[BOT]"
+            elif "_Child" in p.comment:
+                origin_tag = "[UI+BOT]"
+                
+            order_str = f"{origin_tag} {icon} {side_txt} {p.volume:.2f} {p.symbol} @ {p.price_open:.2f}"
+            # -----------------------------------------------------
+
             sl_txt = f"{p.sl:.2f}" if p.sl > 0 else "---"
             tp_txt = f"{p.tp:.2f}" if p.tp > 0 else "---"
             targets_str = f"{sl_txt}  |  {tp_txt}"
@@ -484,9 +514,18 @@ class BotUI(ctk.CTk):
 
             rew_str = f"+${rew_usd:.1f} ({rew_pct:.1f}%)" if p.tp > 0 else "No TP"
             rr_str = f"{risk_str}  |  {rew_str}"
+            
+            # --- [KAISER FIX] Hiển thị nhãn DCA/PCA trên cột Status ---
             stt_txt = self.tsl_states_map.get(p.ticket, "Running")
+            tactic_info = self.trade_mgr.get_trade_tactic(p.ticket)
+            stt_extras = []
+            if "AUTO_DCA" in tactic_info: stt_extras.append("DCA")
+            if "AUTO_PCA" in tactic_info: stt_extras.append("PCA")
+            if stt_extras:
+                stt_txt += f" | +{'/'.join(stt_extras)}"
+            # ----------------------------------------------------------
 
-            values_data = (f"#{ticket_str}", time_str, order_str, targets_str, fee_str, rr_str, f"${p.profit:.2f}", stt_txt, "❌")
+            values_data = (display_ticket, time_str, order_str, targets_str, fee_str, rr_str, f"${p.profit:.2f}", stt_txt, "❌")
 
             tag_to_apply = "bot_order" if "[BOT]" in p.comment else "user_order"
 
@@ -502,7 +541,6 @@ class BotUI(ctk.CTk):
         try: ml, mt, ms = float(self.var_manual_lot.get() or 0), float(self.var_manual_tp.get() or 0), float(self.var_manual_sl.get() or 0)
         except: ml = mt = ms = 0.0
         
-        # FIX: Tính năng hỗ trợ đặt lệnh lấy đúng Context của symbol chuẩn bị vào lệnh
         if ms == 0.0 and self.var_assist_math_sl.get():
             target_sym_ctx = self.latest_market_context.get(s, {})
             sl_val = target_sym_ctx.get("swing_low") if d == "BUY" else target_sym_ctx.get("swing_high")

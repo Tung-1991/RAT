@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # FILE: ui_popups.py
-# V6.9: DIALOGS & SETTINGS - MULTI COIN FIX (KAISER EDITION)
+# V8.2: DIALOGS & SETTINGS - FULL PCA/DCA INTEGRATION & ANTI-HARDCODE (KAISER EDITION)
 
 import customtkinter as ctk
 import tkinter as tk
@@ -22,7 +22,7 @@ COL_BOT_TAG = "#E040FB"
 def open_bot_setting_popup(app):
     top = ctk.CTkToplevel(app)
     top.title("Cấu hình Bộ não & Chiến thuật Bot")
-    top.geometry("850x700")  # FIX: Resize lại cho vừa màn hình
+    top.geometry("900x750") 
     top.attributes("-topmost", True)
     
     tabview = ctk.CTkTabview(top)
@@ -39,6 +39,7 @@ def open_bot_setting_popup(app):
     tab_core = ctk.CTkScrollableFrame(tab_core_parent, fg_color="transparent")
     tab_core.pack(fill="both", expand=True)
     
+    # Switch Auto Trade
     f_auto = ctk.CTkFrame(tab_core, fg_color="transparent")
     f_auto.pack(fill="x", pady=10)
     ctk.CTkLabel(f_auto, text="Tự động bóp cò khi Brain có tín hiệu:", text_color="gray").pack()
@@ -67,7 +68,7 @@ def open_bot_setting_popup(app):
 
     ctk.CTkFrame(tab_core, height=2, fg_color="#333").pack(fill="x", padx=30, pady=10)
 
-    # --- BOT TSL TACTIC ---
+    # Bot TSL Tactic
     ctk.CTkLabel(tab_core, text="BOT TSL TACTIC (ĐỘC LẬP VỚI MANUAL)", font=FONT_BOLD, text_color="#29B6F6").pack(pady=(5, 5))
     f_bot_tsl = ctk.CTkFrame(tab_core, fg_color="#2b2b2b", corner_radius=8)
     f_bot_tsl.pack(fill="x", padx=15, pady=5)
@@ -83,9 +84,47 @@ def open_bot_setting_popup(app):
     ctk.CTkCheckBox(f_bot_tsl, text="STEP_R", variable=app.var_bot_tsl_step).pack(side="left", expand=True, pady=10)
     ctk.CTkCheckBox(f_bot_tsl, text="SWING", variable=app.var_bot_tsl_swing).pack(side="left", expand=True, pady=10)
 
+    # --- [KAISER] PARENT-CHILD BASKET (DCA / PCA CORE) ---
+    ctk.CTkLabel(tab_core, text="PARENT-CHILD BASKET (DCA / PCA CORE)", font=FONT_BOLD, text_color="#00E676").pack(pady=(15, 5))
+    f_basket = ctk.CTkFrame(tab_core, fg_color="#2b2b2b", corner_radius=8)
+    f_basket.pack(fill="x", padx=15, pady=5)
+    
+    # Hàng 1: DCA
+    ctk.CTkLabel(f_basket, text="DCA Max Steps:").grid(row=0, column=0, padx=(15,5), pady=10, sticky="w")
+    e_dca_steps = ctk.CTkEntry(f_basket, width=50, justify="center")
+    e_dca_steps.insert(0, str(config.DCA_CONFIG.get("MAX_STEPS", 3)))
+    e_dca_steps.grid(row=0, column=1, padx=5, pady=10)
+    
+    ctk.CTkLabel(f_basket, text="DCA Vol(x):").grid(row=0, column=2, padx=5, pady=10, sticky="w")
+    e_dca_mult = ctk.CTkEntry(f_basket, width=50, justify="center")
+    e_dca_mult.insert(0, str(config.DCA_CONFIG.get("STEP_MULTIPLIER", 1.5)))
+    e_dca_mult.grid(row=0, column=3, padx=5, pady=10)
+    
+    ctk.CTkLabel(f_basket, text="DCA Dist(ATR):").grid(row=0, column=4, padx=5, pady=10, sticky="w")
+    e_dca_dist = ctk.CTkEntry(f_basket, width=50, justify="center")
+    e_dca_dist.insert(0, str(config.DCA_CONFIG.get("DISTANCE_ATR_R", 1.0)))
+    e_dca_dist.grid(row=0, column=5, padx=5, pady=10)
+    
+    # Hàng 2: PCA
+    ctk.CTkLabel(f_basket, text="PCA Max Steps:").grid(row=1, column=0, padx=(15,5), pady=10, sticky="w")
+    e_pca_steps = ctk.CTkEntry(f_basket, width=50, justify="center")
+    e_pca_steps.insert(0, str(config.PCA_CONFIG.get("MAX_STEPS", 2)))
+    e_pca_steps.grid(row=1, column=1, padx=5, pady=10)
+    
+    ctk.CTkLabel(f_basket, text="PCA Vol(x):").grid(row=1, column=2, padx=5, pady=10, sticky="w")
+    e_pca_mult = ctk.CTkEntry(f_basket, width=50, justify="center")
+    e_pca_mult.insert(0, str(config.PCA_CONFIG.get("STEP_MULTIPLIER", 0.5)))
+    e_pca_mult.grid(row=1, column=3, padx=5, pady=10)
+
+    # Chống Hardcode ADX Strong cho PCA
+    ctk.CTkLabel(f_basket, text="PCA ADX Min:").grid(row=1, column=4, padx=5, pady=10, sticky="w")
+    e_pca_adx = ctk.CTkEntry(f_basket, width=50, justify="center")
+    e_pca_adx.insert(0, str(getattr(config, "ADX_STRONG", 23)))
+    e_pca_adx.grid(row=1, column=5, padx=5, pady=10)
+
     ctk.CTkFrame(tab_core, height=2, fg_color="#333").pack(fill="x", padx=30, pady=10)
 
-    # --- HÀNG RÀO BẢO VỆ ---
+    # Safety Guard
     ctk.CTkLabel(tab_core, text="HÀNG RÀO BẢO VỆ & DỮ LIỆU (SAFETY GUARD)", font=FONT_BOLD, text_color="#FFB300").pack(pady=(5, 5))
     f_safety = ctk.CTkFrame(tab_core, fg_color="#2b2b2b", corner_radius=8)
     f_safety.pack(fill="x", padx=15, pady=5)
@@ -133,7 +172,7 @@ def open_bot_setting_popup(app):
 
     ctk.CTkFrame(tab_core, height=2, fg_color="#333").pack(fill="x", padx=30, pady=10)
 
-    # --- WATCHLIST COIN ---
+    # Watchlist
     ctk.CTkLabel(tab_core, text="WATCHLIST - BOT CHỈ QUÉT CÁC COIN SAU:", font=FONT_BOLD, text_color="#2196F3").pack(pady=(5, 5))
     f_coins = ctk.CTkFrame(tab_core, fg_color="transparent")
     f_coins.pack(fill="x", padx=30, pady=(0, 10))
@@ -183,6 +222,7 @@ def open_bot_setting_popup(app):
         parent.grid_columnconfigure(1, weight=0, minsize=140) 
         parent.grid_columnconfigure(2, weight=2, minsize=300) 
 
+    # H1 Trend Sub-tab
     tab_trend = inner_tabview.add("H1 Trend")
     scroll_trend = ctk.CTkScrollableFrame(tab_trend, fg_color="transparent")
     scroll_trend.pack(fill="both", expand=True)
@@ -199,6 +239,7 @@ def open_bot_setting_popup(app):
     e_adx_min = add_setting_row(scroll_trend, 8, "ADX_MIN_LEVEL", "entry", "ADX_MIN_LEVEL", "Ngưỡng sức mạnh tối thiểu.")
     v_adx_grey = add_setting_row(scroll_trend, 9, "Bật Vùng Xám ADX", "switch", "USE_ADX_GREY_ZONE", "Áp dụng luật riêng (Pullback/Breakout).")
 
+    # M15 Entry Sub-tab
     tab_entry = inner_tabview.add("M15 Entry")
     scroll_entry = ctk.CTkScrollableFrame(tab_entry, fg_color="transparent")
     scroll_entry.pack(fill="both", expand=True)
@@ -211,6 +252,7 @@ def open_bot_setting_popup(app):
     v_vol = add_setting_row(scroll_entry, 4, "Bật Lọc Volume", "switch", "USE_VOLUME_FILTER", "Kiểm tra volume đột biến.")
     e_vol_period = add_setting_row(scroll_entry, 5, "volume_ma_period", "entry", "volume_ma_period", "Chu kỳ trung bình Volume.")
 
+    # Math SL/ATR Sub-tab
     tab_sl_atr = inner_tabview.add("Math SL/ATR")
     scroll_sl_atr = ctk.CTkScrollableFrame(tab_sl_atr, fg_color="transparent")
     scroll_sl_atr.pack(fill="both", expand=True)
@@ -224,8 +266,10 @@ def open_bot_setting_popup(app):
 
     def save_all_bot_settings():
         try:
+            # Lưu các giá trị cơ bản
             config.BOT_RISK_PERCENT = float(e_bot_risk.get())
             
+            # Tactic TSL của Bot
             active_bot_tsl = []
             if app.var_bot_tsl_be.get(): active_bot_tsl.append("BE")
             if app.var_bot_tsl_pnl.get(): active_bot_tsl.append("PNL")
@@ -233,6 +277,16 @@ def open_bot_setting_popup(app):
             if app.var_bot_tsl_swing.get(): active_bot_tsl.append("SWING")
             config.BOT_DEFAULT_TSL = "+".join(active_bot_tsl) if active_bot_tsl else "OFF"
             
+            # [KAISER FIX] LƯU CẤU HÌNH DCA/PCA CORE - TRIỆT TIÊU HARDCODE
+            config.DCA_CONFIG["MAX_STEPS"] = int(e_dca_steps.get())
+            config.DCA_CONFIG["STEP_MULTIPLIER"] = float(e_dca_mult.get())
+            config.DCA_CONFIG["DISTANCE_ATR_R"] = float(e_dca_dist.get())
+            
+            config.PCA_CONFIG["MAX_STEPS"] = int(e_pca_steps.get())
+            config.PCA_CONFIG["STEP_MULTIPLIER"] = float(e_pca_mult.get())
+            config.ADX_STRONG = float(e_pca_adx.get()) # Ngưỡng ADX dành cho nhồi PCA
+
+            # Safety Guard
             config.MAX_DAILY_LOSS_PERCENT = float(e_max_loss.get())
             config.MAX_OPEN_POSITIONS = int(e_max_open.get())
             config.MAX_TRADES_PER_DAY = int(e_max_trades.get())
@@ -242,11 +296,11 @@ def open_bot_setting_popup(app):
             config.NUM_H1_BARS = int(e_num_h1.get())
             config.NUM_M15_BARS = int(e_num_m15.get())
             
+            # Watchlist
             selected_coins = [coin for coin, var in app.bot_coin_vars.items() if var.get()]
-            if not selected_coins:
-                messagebox.showwarning("Cảnh báo", "Bạn chưa chọn đồng coin nào cho Bot. Bot sẽ ngủ đông!")
             config.BOT_ACTIVE_SYMBOLS = selected_coins
             
+            # Indicators
             config.USE_EMA_TREND_FILTER = v_ema_trend.get()
             config.TREND_EMA_PERIOD = int(e_ema_trend_p.get())
             config.USE_SUPERTREND_FILTER = v_st_trend.get()
@@ -271,11 +325,12 @@ def open_bot_setting_popup(app):
             config.TSL_LOGIC_MODE = c_tsl_logic.get()
             config.trail_atr_buffer = float(e_trail_buf.get())
             
+            # Hot-reload đồng bộ sang Daemon
             app._save_brain_live_config()
-            app.log_message(f"✅ Đã lưu cấu hình BOT. TSL Bot: {config.BOT_DEFAULT_TSL}")
+            app.log_message(f"✅ Đã cập nhật cấu hình BOT. TSL Bot: {config.BOT_DEFAULT_TSL}")
             top.destroy()
         except ValueError:
-            messagebox.showerror("Lỗi dữ liệu", "Vui lòng kiểm tra lại. Cấm nhập chữ vào ô số!")
+            messagebox.showerror("Lỗi dữ liệu", "Vui lòng kiểm tra lại các ô nhập liệu. Cấm nhập chữ vào ô số!")
 
     ctk.CTkButton(top, text="LƯU CẤU HÌNH BOT & ĐỒNG BỘ", fg_color=COL_BLUE_ACCENT, height=45, font=("Roboto", 14, "bold"), command=save_all_bot_settings).pack(pady=10, fill="x", padx=40)
 
@@ -340,19 +395,15 @@ def open_preset_config_popup(app):
     
     def save():
         try:
-            r_val = float(e_risk.get())
-            s_val = float(e_sl.get())
-            t_val = float(e_tp.get())
+            r_val, s_val, t_val = float(e_risk.get()), float(e_sl.get()), float(e_tp.get())
+            config.PRESETS[p_name]["RISK_PERCENT"] = r_val
+            config.PRESETS[p_name]["SL_PERCENT"] = s_val
+            config.PRESETS[p_name]["TP_RR_RATIO"] = t_val
+            app.save_settings()
+            top.destroy()
+            app.log_message(f"Đã cập nhật Preset {p_name}")
         except ValueError:
             messagebox.showerror("Lỗi", "Vui lòng nhập số hợp lệ.")
-            return
-
-        config.PRESETS[p_name]["RISK_PERCENT"] = r_val
-        config.PRESETS[p_name]["SL_PERCENT"] = s_val
-        config.PRESETS[p_name]["TP_RR_RATIO"] = t_val
-        app.save_settings()
-        top.destroy()
-        app.log_message(f"Đã cập nhật Preset {p_name}")
 
     ctk.CTkButton(top, text="LƯU PRESET", command=save, fg_color=COL_GREEN).pack(pady=20, fill="x", padx=30)
 
@@ -440,7 +491,7 @@ def open_edit_popup(app, ticket):
     
     top = ctk.CTkToplevel(app)
     top.title(f"Chỉnh sửa lệnh #{ticket}")
-    top.geometry("400x600")
+    top.geometry("400x650")
     top.attributes("-topmost", True)
     
     acc = app.connector.get_account_info()
@@ -448,8 +499,13 @@ def open_edit_popup(app, ticket):
     
     sym_info = app.connector.get_market_status(pos.symbol) 
     c_size = sym_info.get("contract_size", 1.0) if isinstance(sym_info, dict) else 1.0
-    
     is_buy = pos.type == 0 
+    
+    # Logic chặn đệ quy cho lệnh Con
+    is_child = str(ticket) in app.trade_mgr.state.get("child_to_parent", {})
+    if is_child:
+        parent_id = app.trade_mgr.state["child_to_parent"][str(ticket)]
+        ctk.CTkLabel(top, text=f"⚠️ LỆNH CON (Kế thừa từ #{parent_id})", text_color="#FFAB00", font=("Roboto", 12, "bold")).pack(pady=(10, 0))
     
     ctk.CTkLabel(top, text="NEW SL:", font=FONT_BOLD).pack(pady=(10, 2))
     ent_sl = ctk.CTkEntry(top, justify="center"); ent_sl.insert(0, str(pos.sl)); ent_sl.pack()
@@ -468,10 +524,9 @@ def open_edit_popup(app, ticket):
             if new_sl > 0:
                 loss_dist = pos.price_open - new_sl if is_buy else new_sl - pos.price_open
                 loss_usd = loss_dist * pos.volume * c_size
-                if loss_usd < 0:
-                    lbl_hint_sl.configure(text=f"~ +${abs(loss_usd):.2f} (Đã khóa lãi)", text_color="#66BB6A")
-                else:
-                    lbl_hint_sl.configure(text=f"~ -${loss_usd:.2f} ({loss_usd/balance*100:.2f}%)", text_color="#EF5350")
+                color = "#66BB6A" if loss_usd < 0 else "#EF5350"
+                txt = f"~ +${abs(loss_usd):.2f} (Lãi khóa)" if loss_usd < 0 else f"~ -${loss_usd:.2f} ({loss_usd/balance*100:.2f}%)"
+                lbl_hint_sl.configure(text=txt, text_color=color)
             else: lbl_hint_sl.configure(text="~ Không có SL", text_color="gray")
 
             if new_tp > 0:
@@ -482,11 +537,9 @@ def open_edit_popup(app, ticket):
                 else:
                     lbl_hint_tp.configure(text="TP Không hợp lệ", text_color="#EF5350")
             else: lbl_hint_tp.configure(text="~ Không có TP", text_color="gray")
-        except ValueError:
-             pass
+        except ValueError: pass
 
-    ent_sl.bind("<KeyRelease>", update_edit_previews)
-    ent_tp.bind("<KeyRelease>", update_edit_previews)
+    ent_sl.bind("<KeyRelease>", update_edit_previews); ent_tp.bind("<KeyRelease>", update_edit_previews)
     update_edit_previews()
 
     ctk.CTkFrame(top, height=2, fg_color="#333").pack(fill="x", padx=30, pady=10)
@@ -496,39 +549,38 @@ def open_edit_popup(app, ticket):
     f_bot_actions.pack(fill="x", padx=20)
     
     def apply_math_sl():
-        # FIX: Lấy data theo symbol của cái lệnh đang sửa
         target_sym_ctx = app.latest_market_context.get(pos.symbol, {})
         sl_val = target_sym_ctx.get("swing_low") if is_buy else target_sym_ctx.get("swing_high")
         atr_val = target_sym_ctx.get("atr")
-        
         if sl_val and atr_val and str(sl_val) != "--" and str(atr_val) != "--":
             sl_mult = getattr(config, "sl_atr_multiplier", 0.2)
             calc_sl = float(sl_val) - (float(atr_val) * sl_mult) if is_buy else float(sl_val) + (float(atr_val) * sl_mult)
-            ent_sl.delete(0, 'end'); ent_sl.insert(0, f"{calc_sl:.2f}")
-            update_edit_previews()
-        else:
-            messagebox.showwarning("Thiếu Data", "Chưa có dữ liệu Swing/ATR từ Daemon cho đồng coin này.")
+            ent_sl.delete(0, 'end'); ent_sl.insert(0, f"{calc_sl:.5f}"); update_edit_previews()
+        else: messagebox.showwarning("Thiếu Data", "Chưa có dữ liệu Swing/ATR.")
 
     def apply_preset_tp():
         try:
             curr_sl = float(ent_sl.get())
             if curr_sl <= 0: raise ValueError
             params = config.PRESETS.get(app.cbo_preset.get(), config.PRESETS["SCALPING"])
-            rr = params.get("TP_RR_RATIO", 1.5)
             dist = abs(pos.price_open - curr_sl)
-            calc_tp = pos.price_open + (dist * rr) if is_buy else pos.price_open - (dist * rr)
-            ent_tp.delete(0, 'end'); ent_tp.insert(0, f"{calc_tp:.2f}")
-            update_edit_previews()
-        except:
-            messagebox.showwarning("Lỗi", "Hãy xác định SL (hoặc Math SL) trước khi tính TP.")
+            calc_tp = pos.price_open + (dist * params.get("TP_RR_RATIO", 1.5)) if is_buy else pos.price_open - (dist * params.get("TP_RR_RATIO", 1.5))
+            ent_tp.delete(0, 'end'); ent_tp.insert(0, f"{calc_tp:.5f}"); update_edit_previews()
+        except: messagebox.showwarning("Lỗi", "Hãy xác định SL trước.")
 
     ctk.CTkButton(f_bot_actions, text="Lấy Math SL", width=140, fg_color="#1565C0", command=apply_math_sl).pack(side="left", padx=5)
     ctk.CTkButton(f_bot_actions, text="Lấy Preset TP", width=140, fg_color="#2E7D32", command=apply_preset_tp).pack(side="right", padx=5)
     
     f_chk = ctk.CTkFrame(top, fg_color="transparent")
     f_chk.pack(pady=10)
-    chk_dca = ctk.CTkCheckBox(f_chk, text="Cho phép Auto DCA", font=("Roboto", 11), text_color="gray"); chk_dca.pack(side="left", padx=10)
-    chk_pca = ctk.CTkCheckBox(f_chk, text="Cho phép Auto PCA", font=("Roboto", 11), text_color="gray"); chk_pca.pack(side="left")
+    
+    chk_dca = ctk.CTkCheckBox(f_chk, text="Cho phép Auto DCA", font=("Roboto", 11), text_color="gray")
+    chk_dca.pack(side="left", padx=10)
+    chk_pca = ctk.CTkCheckBox(f_chk, text="Cho phép Auto PCA", font=("Roboto", 11), text_color="gray")
+    chk_pca.pack(side="left")
+
+    if is_child:
+        chk_dca.configure(state="disabled"); chk_pca.configure(state="disabled")
 
     ctk.CTkLabel(top, text="GHI ĐÈ CHIẾN THUẬT CHO LỆNH NÀY:", font=FONT_BOLD, text_color="#FFB300").pack(pady=(10, 5))
     f_btns = ctk.CTkFrame(top, fg_color="transparent")
@@ -549,7 +601,6 @@ def open_edit_popup(app, ticket):
             new_stt = app.tsl_states_map.get(ticket, "Monitoring...")
             lbl_tactic_preview.configure(text=f"Status: {new_stt}")
         top.after(500, live_update_tactic_status) 
-        
     live_update_tactic_status()
 
     def update_pbtns():
@@ -572,24 +623,15 @@ def open_edit_popup(app, ticket):
     def save():
         try:
             sl_val, tp_val = float(ent_sl.get()), float(ent_tp.get())
-        except ValueError:
-            messagebox.showerror("Lỗi", "Vui lòng nhập số hợp lệ.")
-            return
-
-        try:
             app.connector.modify_position(ticket, sl_val, tp_val)
             act = [k for k,v in p_states.items() if v]
             new_t = "+".join(act) if act else "OFF"
-            if chk_dca.get(): new_t += "+AUTO_DCA"
-            if chk_pca.get(): new_t += "+AUTO_PCA"
-            
+            if not is_child:
+                if chk_dca.get(): new_t += "+AUTO_DCA"
+                if chk_pca.get(): new_t += "+AUTO_PCA"
             app.trade_mgr.update_trade_tactic(ticket, new_t)
-            
-            ent_sl.unbind("<KeyRelease>"); ent_tp.unbind("<KeyRelease>")
-            top.destroy()
-            app.log_message(f"Đã cập nhật lệnh #{ticket} [{new_t}]")
-        except Exception as e:
-            app.log_message(f"Lỗi khi update lệnh: {e}", error=True)
+            top.destroy(); app.log_message(f"Đã cập nhật lệnh #{ticket} [{new_t}]")
+        except Exception as e: messagebox.showerror("Lỗi", str(e))
 
     ctk.CTkButton(top, text="CẬP NHẬT LỆNH", height=40, fg_color="#2e7d32", command=save).pack(pady=15, fill="x", padx=30)
 

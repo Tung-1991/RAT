@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # FILE: core/storage_manager.py
-# V8.0: ADD TRADE TACTICS STORAGE
+# V8.1: ADD PARENT-CHILD BASKET STORAGE FOR DCA/PCA
 
 import json
 import os
@@ -61,7 +61,9 @@ def load_state() -> Dict[str, Any]:
         "active_trades": [],
         "tsl_disabled_tickets": [], # (Legacy) Giữ lại để tương thích ngược
         "daily_history": [],
-        "trade_tactics": {}         # (V8.0) Lưu tactic TSL cho từng lệnh: {ticket: "STEP_R"}
+        "trade_tactics": {},        # Lưu tactic TSL cho từng lệnh: {ticket: "STEP_R"}
+        "parent_baskets": {},       # (V8.1) Lưu mảng lệnh Con theo Mẹ: {"111": ["222", "333"]}
+        "child_to_parent": {}       # (V8.1) Map từ lệnh Con ngược về Mẹ: {"222": "111"}
     }
     
     os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
@@ -76,7 +78,9 @@ def load_state() -> Dict[str, Any]:
             # --- Migrations cho version cũ ---
             if "daily_history" not in state: state["daily_history"] = []
             if "tsl_disabled_tickets" not in state: state["tsl_disabled_tickets"] = []
-            if "trade_tactics" not in state: state["trade_tactics"] = {} # Khởi tạo nếu chưa có
+            if "trade_tactics" not in state: state["trade_tactics"] = {} 
+            if "parent_baskets" not in state: state["parent_baskets"] = {} 
+            if "child_to_parent" not in state: state["child_to_parent"] = {}
 
             # LOGIC NGÀY MỚI (Dùng hàm get_today_str mới)
             current_date = get_today_str()
@@ -99,7 +103,8 @@ def load_state() -> Dict[str, Any]:
                 state["losing_streak"] = 0 
                 state["daily_history"] = [] 
                 state["starting_balance"] = 0.0 
-                # Lưu ý: active_trades và trade_tactics KHÔNG reset vì lệnh có thể treo qua đêm
+                # Lưu ý: active_trades, trade_tactics, parent_baskets, child_to_parent 
+                # KHÔNG reset vì lệnh có thể treo qua đêm
                 
             return state
     except Exception as e:

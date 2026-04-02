@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # FILE: config.py
-# V6.5: STANDARDIZED TIMEFRAME STRINGS (KAISER EDITION)
+# V6.6: PARENT-CHILD BASKET DCA/PCA SETTINGS (KAISER EDITION)
 
 import os
 
@@ -100,7 +100,6 @@ USE_DYNAMIC_ATR_BUFFER = False
 # ==============================================================================
 # 7. BỘ NÃO PHÂN TÍCH - DAEMON & SIGNAL
 # ==============================================================================
-# FIX: Chuyển về định dạng chuẩn '1h' và '15m' để Connector không báo lỗi
 trend_timeframe = "1h"              
 entry_timeframe = "15m"             
 NUM_H1_BARS, NUM_M15_BARS = 70, 70  
@@ -152,17 +151,17 @@ TREND_EMA_PERIOD = 50
 ENTRY_EMA_PERIOD = 21           
 
 # ==============================================================================
-# 9. TÍNH NĂNG NHỒI LỆNH (AUTO DCA/PCA)
+# 9. TÍNH NĂNG NHỒI LỆNH (AUTO DCA/PCA - PARENT/CHILD BASKET)
 # ==============================================================================
 DCA_CONFIG = {
-    "ENABLED": False,               
-    "MAX_STEPS": 3,                 
-    "STEP_MULTIPLIER": 1.5,         
-    "DISTANCE_ATR_R": 1.0           
+    "ENABLED": False,               # Công tắc tổng (fallback nếu không dùng config từ UI)
+    "MAX_STEPS": 3,                 # Số lần nhồi lỗ tối đa
+    "STEP_MULTIPLIER": 1.5,         # Hệ số Volume so với lệnh trước
+    "DISTANCE_ATR_R": 1.0           # Khoảng cách đi ngược hướng kích hoạt (nhân với ATR)
 }
 PCA_CONFIG = {
-    "ENABLED": False,               
-    "MAX_STEPS": 2,                 
-    "STEP_MULTIPLIER": 0.5,         
-    "CONFIRM_INDICATOR": "ADX"      
+    "ENABLED": False,               # Công tắc tổng
+    "MAX_STEPS": 2,                 # Số lần nhồi thuận tối đa
+    "STEP_MULTIPLIER": 0.5,         # Hệ số Volume (nhỏ dần để giữ an toàn)
+    "CONFIRM_INDICATOR": "ADX"      # Yêu cầu ADX > 25 (hoặc ADX_STRONG) để nhồi
 }

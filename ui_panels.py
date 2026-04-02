@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # FILE: ui_panels.py
-# V6.0: STATIC UI PANELS - DEPENDENCY INJECTION (KAISER EDITION)
-# UPDATE: BOLD FONT FOR MARKET CONTEXT
+# V8.2: STATIC UI PANELS - DEPENDENCY INJECTION (KAISER EDITION)
+# UPDATE: RELOCATED BOT SETTING TO COIN ROW TO FIX OVERFLOW
 
 import customtkinter as ctk
 import tkinter as tk
@@ -52,21 +52,30 @@ def setup_left_panel(app, parent):
     f_set.pack(fill="x", padx=5, pady=5)
     f_set.columnconfigure(1, weight=1)
 
+    # --- DÒNG 1: COIN & CẤU HÌNH BOT (ĐÃ CHUYỂN VỊ TRÍ) ---
     ctk.CTkLabel(f_set, text="COIN:", font=FONT_SECTION, text_color="gray").grid(row=0, column=0, sticky="w")
     f_coin_row = ctk.CTkFrame(f_set, fg_color="transparent")
     f_coin_row.grid(row=0, column=1, sticky="ew", padx=5)
     
-    app.cbo_symbol = ctk.CTkOptionMenu(f_coin_row, values=config.COIN_LIST, font=FONT_BOLD, width=120, command=app.on_symbol_change)
+    app.cbo_symbol = ctk.CTkOptionMenu(f_coin_row, values=config.COIN_LIST, font=FONT_BOLD, width=100, command=app.on_symbol_change)
     if config.DEFAULT_SYMBOL in config.COIN_LIST:
         app.cbo_symbol.set(config.DEFAULT_SYMBOL)
     elif len(config.COIN_LIST) > 0:
         app.cbo_symbol.set(config.COIN_LIST[0])
-        
     app.cbo_symbol.pack(side="left")
     
-    app.chk_force = ctk.CTkCheckBox(f_coin_row, text="Force", variable=app.var_bypass_checklist, font=("Roboto", 11, "bold"), text_color=COL_WARN, width=60, checkbox_width=18, checkbox_height=18)
-    app.chk_force.pack(side="right", padx=5)
+    # [KAISER] Đèn Auto và nút BOT được dời lên đây
+    f_bot_controls = ctk.CTkFrame(f_coin_row, fg_color="transparent")
+    f_bot_controls.pack(side="left", padx=10)
+    
+    app.ind_auto_light = ctk.CTkFrame(f_bot_controls, width=14, height=14, corner_radius=7, fg_color=COL_RED)
+    app.ind_auto_light.pack(side="left", padx=(0, 6))
+    ctk.CTkButton(f_bot_controls, text="⚙ BOT", width=40, height=24, fg_color="#4A148C", hover_color="#6A1B9A", command=app.open_bot_setting_popup).pack(side="left")
 
+    app.chk_force = ctk.CTkCheckBox(f_coin_row, text="Force", variable=app.var_bypass_checklist, font=("Roboto", 11, "bold"), text_color=COL_WARN, width=60, checkbox_width=18, checkbox_height=18)
+    app.chk_force.pack(side="right", padx=0)
+
+    # --- DÒNG 2: MODE ---
     ctk.CTkLabel(f_set, text="MODE:", font=FONT_SECTION, text_color="gray").grid(row=1, column=0, sticky="w", pady=5)
     f_mode_row = ctk.CTkFrame(f_set, fg_color="transparent")
     f_mode_row.grid(row=1, column=1, sticky="ew", padx=5)
@@ -74,32 +83,33 @@ def setup_left_panel(app, parent):
     app.cbo_preset = ctk.CTkOptionMenu(f_mode_row, values=list(config.PRESETS.keys()), font=FONT_MAIN, width=100)
     app.cbo_preset.set(config.DEFAULT_PRESET)
     app.cbo_preset.pack(side="left", fill="x", expand=True)
-    ctk.CTkButton(f_mode_row, text="⚙", width=30, fg_color="#444", hover_color="#666", command=app.open_preset_config_popup).pack(side="left", padx=(2,0))
+    ctk.CTkButton(f_mode_row, text="⚙", width=30, height=28, fg_color="#444", hover_color="#666", command=app.open_preset_config_popup).pack(side="left", padx=(2,0))
     app.cbo_account_type = ctk.CTkOptionMenu(f_mode_row, values=list(config.ACCOUNT_TYPES_CONFIG.keys()), font=FONT_MAIN, width=80)
     app.cbo_account_type.set(config.DEFAULT_ACCOUNT_TYPE)
     app.cbo_account_type.pack(side="right", fill="x", padx=(5,0))
 
+    # --- DÒNG 3: TACTIC (ĐÃ RÚT GỌN CHỈ CÒN TSL) ---
     ctk.CTkLabel(f_set, text="TACTIC:", font=FONT_SECTION, text_color="gray").grid(row=2, column=0, sticky="w", pady=5)
     f_tsl_row = ctk.CTkFrame(f_set, fg_color="transparent")
     f_tsl_row.grid(row=2, column=1, sticky="ew", padx=5)
 
-    app.btn_tactic_be = ctk.CTkButton(f_tsl_row, text="BE", width=35, command=lambda: app.toggle_tactic("BE"))
+    app.btn_tactic_be = ctk.CTkButton(f_tsl_row, text="BE", width=32, command=lambda: app.toggle_tactic("BE"))
     app.btn_tactic_be.pack(side="left", padx=1)
-    app.btn_tactic_pnl = ctk.CTkButton(f_tsl_row, text="PNL", width=35, command=lambda: app.toggle_tactic("PNL"))
+    app.btn_tactic_pnl = ctk.CTkButton(f_tsl_row, text="PNL", width=32, command=lambda: app.toggle_tactic("PNL"))
     app.btn_tactic_pnl.pack(side="left", padx=1)
-    app.btn_tactic_step = ctk.CTkButton(f_tsl_row, text="STEP", width=35, command=lambda: app.toggle_tactic("STEP_R"))
+    app.btn_tactic_step = ctk.CTkButton(f_tsl_row, text="STEP", width=38, command=lambda: app.toggle_tactic("STEP_R"))
     app.btn_tactic_step.pack(side="left", padx=1)
-    app.btn_tactic_swing = ctk.CTkButton(f_tsl_row, text="SWING", width=35, command=lambda: app.toggle_tactic("SWING"))
+    app.btn_tactic_swing = ctk.CTkButton(f_tsl_row, text="SWING", width=42, command=lambda: app.toggle_tactic("SWING"))
     app.btn_tactic_swing.pack(side="left", padx=1)
     
+    app.btn_tactic_dca = ctk.CTkButton(f_tsl_row, text="DCA", width=35, command=lambda: app.toggle_tactic("AUTO_DCA"))
+    app.btn_tactic_dca.pack(side="left", padx=1)
+    app.btn_tactic_pca = ctk.CTkButton(f_tsl_row, text="PCA", width=35, command=lambda: app.toggle_tactic("AUTO_PCA"))
+    app.btn_tactic_pca.pack(side="left", padx=1)
+    
     f_btn_settings = ctk.CTkFrame(f_tsl_row, fg_color="transparent")
-    f_btn_settings.pack(side="right", padx=(5,0))
-    
-    app.ind_auto_light = ctk.CTkFrame(f_btn_settings, width=14, height=14, corner_radius=7, fg_color=COL_RED)
-    app.ind_auto_light.pack(side="left", padx=(0, 6))
-    
-    ctk.CTkButton(f_btn_settings, text="⚙ TSL", width=40, fg_color="#424242", hover_color="#616161", command=app.open_tsl_popup).pack(side="left", padx=2)
-    ctk.CTkButton(f_btn_settings, text="⚙ BOT", width=40, fg_color="#4A148C", hover_color="#6A1B9A", command=app.open_bot_setting_popup).pack(side="left")
+    f_btn_settings.pack(side="right", padx=(0,0))
+    ctk.CTkButton(f_btn_settings, text="⚙ TSL", width=38, height=24, fg_color="#424242", hover_color="#616161", command=app.open_tsl_popup).pack(side="right")
     
     app.update_tactic_buttons_ui()
 
