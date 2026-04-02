@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 # FILE: main.py
-# V6.0: REFACTORED CORE - DEPENDENCY INJECTION & LOG INTERCEPTOR (KAISER EDITION)
-# UPDATE: LIVE COUNTDOWN BRAIN & DYNAMIC MARKET CONTEXT UI
+# V6.9: REFACTORED CORE - MULTI-COIN DICTIONARY SYNC (KAISER EDITION)
 
 import customtkinter as ctk
 import tkinter as tk
@@ -56,11 +55,10 @@ class Suppress10025Filter(logging.Filter):
 main_logger = logging.getLogger("ExnessBot")
 main_logger.addFilter(Suppress10025Filter())
 
-
 class BotUI(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("RiceAutoTrading - Master Control V6.0 (Kaiser Edition)")
+        self.title("RiceAutoTrading - Master Control V6.9 (Kaiser Edition)")
         self.geometry("1650x950")
         
         self.var_auto_trade = tk.BooleanVar(value=False)
@@ -85,7 +83,6 @@ class BotUI(ctk.CTk):
         self.last_price_val = 0.0
         self.latest_market_context = {} 
         
-        # Biến phục vụ Live Countdown của Brain
         self.brain_status = "CHỜ KẾT NỐI..."
         self.brain_wakeup_time = 0
         self.brain_active_symbols = []
@@ -130,7 +127,7 @@ class BotUI(ctk.CTk):
         )
         self.signal_listener.start()
         
-        self.log_message("Hệ thống V6.0 (Tái cấu trúc UI) đã sẵn sàng.")
+        self.log_message("Hệ thống V6.9 (Multi-Coin Sync) đã sẵn sàng.")
 
     def start_daemon_process(self):
         try:
@@ -278,7 +275,6 @@ class BotUI(ctk.CTk):
             time.sleep(config.LOOP_SLEEP_SECONDS)
 
     def update_ui(self, acc, state, check_res, tick, preset, sym, positions):
-        # 1. LIVE COUNTDOWN & COIN INFO (Brain Status)
         sym_count = len(self.brain_active_symbols)
         if "SLEEPING" in self.brain_status:
             rem = int(self.brain_wakeup_time - time.time())
@@ -291,12 +287,14 @@ class BotUI(ctk.CTk):
         else:
             self.lbl_brain_status.configure(text=f"🧠 BRAIN: {self.brain_status}", text_color=COL_RED)
 
-        # 2. MARKET CONTEXT DYNAMIC COLOR
-        if self.latest_market_context:
-            tr = self.latest_market_context.get("trend", "--")
-            sh = self.latest_market_context.get("swing_high", "--")
-            sl = self.latest_market_context.get("swing_low", "--")
-            atr = self.latest_market_context.get("atr", "--")
+        # FIX UI: Lấy đúng Context của đồng coin đang chọn trên UI
+        sym_ctx = self.latest_market_context.get(sym, {})
+        
+        if sym_ctx:
+            tr = sym_ctx.get("trend", "--")
+            sh = sym_ctx.get("swing_high", "--")
+            sl = sym_ctx.get("swing_low", "--")
+            atr = sym_ctx.get("atr", "--")
             
             sh_str = f"{sh:.2f}" if isinstance(sh, (int, float)) and sh > 0 else "--"
             sl_str = f"{sl:.2f}" if isinstance(sl, (int, float)) and sl > 0 else "--"
@@ -307,7 +305,6 @@ class BotUI(ctk.CTk):
         else:
             self.lbl_market_context.configure(text="Trend: -- | SHigh: -- | SLow: -- | ATR: --", text_color="#78909C")
 
-        # 3. EXISTING RENDER LOGIC
         d = self.seg_direction.get()
         self.var_direction.set(d)
         cur_tactic_str = self.get_current_tactic_string()
@@ -505,9 +502,12 @@ class BotUI(ctk.CTk):
         try: ml, mt, ms = float(self.var_manual_lot.get() or 0), float(self.var_manual_tp.get() or 0), float(self.var_manual_sl.get() or 0)
         except: ml = mt = ms = 0.0
         
+        # FIX: Tính năng hỗ trợ đặt lệnh lấy đúng Context của symbol chuẩn bị vào lệnh
         if ms == 0.0 and self.var_assist_math_sl.get():
-            sl_val = self.latest_market_context.get("swing_low") if d == "BUY" else self.latest_market_context.get("swing_high")
-            atr_val = self.latest_market_context.get("atr")
+            target_sym_ctx = self.latest_market_context.get(s, {})
+            sl_val = target_sym_ctx.get("swing_low") if d == "BUY" else target_sym_ctx.get("swing_high")
+            atr_val = target_sym_ctx.get("atr")
+            
             if sl_val and atr_val:
                 sl_mult = getattr(config, "sl_atr_multiplier", 0.2)
                 ms = float(sl_val) - (float(atr_val) * sl_mult) if d == "BUY" else float(sl_val) + (float(atr_val) * sl_mult)

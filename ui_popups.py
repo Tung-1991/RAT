@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # FILE: ui_popups.py
-# V6.3: DIALOGS & SETTINGS - ADDED INDEPENDENT BOT TSL (KAISER EDITION)
+# V6.9: DIALOGS & SETTINGS - MULTI COIN FIX (KAISER EDITION)
 
 import customtkinter as ctk
 import tkinter as tk
@@ -17,12 +17,12 @@ COL_WARN = "#FFAB00"
 COL_BOT_TAG = "#E040FB"
 
 # ==============================================================================
-# 1. POPUP CẤU HÌNH BỘ NÃO BOT (GRID LAYOUT & SAFETY GUARD)
+# 1. POPUP CẤU HÌNH BỘ NÃO BOT
 # ==============================================================================
 def open_bot_setting_popup(app):
     top = ctk.CTkToplevel(app)
     top.title("Cấu hình Bộ não & Chiến thuật Bot")
-    top.geometry("850x850") 
+    top.geometry("850x700")  # FIX: Resize lại cho vừa màn hình
     top.attributes("-topmost", True)
     
     tabview = ctk.CTkTabview(top)
@@ -67,7 +67,7 @@ def open_bot_setting_popup(app):
 
     ctk.CTkFrame(tab_core, height=2, fg_color="#333").pack(fill="x", padx=30, pady=10)
 
-    # --- BOT TSL TACTIC (ĐỘC LẬP) ---
+    # --- BOT TSL TACTIC ---
     ctk.CTkLabel(tab_core, text="BOT TSL TACTIC (ĐỘC LẬP VỚI MANUAL)", font=FONT_BOLD, text_color="#29B6F6").pack(pady=(5, 5))
     f_bot_tsl = ctk.CTkFrame(tab_core, fg_color="#2b2b2b", corner_radius=8)
     f_bot_tsl.pack(fill="x", padx=15, pady=5)
@@ -85,13 +85,12 @@ def open_bot_setting_popup(app):
 
     ctk.CTkFrame(tab_core, height=2, fg_color="#333").pack(fill="x", padx=30, pady=10)
 
-    # --- HÀNG RÀO BẢO VỆ & ENGINE (SAFETY GUARD) ---
+    # --- HÀNG RÀO BẢO VỆ ---
     ctk.CTkLabel(tab_core, text="HÀNG RÀO BẢO VỆ & DỮ LIỆU (SAFETY GUARD)", font=FONT_BOLD, text_color="#FFB300").pack(pady=(5, 5))
     f_safety = ctk.CTkFrame(tab_core, fg_color="#2b2b2b", corner_radius=8)
     f_safety.pack(fill="x", padx=15, pady=5)
     f_safety.columnconfigure((0, 2), weight=1)
 
-    # Row 0
     ctk.CTkLabel(f_safety, text="Max Loss/Ngày (%):").grid(row=0, column=0, sticky="w", padx=10, pady=8)
     e_max_loss = ctk.CTkEntry(f_safety, width=70, justify="center")
     e_max_loss.insert(0, str(getattr(config, "MAX_DAILY_LOSS_PERCENT", 2.5)))
@@ -102,7 +101,6 @@ def open_bot_setting_popup(app):
     e_max_open.insert(0, str(getattr(config, "MAX_OPEN_POSITIONS", 3)))
     e_max_open.grid(row=0, column=3, sticky="w", padx=10, pady=8)
 
-    # Row 1
     ctk.CTkLabel(f_safety, text="Tổng Lệnh/Ngày:").grid(row=1, column=0, sticky="w", padx=10, pady=8)
     e_max_trades = ctk.CTkEntry(f_safety, width=70, justify="center")
     e_max_trades.insert(0, str(getattr(config, "MAX_TRADES_PER_DAY", 30)))
@@ -113,7 +111,6 @@ def open_bot_setting_popup(app):
     e_max_streak.insert(0, str(getattr(config, "MAX_LOSING_STREAK", 3)))
     e_max_streak.grid(row=1, column=3, sticky="w", padx=10, pady=8)
 
-    # Row 2
     ctk.CTkLabel(f_safety, text="Chế độ tính Loss:").grid(row=2, column=0, sticky="w", padx=10, pady=8)
     cbo_loss_mode = ctk.CTkOptionMenu(f_safety, values=["TOTAL", "STREAK"], width=90)
     cbo_loss_mode.set(str(getattr(config, "LOSS_COUNT_MODE", "TOTAL")))
@@ -124,7 +121,6 @@ def open_bot_setting_popup(app):
     e_cooldown.insert(0, str(getattr(config, "COOLDOWN_MINUTES", 1)))
     e_cooldown.grid(row=2, column=3, sticky="w", padx=10, pady=8)
 
-    # Row 3
     ctk.CTkLabel(f_safety, text="Số nến H1 (Quét):").grid(row=3, column=0, sticky="w", padx=10, pady=8)
     e_num_h1 = ctk.CTkEntry(f_safety, width=70, justify="center")
     e_num_h1.insert(0, str(getattr(config, "NUM_H1_BARS", 70)))
@@ -230,7 +226,6 @@ def open_bot_setting_popup(app):
         try:
             config.BOT_RISK_PERCENT = float(e_bot_risk.get())
             
-            # Lưu TSL Độc Lập cho Bot
             active_bot_tsl = []
             if app.var_bot_tsl_be.get(): active_bot_tsl.append("BE")
             if app.var_bot_tsl_pnl.get(): active_bot_tsl.append("PNL")
@@ -294,9 +289,8 @@ def open_bot_setting_popup(app):
     ctk.CTkCheckBox(tab_ast, text="Kích hoạt Auto DCA (Trung bình giá)", variable=app.var_assist_dca).pack(anchor="w", padx=50, pady=10)
     ctk.CTkCheckBox(tab_ast, text="Kích hoạt Auto PCA (Nhồi lệnh trend)", variable=app.var_assist_pca).pack(anchor="w", padx=50, pady=10)
 
-
 # ==============================================================================
-# 2. CÁC POPUP CẤU HÌNH KHÁC (PRESET, TSL, EDIT, HISTORY)
+# CÁC POPUP CẤU HÌNH KHÁC (PRESET, TSL, EDIT, HISTORY)
 # ==============================================================================
 def open_preset_config_popup(app):
     p_name = app.cbo_preset.get()
@@ -361,7 +355,6 @@ def open_preset_config_popup(app):
         app.log_message(f"Đã cập nhật Preset {p_name}")
 
     ctk.CTkButton(top, text="LƯU PRESET", command=save, fg_color=COL_GREEN).pack(pady=20, fill="x", padx=30)
-
 
 def open_tsl_popup(app):
     top = ctk.CTkToplevel(app); top.title("Cấu hình TSL Logic"); top.geometry("420x580"); top.attributes("-topmost", True)
@@ -440,7 +433,6 @@ def open_tsl_popup(app):
 
     ctk.CTkButton(top, text="LƯU CẤU HÌNH TSL", height=35, font=("Roboto", 13, "bold"), command=save_cfg, fg_color=COL_GREEN).pack(pady=15, fill="x", padx=40)
 
-
 def open_edit_popup(app, ticket):
     positions = app.connector.get_all_open_positions()
     pos = next((p for p in positions if p.ticket == ticket), None)
@@ -504,15 +496,18 @@ def open_edit_popup(app, ticket):
     f_bot_actions.pack(fill="x", padx=20)
     
     def apply_math_sl():
-        sl_val = app.latest_market_context.get("swing_low") if is_buy else app.latest_market_context.get("swing_high")
-        atr_val = app.latest_market_context.get("atr")
+        # FIX: Lấy data theo symbol của cái lệnh đang sửa
+        target_sym_ctx = app.latest_market_context.get(pos.symbol, {})
+        sl_val = target_sym_ctx.get("swing_low") if is_buy else target_sym_ctx.get("swing_high")
+        atr_val = target_sym_ctx.get("atr")
+        
         if sl_val and atr_val and str(sl_val) != "--" and str(atr_val) != "--":
             sl_mult = getattr(config, "sl_atr_multiplier", 0.2)
             calc_sl = float(sl_val) - (float(atr_val) * sl_mult) if is_buy else float(sl_val) + (float(atr_val) * sl_mult)
             ent_sl.delete(0, 'end'); ent_sl.insert(0, f"{calc_sl:.2f}")
             update_edit_previews()
         else:
-            messagebox.showwarning("Thiếu Data", "Chưa có dữ liệu Swing/ATR từ Daemon.")
+            messagebox.showwarning("Thiếu Data", "Chưa có dữ liệu Swing/ATR từ Daemon cho đồng coin này.")
 
     def apply_preset_tp():
         try:
@@ -588,7 +583,6 @@ def open_edit_popup(app, ticket):
             if chk_dca.get(): new_t += "+AUTO_DCA"
             if chk_pca.get(): new_t += "+AUTO_PCA"
             
-            # Hàm này sẽ gọi vào core/trade_manager.py
             app.trade_mgr.update_trade_tactic(ticket, new_t)
             
             ent_sl.unbind("<KeyRelease>"); ent_tp.unbind("<KeyRelease>")

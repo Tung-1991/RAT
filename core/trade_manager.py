@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # FILE: core/trade_manager.py
-# V6.4: REFACTORED TSL - INDIVIDUAL TICKET TRACKING (KAISER EDITION)
+# V7.2: REFACTORED TSL - TRUE STATIC/AGGRESSIVE LOGIC (KAISER EDITION)
 
 import logging
 import config
@@ -40,7 +40,6 @@ class TradeManager:
     # 1. HÀM THỰC THI LỆNH CHO BOT
     # ====================================================================================
     def execute_bot_trade(self, direction, symbol, sl_price, tp_price, bot_risk_percent, tactic_str):
-        """Hàm chuyên dụng bóp cò cho Bot. Nhận tham số trực tiếp từ Daemon."""
         config.SYMBOL = symbol 
         acc_info = self.connector.get_account_info()
         
@@ -103,7 +102,6 @@ class TradeManager:
     def execute_manual_trade(self, direction, preset_name, symbol, strict_mode, 
                              manual_lot=0.0, manual_tp=0.0, manual_sl=0.0, bypass_checklist=False, 
                              tsl_mode="BE+STEP_R"):
-        """Hàm dành riêng cho User thao tác trên bảng điều khiển Master UI."""
         config.SYMBOL = symbol 
         acc_info = self.connector.get_account_info()
         res = self.checklist.run_pre_trade_checks(acc_info, self.state, symbol, strict_mode)
@@ -184,9 +182,9 @@ class TradeManager:
         return f"ERR_MT5: {err_msg}"
 
     # ====================================================================================
-    # 3. LOGIC CẬP NHẬT TRẠNG THÁI VÀ DỜI TSL ĐỘC LẬP TỪNG TICKET (KAISER FIX)
+    # 3. LOGIC CẬP NHẬT TRẠNG THÁI VÀ DỜI TSL ĐỘC LẬP TỪNG TICKET
     # ====================================================================================
-    def update_running_trades(self, account_type="STANDARD", market_context=None):
+    def update_running_trades(self, account_type="STANDARD", all_market_contexts=None):
         tsl_status_map = {} 
         try:
             current_positions = self.connector.get_all_open_positions()
@@ -229,11 +227,12 @@ class TradeManager:
                         self.state["active_trades"].remove(ticket)
                 save_state(self.state)
 
-            # 2. XỬ LÝ TSL CHO TỪNG LỆNH ĐỘC LẬP (ĐÃ PHÁ VỠ BASKET)
+            # 2. XỬ LÝ TSL CHO TỪNG LỆNH ĐỘC LẬP
             bot_positions = [p for p in current_positions if p.magic == config.MAGIC_NUMBER]
             
             for pos in bot_positions:
-                status = self._apply_individual_trailing_logic(pos, market_context)
+                symbol_context = all_market_contexts.get(pos.symbol, {}) if all_market_contexts else {}
+                status = self._apply_individual_trailing_logic(pos, symbol_context)
                 tsl_status_map[pos.ticket] = status
 
         except Exception as e:
@@ -241,8 +240,7 @@ class TradeManager:
         
         return tsl_status_map
 
-    def _apply_individual_trailing_logic(self, pos, market_context):
-        """Xử lý TSL độc lập cho một Ticket cụ thể, đọc cấu hình riêng biệt."""
+    def _apply_individual_trailing_logic(self, pos, symbol_context):
         tactic_str = self.get_trade_tactic(pos.ticket)
         if tactic_str == "OFF": return "TSL OFF"
 
@@ -263,7 +261,6 @@ class TradeManager:
         s_ticket = str(pos.ticket)
         one_r_dist = self.state.get("initial_r_dist", {}).get(s_ticket, 0.0)
 
-        # Trích xuất 1R mặc định nếu thiếu
         if one_r_dist == 0:
             preset_name = pos.comment.split("_")[1] if (pos.comment and "_" in pos.comment) else "SCALPING"
             params = config.PRESETS.get(preset_name, config.PRESETS["SCALPING"])
@@ -328,10 +325,10 @@ class TradeManager:
                         break
                 if best_pnl_sl: candidates.append((best_pnl_sl, "PNL"))
 
-        # 4. TSL SWING
-        if "SWING" in active_modes and market_context:
-            sh, sl, atr = market_context.get("swing_high"), market_context.get("swing_low"), market_context.get("atr")
-            trend_adx = market_context.get("trend", "UP")
+        # 4. TSL SWING (KAISER FIX: True Static/Aggressive Logic + Guard)
+        if "SWING" in active_modes and symbol_context:
+            sh, sl, atr = symbol_context.get("swing_high"), symbol_context.get("swing_low"), symbol_context.get("atr")
+            trend_adx = symbol_context.get("trend", "UP")
             
             if sh and sl and atr and str(sh) != "--" and str(sl) != "--":
                 tsl_mode = getattr(config, "TSL_LOGIC_MODE", "STATIC")
@@ -339,25 +336,54 @@ class TradeManager:
                 sh, sl, atr = float(sh), float(sl), float(atr)
                 swing_sl = None
                 
-                if is_buy:
-                    if tsl_mode == "AGGRESSIVE": swing_sl = sh - (trail_buf * atr)
-                    elif tsl_mode == "DYNAMIC" and trend_adx != "UP": swing_sl = sh - (trail_buf * atr)
-                    else: swing_sl = sl - (trail_buf * atr)
-                else:
-                    if tsl_mode == "AGGRESSIVE": swing_sl = sl + (trail_buf * atr)
-                    elif tsl_mode == "DYNAMIC" and trend_adx != "DOWN": swing_sl = sl + (trail_buf * atr)
-                    else: swing_sl = sh + (trail_buf * atr)
+                # --- LOGIC CHUẨN: STATIC vs AGGRESSIVE ---
+                if is_buy: # LỆNH LONG
+                    if tsl_mode == "AGGRESSIVE": 
+                        swing_sl = sh - (trail_buf * atr) # Khóa gắt: Bám ngay dưới Đỉnh
+                    elif tsl_mode == "DYNAMIC" and trend_adx != "UP": 
+                        swing_sl = sh - (trail_buf * atr) # Yếu trend: Khóa gắt dưới Đỉnh
+                    else: 
+                        swing_sl = sl - (trail_buf * atr) # STATIC: An toàn dưới Đáy
+                else: # LỆNH SHORT
+                    if tsl_mode == "AGGRESSIVE": 
+                        swing_sl = sl + (trail_buf * atr) # Khóa gắt: Bám ngay trên Đáy
+                    elif tsl_mode == "DYNAMIC" and trend_adx != "DOWN": 
+                        swing_sl = sl + (trail_buf * atr) # Yếu trend: Khóa gắt trên Đáy
+                    else: 
+                        swing_sl = sh + (trail_buf * atr) # STATIC: An toàn trên Đỉnh
                 
+                # --- HÀNG RÀO CHẶN LỖI ĐỂ TRÁNH NGƯỢC TREND VÀ VÔ DỤNG ---
                 if swing_sl:
-                    candidates.append((swing_sl, f"SWING ({tsl_mode})"))
-                    milestones.append((0.0, f"SWING | {swing_sl:.2f}"))
+                    is_valid_swing = True
+                    
+                    if is_buy:
+                        if swing_sl >= current_price: # Chặn vượt giá hiện tại (Luật MT5)
+                            is_valid_swing = False
+                        elif current_sl > 0 and swing_sl <= current_sl: # Chặn lùi SL (Vô dụng)
+                            is_valid_swing = False
+                    else: 
+                        if swing_sl <= current_price: # Chặn vượt giá hiện tại (Luật MT5)
+                            is_valid_swing = False
+                        elif current_sl > 0 and swing_sl >= current_sl: # Chặn lùi SL (Vô dụng)
+                            is_valid_swing = False
+                        
+                    if is_valid_swing:
+                        candidates.append((swing_sl, f"SWING ({tsl_mode})"))
+                        milestones.append((abs(current_price - swing_sl), f"SWING | {swing_sl:.2f}"))
 
-        # Xác định nước đi dời SL tối ưu nhất
+        # Xác định nước đi dời SL tối ưu
         valid_moves = []
+        min_stop_points = getattr(sym_info, 'trade_stops_level', 0) if sym_info else 0
+        min_stop_dist = min_stop_points * point
+
         for price, rule in candidates:
             price = round(price / point) * point
-            if is_buy and price > current_sl + (point / 2): valid_moves.append((price, rule))
-            elif not is_buy and (current_sl == 0 or price < current_sl - (point / 2)): valid_moves.append((price, rule))
+            if is_buy:
+                if price > current_sl + (point / 2) and price <= current_price - min_stop_dist:
+                    valid_moves.append((price, rule))
+            else:
+                if (current_sl == 0 or price < current_sl - (point / 2)) and price >= current_price + min_stop_dist:
+                    valid_moves.append((price, rule))
 
         if valid_moves:
             best_move = max(valid_moves, key=lambda x: x[0]) if is_buy else min(valid_moves, key=lambda x: x[0])
@@ -365,7 +391,9 @@ class TradeManager:
             
             if abs(target_sl - current_sl) > (point / 2):
                 self.log(f"⚡ [TSL] Lệnh #{pos.ticket} dời SL theo {action_rule} ➔ {target_sl:.5f}")
-                self.connector.modify_position(pos.ticket, target_sl, pos.tp)
+                res = self.connector.modify_position(pos.ticket, target_sl, pos.tp)
+                if not res:
+                    return f"Wait ({action_rule})" 
                 return f"MOVED {action_rule}"
             else:
                 return action_rule
