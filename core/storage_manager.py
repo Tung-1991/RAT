@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # FILE: core/storage_manager.py
-# V8.1: ADD PARENT-CHILD BASKET STORAGE FOR DCA/PCA
+# V8.2: UPGRADED STORAGE FOR DCA/PCA & CLEAN STATE MANAGEMENT
 
 import json
 import os
@@ -58,12 +58,15 @@ def load_state() -> Dict[str, Any]:
         "starting_balance": 0.0,
         "trades_today_count": 0,
         "losing_streak": 0,
+        "daily_loss_count": 0,      # Đồng bộ từ Trade Manager
         "active_trades": [],
-        "tsl_disabled_tickets": [], # (Legacy) Giữ lại để tương thích ngược
+        "tsl_disabled_tickets": [], 
         "daily_history": [],
-        "trade_tactics": {},        # Lưu tactic TSL cho từng lệnh: {ticket: "STEP_R"}
-        "parent_baskets": {},       # (V8.1) Lưu mảng lệnh Con theo Mẹ: {"111": ["222", "333"]}
-        "child_to_parent": {}       # (V8.1) Map từ lệnh Con ngược về Mẹ: {"222": "111"}
+        "trade_tactics": {},        
+        "initial_r_dist": {},       # Đồng bộ từ Trade Manager
+        "parent_baskets": {},       
+        "child_to_parent": {},       
+        "last_child_bar_time": {}   # Khóa nến chống xả lệnh liên thanh
     }
     
     os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
@@ -75,12 +78,15 @@ def load_state() -> Dict[str, Any]:
         with open(STATE_FILE, "r") as f:
             state = json.load(f)
             
-            # --- Migrations cho version cũ ---
+            # --- Migrations cho version cũ (Chống Crash khi nâng cấp bản Bot) ---
             if "daily_history" not in state: state["daily_history"] = []
             if "tsl_disabled_tickets" not in state: state["tsl_disabled_tickets"] = []
             if "trade_tactics" not in state: state["trade_tactics"] = {} 
+            if "initial_r_dist" not in state: state["initial_r_dist"] = {}       
             if "parent_baskets" not in state: state["parent_baskets"] = {} 
             if "child_to_parent" not in state: state["child_to_parent"] = {}
+            if "last_child_bar_time" not in state: state["last_child_bar_time"] = {} 
+            if "daily_loss_count" not in state: state["daily_loss_count"] = 0    
 
             # LOGIC NGÀY MỚI (Dùng hàm get_today_str mới)
             current_date = get_today_str()
@@ -97,14 +103,15 @@ def load_state() -> Dict[str, Any]:
                     state.get("losing_streak", 0)
                 )
 
+                # Reset các biến đếm theo ngày
                 state["date"] = current_date
                 state["pnl_today"] = 0.0
                 state["trades_today_count"] = 0
                 state["losing_streak"] = 0 
+                state["daily_loss_count"] = 0  
                 state["daily_history"] = [] 
                 state["starting_balance"] = 0.0 
-                # Lưu ý: active_trades, trade_tactics, parent_baskets, child_to_parent 
-                # KHÔNG reset vì lệnh có thể treo qua đêm
+                # Lưu ý: active_trades, trade_tactics, parent_baskets... KHÔNG reset vì lệnh treo qua đêm
                 
             return state
     except Exception as e:

@@ -1,14 +1,16 @@
 # -*- coding: utf-8 -*-
 # FILE: core/trade_manager.py
-# V8.2: PARENT-CHILD BASKET & AUTO DCA/PCA (READABLE KAISER EDITION)
+# V8.2: PARENT-CHILD BASKET & AUTO DCA/PCA (READABLE KAISER EDITION) - UPGRADED
 
 import logging
 import config
 from core.storage_manager import load_state, save_state, append_trade_log
+from signals.multi_candle import get_pullback_confirmation
 import MetaTrader5 as mt5
 from datetime import datetime
 import math
 import threading
+import time
 import pandas as pd
 import pandas_ta as ta
 
@@ -26,6 +28,7 @@ class TradeManager:
         if "parent_baskets" not in self.state: self.state["parent_baskets"] = {}
         if "child_to_parent" not in self.state: self.state["child_to_parent"] = {}
         if "active_trades" not in self.state: self.state["active_trades"] = []
+        if "last_child_bar_time" not in self.state: self.state["last_child_bar_time"] = {}
         
         if self.state.get("trades_today_count", 0) == 0: 
             self.state["daily_loss_count"] = 0
@@ -45,7 +48,7 @@ class TradeManager:
         save_state(self.state)
 
     # ====================================================================================
-    # 1. HÀM THỰC THI LỆNH CHO BOT (Rõ ràng, dễ đọc)
+    # 1. HÀM THỰC THI LỆNH CHO BOT (Không TP - Thoát bằng TSL)
     # ====================================================================================
     def execute_bot_trade(self, direction, symbol, sl_price, tp_price, bot_risk_percent, tactic_str):
         config.SYMBOL = symbol 
@@ -100,7 +103,7 @@ class TradeManager:
         return "MT5_ERROR"
 
     # ====================================================================================
-    # 2. HÀM THỰC THI LỆNH TAY (CHỈ UI GỌI KHI BẤM NÚT)
+    # 2. HÀM THỰC THI LỆNH TAY (Có TP Cứng)
     # ====================================================================================
     def execute_manual_trade(self, direction, preset_name, symbol, strict_mode, 
                              manual_lot=0.0, manual_tp=0.0, manual_sl=0.0, bypass_checklist=False, 
@@ -355,7 +358,7 @@ class TradeManager:
         return "Monitoring..."
 
     # ====================================================================================
-    # 4. CHỨC NĂNG NHỒI LỆNH (MẸ - CON)
+    # 4. CHỨC NĂNG NHỒI LỆNH (MẸ - CON) - V8.2 KAISER UPGRADE
     # ====================================================================================
     def _check_dca_pca(self, pos, symbol_context, tactic_str):
         s_ticket = str(pos.ticket)
@@ -364,58 +367,95 @@ class TradeManager:
         is_buy = pos.type == mt5.ORDER_TYPE_BUY
         current_children = self.state.get("parent_baskets", {}).get(s_ticket, [])
         
-        # --- LOGIC DCA (GỒNG LỖ) ---
+        # --- 1. TÌM GIÁ CỦA LỆNH CUỐI CÙNG TRONG RỔ (Để đo khoảng cách) ---
+        last_order_price = pos.price_open
+        if current_children:
+            current_positions = self.connector.get_all_open_positions()
+            for child_t in reversed(current_children):
+                child_pos = next((p for p in current_positions if str(p.ticket) == child_t), None)
+                if child_pos:
+                    last_order_price = child_pos.price_open
+                    break
+
+        # --- 2. LẤY DỮ LIỆU NẾN & KHÓA THỜI GIAN (THROTTLING) ---
+        rates_m15 = mt5.copy_rates_from_pos(pos.symbol, mt5.TIMEFRAME_M15, 0, 30)
+        if rates_m15 is None or len(rates_m15) < 30: return
+        
+        current_bar_time = int(rates_m15[-1]['time']) # Nến đang chạy hiện tại
+        last_time_db = self.state.get("last_child_bar_time", {})
+        
+        # Nếu nến hiện tại đã được dùng để nhồi lệnh rồi -> Bỏ qua (Chống xả lệnh)
+        if last_time_db.get(s_ticket) == current_bar_time:
+            return 
+
+        # --- 3. KIỂM TRA MÔ HÌNH NẾN ĐẢO CHIỀU (PULLBACK CONFIRMATION) ---
+        df_m15 = pd.DataFrame(rates_m15)
+        ema_series = df_m15['close'].ewm(span=getattr(config, "ENTRY_EMA_PERIOD", 21), adjust=False).mean()
+        
+        # Ép Bot chỉ xét nến đã ĐÓNG CỬA (Bỏ qua nến đang chạy ở index -1)
+        df_closed = df_m15.iloc[:-1]
+        ema_closed = ema_series.iloc[:-1]
+        
+        mc_config = {"PULLBACK_CANDLE_PATTERN": getattr(config, "PULLBACK_CANDLE_PATTERN", "ENGULFING")}
+        pullback_signal = get_pullback_confirmation(df_closed, ema_closed, mc_config)
+
+        # --- 4. LOGIC DCA (GỒNG LỖ - BẮT NHỊP HỒI) ---
         if "AUTO_DCA" in tactic_str:
             dca_cfg = getattr(config, "DCA_CONFIG", {})
             if len(current_children) < dca_cfg.get("MAX_STEPS", 3):
                 atr = symbol_context.get("atr", 0)
                 if atr and atr > 0:
-                    dist = pos.price_open - pos.price_current if is_buy else pos.price_current - pos.price_open
+                    dist = last_order_price - pos.price_current if is_buy else pos.price_current - last_order_price
                     if dist >= (atr * dca_cfg.get("DISTANCE_ATR_R", 1.0)):
-                        rates = mt5.copy_rates_from_pos(pos.symbol, mt5.TIMEFRAME_M15, 0, 2)
-                        if rates is not None and len(rates) == 2:
-                            last_candle = rates[0] # Nến liền trước đã đóng
-                            is_bullish = last_candle['close'] > last_candle['open']
-                            is_bearish = last_candle['close'] < last_candle['open']
+                        
+                        # Xác nhận: Nến vừa đóng phải là nến đảo chiều có lợi
+                        if (is_buy and pullback_signal == "BUY") or (not is_buy and pullback_signal == "SELL"):
+                            self._execute_child_order(pos, "DCA", dca_cfg.get("STEP_MULTIPLIER", 1.5))
                             
-                            if (is_buy and is_bullish) or (not is_buy and is_bearish):
-                                self._execute_child_order(pos, "DCA", dca_cfg.get("STEP_MULTIPLIER", 1.5))
-                                return 
+                            # Cập nhật Time vào State để khóa nến
+                            if "last_child_bar_time" not in self.state: self.state["last_child_bar_time"] = {}
+                            self.state["last_child_bar_time"][s_ticket] = current_bar_time
+                            save_state(self.state)
+                            return 
 
-        # --- LOGIC PCA (NHỒI THUẬN) ---
+        # --- 5. LOGIC PCA (NHỒI THUẬN - BÁM TREND) ---
         if "AUTO_PCA" in tactic_str:
             pca_cfg = getattr(config, "PCA_CONFIG", {})
             if len(current_children) < pca_cfg.get("MAX_STEPS", 2):
                 is_risk_free = (is_buy and pos.sl >= pos.price_open) or (not is_buy and pos.sl > 0 and pos.sl <= pos.price_open)
-                if is_risk_free:
+                
+                # Cần cách lệnh trước một khoảng an toàn (0.5 ATR)
+                min_pca_dist = symbol_context.get("atr", 0.001) * 0.5 
+                dist_from_last = pos.price_current - last_order_price if is_buy else last_order_price - pos.price_current
+                
+                if is_risk_free and dist_from_last >= min_pca_dist:
                     h1_rates = mt5.copy_rates_from_pos(pos.symbol, mt5.TIMEFRAME_H1, 0, 20)
-                    m15_rates = mt5.copy_rates_from_pos(pos.symbol, mt5.TIMEFRAME_M15, 0, 25)
-                    
-                    if h1_rates is not None and m15_rates is not None:
+                    if h1_rates is not None:
                         df_h1 = pd.DataFrame(h1_rates)
-                        df_m15 = pd.DataFrame(m15_rates)
+                        adx_res = df_h1.ta.adx(length=getattr(config, "ADX_PERIOD", 14))
                         
-                        adx_res = df_h1.ta.adx(length=14)
                         if adx_res is not None and not adx_res.empty:
                             if adx_res.iloc[-1, 0] >= getattr(config, "ADX_STRONG", 23):
-                                ema21 = df_m15['close'].ewm(span=21, adjust=False).mean().iloc[-1]
-                                curr_p = pos.price_current
-                                last_m15 = df_m15.iloc[-1]
-                                
-                                if (is_buy and last_m15['low'] <= ema21 and curr_p > ema21) or \
-                                   (not is_buy and last_m15['high'] >= ema21 and curr_p < ema21):
+                                # Xác nhận: Nến vừa đóng phải rút chân/đảo chiều thuận Trend
+                                if (is_buy and pullback_signal == "BUY") or (not is_buy and pullback_signal == "SELL"):
                                     self._execute_child_order(pos, "PCA", pca_cfg.get("STEP_MULTIPLIER", 0.5))
+                                    
+                                    # Cập nhật Time vào State để khóa nến
+                                    if "last_child_bar_time" not in self.state: self.state["last_child_bar_time"] = {}
+                                    self.state["last_child_bar_time"][s_ticket] = current_bar_time
+                                    save_state(self.state)
 
     def _execute_child_order(self, parent_pos, mode, multiplier):
-        new_lot = round((parent_pos.volume * multiplier) / config.LOT_STEP) * config.LOT_STEP
-        new_lot = max(config.MIN_LOT_SIZE, min(new_lot, config.MAX_LOT_SIZE))
+        new_lot = round((parent_pos.volume * multiplier) / getattr(config, "LOT_STEP", 0.01)) * getattr(config, "LOT_STEP", 0.01)
+        new_lot = max(getattr(config, "MIN_LOT_SIZE", 0.01), min(new_lot, getattr(config, "MAX_LOT_SIZE", 100.0)))
         
         parent_tactic = self.get_trade_tactic(parent_pos.ticket)
         child_tactic = parent_tactic.replace("+AUTO_DCA", "").replace("+AUTO_PCA", "")
         if child_tactic.startswith("+"): child_tactic = child_tactic[1:]
         if not child_tactic: child_tactic = "OFF"
         
-        result = self.connector.place_order(parent_pos.symbol, parent_pos.type, new_lot, parent_pos.sl, parent_pos.tp, config.MAGIC_NUMBER, f"[{mode}]_Child")
+        # Mặc định lấy SL/TP của mẹ để đặt lệnh ban đầu
+        result = self.connector.place_order(parent_pos.symbol, parent_pos.type, new_lot, parent_pos.sl, parent_pos.tp, getattr(config, "MAGIC_NUMBER", 8888), f"[{mode}]_Child")
         
         if result and result.retcode == 10009:
             child_ticket = result.order
@@ -434,4 +474,48 @@ class TradeManager:
             self.state["active_trades"].append(child_ticket)
             save_state(self.state)
             
-            self.log(f"🔥 [{mode} KÍCH HOẠT] Mẹ #{s_parent} đẻ Con #{s_child} | Vol: {new_lot:.2f}")
+            self.log(f"🔥 [{mode} XÁC NHẬN NẾN] Mẹ #{s_parent} đẻ Con #{s_child} | Vol: {new_lot:.2f}")
+
+            # NẾU LÀ DCA -> GỌI LUỒNG TÍNH LẠI TAKE PROFIT TRUNG BÌNH
+            if mode == "DCA":
+                threading.Thread(target=self._adjust_basket_tp, args=(parent_pos.ticket,), daemon=True).start()
+
+    def _adjust_basket_tp(self, parent_ticket):
+        """ Kéo TP của Rổ DCA về gần điểm hòa vốn để giải cứu """
+        time.sleep(1.5) # Đợi Broker update vị thế
+        s_parent = str(parent_ticket)
+        children = self.state.get("parent_baskets", {}).get(s_parent, [])
+        if not children: return
+
+        tickets = [parent_ticket] + [int(t) for t in children]
+        positions = self.connector.get_all_open_positions()
+        basket_pos = [p for p in positions if p.ticket in tickets]
+        
+        if not basket_pos: return
+
+        total_lot = sum(p.volume for p in basket_pos)
+        total_value = sum(p.volume * p.price_open for p in basket_pos)
+        avg_price = total_value / total_lot
+        
+        is_buy = basket_pos[0].type == mt5.ORDER_TYPE_BUY
+        sym_info = mt5.symbol_info(basket_pos[0].symbol)
+        
+        # KIỂM TRA RULE: Lệnh này đập tay có TP hay Bot tự chạy không có TP?
+        has_manual_tp = basket_pos[0].tp > 0
+        
+        if has_manual_tp:
+            # Lệnh Tay: Kéo TP về giá Trung Bình Rổ + 30 points
+            tp_offset = 30 * sym_info.point
+        else:
+            # Lệnh Bot: Ép dùng TP cứu hộ = Giá Trung Bình Rổ + 50 points
+            tp_offset = 50 * sym_info.point
+            
+        new_tp = avg_price + tp_offset if is_buy else avg_price - tp_offset
+        new_tp = round(new_tp / sym_info.point) * sym_info.point
+        
+        # Cập nhật TP cho toàn bộ lệnh Mẹ và Con
+        for p in basket_pos:
+            if abs(p.tp - new_tp) > sym_info.point * 2:
+                self.connector.modify_position(p.ticket, p.sl, new_tp)
+                
+        self.log(f"🔄 [BASKET RESCUE] Kéo TP của Rổ DCA #{parent_ticket} về điểm hòa vốn: {new_tp:.5f}")
