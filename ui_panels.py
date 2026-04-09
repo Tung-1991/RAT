@@ -218,11 +218,11 @@ def setup_right_panel(app, parent):
     cols = ("Ticket", "Time", "Order", "Targets", "CostInfo", "RR", "PnL", "Status", "X")
     app.tree = ttk.Treeview(f_tree_container, columns=cols, show="headings", style="Treeview", selectmode="extended") 
     
-    app.tree.tag_configure("bot_order", foreground=COL_BOT_TAG, font=("Consolas", 11, "bold"))
-    app.tree.tag_configure("user_order", foreground="white")
+    app.tree.tag_configure("buy_row", background="#234d20", foreground="#e0e0e0") # Xanh rêu dịu
+    app.tree.tag_configure("sell_row", background="#5c1a1b", foreground="#e0e0e0") # Đỏ mận dịu
 
     headers = ["Ticket", "Thời gian", "Thông tin Lệnh", "Chốt lời/Lỗ (SL|TP)", "Chi phí/Phí qua đêm", "Rủi ro/Kỳ vọng (%)", "Lợi nhuận", "Trạng thái", "✖"]
-    widths = [180, 180, 500, 300, 350, 400, 180, 500, 50]
+    widths = [180, 180, 500, 300, 350, 450, 180, 500, 50]
     anchors= ["center", "center", "w", "center", "center", "center", "center", "w", "center"]
 
     for c, h, w, a in zip(cols, headers, widths, anchors):
@@ -255,8 +255,8 @@ def setup_right_panel(app, parent):
     app.txt_log = tk.Text(f_log, font=("Consolas", 18), bg="#121212", fg="#e0e0e0", bd=0, highlightthickness=0, state="disabled", wrap="word")
     app.txt_log.pack(fill="both", expand=True, padx=5, pady=(0,5))
     
-    app.txt_log.tag_config("INFO", foreground="#b0bec5")
-    app.txt_log.tag_config("SUCCESS", foreground=COL_GREEN) 
-    app.txt_log.tag_config("ERROR", foreground=COL_RED)   
-    app.txt_log.tag_config("WARN", foreground=COL_WARN)    
-    app.txt_log.tag_config("BLUE", foreground="#29B6F6")
+    app.txt_log.tag_config("INFO", foreground="#b0bec5") # Màu cho tin nhắn thường
+    app.txt_log.tag_config("SUCCESS", foreground=COL_GREEN)  # Màu xanh cho lệnh Lãi / Thành công
+    app.txt_log.tag_config("ERROR", foreground=COL_RED)    # Màu đỏ cho lệnh Lỗ / Lỗi
+    app.txt_log.tag_config("WARN", foreground=COL_WARN)    # Màu vàng cảnh báo
+    app.txt_log.tag_config("BLUE", foreground="#29B6F6")   # Màu xanh dương

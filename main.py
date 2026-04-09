@@ -530,11 +530,11 @@ class BotUI(ctk.CTk):
             # ----------------------------------------------------------
 
             values_data = (display_ticket, time_str, order_str, targets_str, fee_str, rr_str, f"${p.profit:.2f}", stt_txt, "❌")
-
-            tag_to_apply = "bot_order" if "[BOT]" in p.comment else "user_order"
+            tag_to_apply = "buy_row" if is_buy else "sell_row"
 
             if ticket_str in existing_items: self.tree.item(ticket_str, values=values_data, tags=(tag_to_apply,))
             else: self.tree.insert("", "end", iid=ticket_str, values=values_data, tags=(tag_to_apply,))
+
 
         for item in existing_items:
             if item not in current_tickets_on_chart:
@@ -567,7 +567,8 @@ class BotUI(ctk.CTk):
 
         ts = time.strftime("%H:%M:%S")
         txt = f"[{ts}] {msg}\n"
-        tag = "ERROR" if error or "ERR" in msg or "FAIL" in msg or "PnL: -" in msg else ("SUCCESS" if "SUCCESS" in msg or "Húp" in msg else "INFO")
+        tag = "SUCCESS" if "PnL: +" in msg or "SUCCESS" in msg or "Húp" in msg else \
+        ("ERROR" if "PnL: -" in msg or error or "ERR" in msg or "FAIL" in msg else "INFO")
         self.after(0, lambda: self._write_log(txt, tag))
 
     def _write_log(self, txt, tag):
