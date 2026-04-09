@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # FILE: core/trade_manager.py
-# V8.2: PARENT-CHILD BASKET & AUTO DCA/PCA (READABLE KAISER EDITION) - UPGRADED
+# V8.4: 15-MIN CACHE ENGINE, SWING TSL FIX & TSL UI SYNC (KAISER EDITION)
 
 import logging
 import config
@@ -20,6 +20,7 @@ class TradeManager:
         self.checklist = checklist_manager
         self.log_callback = log_callback 
         self.state = load_state()
+        self.dca_pca_cache = {} # Bộ nhớ đệm giảm tải MT5
         
         # Đảm bảo các biến State luôn tồn tại để tránh lỗi sập Bot
         if "daily_loss_count" not in self.state: self.state["daily_loss_count"] = 0
@@ -286,7 +287,9 @@ class TradeManager:
             trig_r = tsl_cfg.get("BE_OFFSET_RR", 0.8)
             
             if curr_r >= trig_r: candidates.append((be_sl, "BE"))
-            else: milestones.append((abs(curr_r - trig_r), f"BE @ {trig_r}R"))
+            else: 
+                trig_p = pos.price_open + (one_r_dist * trig_r) if is_buy else pos.price_open - (one_r_dist * trig_r)
+                milestones.append((abs(curr_r - trig_r), f"BE | {trig_p:.2f} -> {be_sl:.2f}"))
 
         # 2. STEP R
         if "STEP_R" in active_modes:
@@ -295,7 +298,10 @@ class TradeManager:
             if steps >= 1:
                 step_sl = pos.price_open + (steps * one_r_dist * rt) if is_buy else pos.price_open - (steps * one_r_dist * rt)
                 candidates.append((step_sl, f"STEP {steps}"))
-            milestones.append((abs(curr_r - (steps+1)*sz), f"Step {steps+1}"))
+            
+            n_trig = pos.price_open + ((steps + 1) * sz * one_r_dist) if is_buy else pos.price_open - ((steps + 1) * sz * one_r_dist)
+            n_sl = pos.price_open + ((steps + 1) * sz * one_r_dist * rt) if is_buy else pos.price_open - ((steps + 1) * sz * one_r_dist * rt)
+            milestones.append((abs(curr_r - (steps+1)*sz), f"Step {steps+1} | {n_trig:.2f} -> {n_sl:.2f}"))
 
         # 3. PNL LOCK
         if "PNL" in active_modes:
@@ -307,7 +313,9 @@ class TradeManager:
                 for lvl in levels:
                     if pnl_pct >= lvl[0]:
                         lock_dist = (acc['balance'] * (lvl[1]/100.0)) / (pos.volume * contract_size)
-                        candidates.append((pos.price_open + lock_dist if is_buy else pos.price_open - lock_dist, "PNL"))
+                        pnl_sl = pos.price_open + lock_dist if is_buy else pos.price_open - lock_dist
+                        candidates.append((pnl_sl, "PNL"))
+                        milestones.append((abs(pnl_pct - lvl[0]), f"PnL {lvl[0]}% | -> {pnl_sl:.2f}"))
 
         # 4. TSL SWING
         if "SWING" in active_modes and symbol_context:
@@ -324,10 +332,12 @@ class TradeManager:
                     if tsl_mode == "AGGRESSIVE" or (tsl_mode == "DYNAMIC" and trend_adx != "UP"): swing_sl = sh - (trail_buf * atr)
                     else: swing_sl = sl - (trail_buf * atr) 
                 else: 
+                    # SỬA LỖI LOGIC: Ép lệnh SELL ngược trend dùng đáy (sl) để cắt sát
                     if tsl_mode == "AGGRESSIVE" or (tsl_mode == "DYNAMIC" and trend_adx != "DOWN"): swing_sl = sl + (trail_buf * atr)
                     else: swing_sl = sh + (trail_buf * atr)
                 
-                candidates.append((swing_sl, f"SWING ({tsl_mode})"))
+                candidates.append((swing_sl, "SWING"))
+                milestones.append((0, f"SWING | -> {swing_sl:.2f}"))
 
         # Xử lý cập nhật SL an toàn
         valid_moves = []
@@ -350,15 +360,16 @@ class TradeManager:
             if abs(target_sl - current_sl) > (point / 2):
                 self.log(f"⚡ [TSL] Dời SL #{pos.ticket} ({action_rule}) ➔ {target_sl:.5f}")
                 self.connector.modify_position(pos.ticket, target_sl, pos.tp)
-                return f"MOVED {action_rule}"
+                return f"{action_rule} ➔ {target_sl:.2f}"
 
         if milestones:
-            return sorted(milestones, key=lambda x: x[0])[0][1]
+            closest_ms = sorted(milestones, key=lambda x: x[0])[0][1]
+            return f"Track: {closest_ms}"
 
-        return "Monitoring..."
+        return "Tracking..."
 
     # ====================================================================================
-    # 4. CHỨC NĂNG NHỒI LỆNH (MẸ - CON) - V8.2 KAISER UPGRADE
+    # 4. CHỨC NĂNG NHỒI LỆNH (MẸ - CON) - V8.4 BỘ NHỚ ĐỆM 15 PHÚT
     # ====================================================================================
     def _check_dca_pca(self, pos, symbol_context, tactic_str):
         s_ticket = str(pos.ticket)
@@ -367,7 +378,7 @@ class TradeManager:
         is_buy = pos.type == mt5.ORDER_TYPE_BUY
         current_children = self.state.get("parent_baskets", {}).get(s_ticket, [])
         
-        # --- 1. TÌM GIÁ CỦA LỆNH CUỐI CÙNG TRONG RỔ (Để đo khoảng cách) ---
+        # --- 1. TÌM GIÁ CỦA LỆNH CUỐI CÙNG TRONG RỔ ---
         last_order_price = pos.price_open
         if current_children:
             current_positions = self.connector.get_all_open_positions()
@@ -377,29 +388,52 @@ class TradeManager:
                     last_order_price = child_pos.price_open
                     break
 
-        # --- 2. LẤY DỮ LIỆU NẾN & KHÓA THỜI GIAN (THROTTLING) ---
-        rates_m15 = mt5.copy_rates_from_pos(pos.symbol, mt5.TIMEFRAME_M15, 0, 30)
-        if rates_m15 is None or len(rates_m15) < 30: return
+        # --- 2. THUẬT TOÁN CACHE 15 PHÚT (GIẢM TẢI 99% CHO EXNESS) ---
+        now = datetime.now()
+        # Tạo Key đổi mới duy nhất sau mỗi 15 phút (00, 15, 30, 45)
+        cache_key = f"{pos.symbol}_{now.day}_{now.hour}_{now.minute // 15}"
         
-        current_bar_time = int(rates_m15[-1]['time']) # Nến đang chạy hiện tại
+        if cache_key != self.dca_pca_cache.get(f"{pos.symbol}_key"):
+            # CHỈ LẤY DATA EXNESS 1 LẦN DUY NHẤT MỖI KHI NẾN M15 ĐÓNG
+            rates_m15 = mt5.copy_rates_from_pos(pos.symbol, mt5.TIMEFRAME_M15, 0, 30)
+            if rates_m15 is None or len(rates_m15) < 30: return
+            
+            df_m15 = pd.DataFrame(rates_m15)
+            ema_series = df_m15['close'].ewm(span=getattr(config, "ENTRY_EMA_PERIOD", 21), adjust=False).mean()
+            
+            df_closed = df_m15.iloc[:-1]
+            ema_closed = ema_series.iloc[:-1]
+            
+            mc_config = {"PULLBACK_CANDLE_PATTERN": getattr(config, "PULLBACK_CANDLE_PATTERN", "ENGULFING")}
+            pullback_signal = get_pullback_confirmation(df_closed, ema_closed, mc_config)
+
+            adx_value = 0.0
+            if "AUTO_PCA" in tactic_str:
+                h1_rates = mt5.copy_rates_from_pos(pos.symbol, mt5.TIMEFRAME_H1, 0, 20)
+                if h1_rates is not None:
+                    df_h1 = pd.DataFrame(h1_rates)
+                    adx_res = df_h1.ta.adx(length=getattr(config, "ADX_PERIOD", 14))
+                    if adx_res is not None and not adx_res.empty:
+                        adx_value = adx_res.iloc[-1, 0]
+
+            # Lưu lại vào Cache
+            self.dca_pca_cache[f"{pos.symbol}_key"] = cache_key
+            self.dca_pca_cache[pos.symbol] = {
+                "pullback_signal": pullback_signal,
+                "adx_value": adx_value,
+                "current_bar_time": int(rates_m15[-1]['time'])
+            }
+
+        # --- DÙNG LẠI DỮ LIỆU ĐÃ CACHE (Không làm nghẽn cổ chai) ---
+        cached_data = self.dca_pca_cache.get(pos.symbol, {})
+        pullback_signal = cached_data.get("pullback_signal")
+        adx_value = cached_data.get("adx_value", 0.0)
+        current_bar_time = cached_data.get("current_bar_time", 0)
+        
         last_time_db = self.state.get("last_child_bar_time", {})
-        
-        # Nếu nến hiện tại đã được dùng để nhồi lệnh rồi -> Bỏ qua (Chống xả lệnh)
-        if last_time_db.get(s_ticket) == current_bar_time:
-            return 
+        if last_time_db.get(s_ticket) == current_bar_time: return # Đã nhồi ở nến này rồi
 
-        # --- 3. KIỂM TRA MÔ HÌNH NẾN ĐẢO CHIỀU (PULLBACK CONFIRMATION) ---
-        df_m15 = pd.DataFrame(rates_m15)
-        ema_series = df_m15['close'].ewm(span=getattr(config, "ENTRY_EMA_PERIOD", 21), adjust=False).mean()
-        
-        # Ép Bot chỉ xét nến đã ĐÓNG CỬA (Bỏ qua nến đang chạy ở index -1)
-        df_closed = df_m15.iloc[:-1]
-        ema_closed = ema_series.iloc[:-1]
-        
-        mc_config = {"PULLBACK_CANDLE_PATTERN": getattr(config, "PULLBACK_CANDLE_PATTERN", "ENGULFING")}
-        pullback_signal = get_pullback_confirmation(df_closed, ema_closed, mc_config)
-
-        # --- 4. LOGIC DCA (GỒNG LỖ - BẮT NHỊP HỒI) ---
+        # --- 3. LOGIC DCA (GỒNG LỖ - BẮT NHỊP HỒI) ---
         if "AUTO_DCA" in tactic_str:
             dca_cfg = getattr(config, "DCA_CONFIG", {})
             if len(current_children) < dca_cfg.get("MAX_STEPS", 3):
@@ -407,43 +441,28 @@ class TradeManager:
                 if atr and atr > 0:
                     dist = last_order_price - pos.price_current if is_buy else pos.price_current - last_order_price
                     if dist >= (atr * dca_cfg.get("DISTANCE_ATR_R", 1.0)):
-                        
-                        # Xác nhận: Nến vừa đóng phải là nến đảo chiều có lợi
                         if (is_buy and pullback_signal == "BUY") or (not is_buy and pullback_signal == "SELL"):
                             self._execute_child_order(pos, "DCA", dca_cfg.get("STEP_MULTIPLIER", 1.5))
-                            
-                            # Cập nhật Time vào State để khóa nến
                             if "last_child_bar_time" not in self.state: self.state["last_child_bar_time"] = {}
                             self.state["last_child_bar_time"][s_ticket] = current_bar_time
                             save_state(self.state)
                             return 
 
-        # --- 5. LOGIC PCA (NHỒI THUẬN - BÁM TREND) ---
+        # --- 4. LOGIC PCA (NHỒI THUẬN - BÁM TREND) ---
         if "AUTO_PCA" in tactic_str:
             pca_cfg = getattr(config, "PCA_CONFIG", {})
             if len(current_children) < pca_cfg.get("MAX_STEPS", 2):
                 is_risk_free = (is_buy and pos.sl >= pos.price_open) or (not is_buy and pos.sl > 0 and pos.sl <= pos.price_open)
-                
-                # Cần cách lệnh trước một khoảng an toàn (0.5 ATR)
                 min_pca_dist = symbol_context.get("atr", 0.001) * 0.5 
                 dist_from_last = pos.price_current - last_order_price if is_buy else last_order_price - pos.price_current
                 
                 if is_risk_free and dist_from_last >= min_pca_dist:
-                    h1_rates = mt5.copy_rates_from_pos(pos.symbol, mt5.TIMEFRAME_H1, 0, 20)
-                    if h1_rates is not None:
-                        df_h1 = pd.DataFrame(h1_rates)
-                        adx_res = df_h1.ta.adx(length=getattr(config, "ADX_PERIOD", 14))
-                        
-                        if adx_res is not None and not adx_res.empty:
-                            if adx_res.iloc[-1, 0] >= getattr(config, "ADX_STRONG", 23):
-                                # Xác nhận: Nến vừa đóng phải rút chân/đảo chiều thuận Trend
-                                if (is_buy and pullback_signal == "BUY") or (not is_buy and pullback_signal == "SELL"):
-                                    self._execute_child_order(pos, "PCA", pca_cfg.get("STEP_MULTIPLIER", 0.5))
-                                    
-                                    # Cập nhật Time vào State để khóa nến
-                                    if "last_child_bar_time" not in self.state: self.state["last_child_bar_time"] = {}
-                                    self.state["last_child_bar_time"][s_ticket] = current_bar_time
-                                    save_state(self.state)
+                    if adx_value >= getattr(config, "ADX_STRONG", 23):
+                        if (is_buy and pullback_signal == "BUY") or (not is_buy and pullback_signal == "SELL"):
+                            self._execute_child_order(pos, "PCA", pca_cfg.get("STEP_MULTIPLIER", 0.5))
+                            if "last_child_bar_time" not in self.state: self.state["last_child_bar_time"] = {}
+                            self.state["last_child_bar_time"][s_ticket] = current_bar_time
+                            save_state(self.state)
 
     def _execute_child_order(self, parent_pos, mode, multiplier):
         new_lot = round((parent_pos.volume * multiplier) / getattr(config, "LOT_STEP", 0.01)) * getattr(config, "LOT_STEP", 0.01)

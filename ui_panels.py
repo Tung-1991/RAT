@@ -211,8 +211,8 @@ def setup_right_panel(app, parent):
 
     style = ttk.Style()
     style.theme_use("clam")
-    style.configure("Treeview", background="#2b2b2b", foreground="white", fieldbackground="#2b2b2b", rowheight=35, font=("Consolas", 11)) 
-    style.configure("Treeview.Heading", background="#1f1f1f", foreground="#e0e0e0", font=("Roboto", 10, "bold"), relief="flat")
+    style.configure("Treeview", background="#2b2b2b", foreground="white", fieldbackground="#2b2b2b", rowheight=50, font=("Consolas", 18)) 
+    style.configure("Treeview.Heading", background="#1f1f1f", foreground="#e0e0e0", font=("Roboto", 20, "bold"), relief="flat")
     style.map("Treeview", background=[('selected', '#3949ab')])
 
     cols = ("Ticket", "Time", "Order", "Targets", "CostInfo", "RR", "PnL", "Status", "X")
@@ -222,7 +222,7 @@ def setup_right_panel(app, parent):
     app.tree.tag_configure("user_order", foreground="white")
 
     headers = ["Ticket", "Thời gian", "Thông tin Lệnh", "Chốt lời/Lỗ (SL|TP)", "Chi phí/Phí qua đêm", "Rủi ro/Kỳ vọng (%)", "Lợi nhuận", "Trạng thái", "✖"]
-    widths = [95, 100, 240, 180, 200, 295, 90, 220, 40]
+    widths = [180, 180, 500, 300, 350, 400, 180, 500, 50]
     anchors= ["center", "center", "w", "center", "center", "center", "center", "w", "center"]
 
     for c, h, w, a in zip(cols, headers, widths, anchors):
@@ -252,7 +252,7 @@ def setup_right_panel(app, parent):
     ctk.CTkLabel(f_log_head, text="HỆ THỐNG GHI NHẬT KÝ (LOG)", font=("Roboto", 12, "bold"), text_color="#aaa").pack(side="left")
     ctk.CTkCheckBox(f_log_head, text="Xác nhận đóng lệnh", variable=app.var_confirm_close, font=("Roboto", 11), checkbox_width=16, checkbox_height=16).pack(side="right")
 
-    app.txt_log = tk.Text(f_log, font=("Consolas", 12), bg="#121212", fg="#e0e0e0", bd=0, highlightthickness=0, state="disabled", wrap="word")
+    app.txt_log = tk.Text(f_log, font=("Consolas", 18), bg="#121212", fg="#e0e0e0", bd=0, highlightthickness=0, state="disabled", wrap="word")
     app.txt_log.pack(fill="both", expand=True, padx=5, pady=(0,5))
     
     app.txt_log.tag_config("INFO", foreground="#b0bec5")

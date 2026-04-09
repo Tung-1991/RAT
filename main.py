@@ -308,14 +308,18 @@ class BotUI(ctk.CTk):
             sl = sym_ctx.get("swing_low", "--")
             atr = sym_ctx.get("atr", "--")
             
-            sh_str = f"{sh:.2f}" if isinstance(sh, (int, float)) and sh > 0 else "--"
-            sl_str = f"{sl:.2f}" if isinstance(sl, (int, float)) and sl > 0 else "--"
-            atr_str = f"{atr:.2f}" if isinstance(atr, (int, float)) and atr > 0 else "--"
-            
-            m_color = COL_GREEN if tr == "UP" else (COL_RED if tr == "DOWN" else "#78909C")
-            self.lbl_market_context.configure(text=f"Trend: {tr} | SHigh: {sh_str} | SLow: {sl_str} | ATR: {atr_str}", text_color=m_color)
+            # [KAISER FIX] Bắt trạng thái MT5 Auto-Wakeup
+            if atr == 0.0 or atr == "--":
+                self.lbl_market_context.configure(text="Syncing MT5 Data...", text_color="#FFA500") # Màu cam
+            else:
+                sh_str = f"{sh:.2f}" if isinstance(sh, (int, float)) and sh > 0 else "--"
+                sl_str = f"{sl:.2f}" if isinstance(sl, (int, float)) and sl > 0 else "--"
+                atr_str = f"{atr:.2f}" if isinstance(atr, (int, float)) and atr > 0 else "--"
+                
+                m_color = COL_GREEN if tr == "UP" else (COL_RED if tr == "DOWN" else "#78909C")
+                self.lbl_market_context.configure(text=f"Trend: {tr} | SHigh: {sh_str} | SLow: {sl_str} | ATR: {atr_str}", text_color=m_color)
         else:
-            self.lbl_market_context.configure(text="Trend: -- | SHigh: -- | SLow: -- | ATR: --", text_color="#78909C")
+            self.lbl_market_context.configure(text="Syncing MT5 Data...", text_color="#FFA500")
 
         d = self.seg_direction.get()
         self.var_direction.set(d)
