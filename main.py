@@ -2,6 +2,7 @@
 # FILE: main.py
 # V6.9: REFACTORED CORE - MULTI-COIN DICTIONARY SYNC (KAISER EDITION)
 # V6.9.1: HOTFIX UI DCA/PCA & TREEVIEW FORMATTING
+# V6.9.2: TÍCH HỢP STRATEGY SANDBOX V3.0 (HOT-RELOAD READY)
 
 import customtkinter as ctk
 import tkinter as tk
@@ -25,6 +26,8 @@ from core.signal_listener import SignalListener
 
 import ui_panels
 import ui_popups
+# [V3.0] Import giao diện Strategy Sandbox
+from ui_bot_strategy import BotStrategyUI
 
 TSL_SETTINGS_FILE = "data/tsl_settings.json"
 PRESETS_FILE = "data/presets_config.json"
@@ -78,7 +81,6 @@ class BotUI(ctk.CTk):
         self.var_bypass_checklist = tk.BooleanVar(value=config.MANUAL_CONFIG["BYPASS_CHECKLIST"])
         self.var_direction = tk.StringVar(value="BUY") 
         
-        # [KAISER FIX] Thêm AUTO_DCA và AUTO_PCA vào dictionary khởi tạo để tránh KeyError
         self.tactic_states = {
             "BE": True, "PNL": False, "STEP_R": True, "SWING": True,
             "AUTO_DCA": False, "AUTO_PCA": False
@@ -132,7 +134,7 @@ class BotUI(ctk.CTk):
         )
         self.signal_listener.start()
         
-        self.log_message("Hệ thống V6.9.1 (Multi-Coin Sync & DCA/PCA) đã sẵn sàng.")
+        self.log_message("Hệ thống V6.9.2 (Đã tích hợp Sandbox V3.0) sẵn sàng.")
 
     def start_daemon_process(self):
         try:
@@ -187,7 +189,6 @@ class BotUI(ctk.CTk):
     def get_current_tactic_string(self):
         active = [k for k, v in self.tactic_states.items() if v]
         base_tactic = "+".join(active) if active else "OFF"
-        # Chống trùng lặp chuỗi nếu User bật cả nút ngang và Checkbox Manual
         if self.var_assist_dca.get() and "AUTO_DCA" not in base_tactic: base_tactic += "+AUTO_DCA"
         if self.var_assist_pca.get() and "AUTO_PCA" not in base_tactic: base_tactic += "+AUTO_PCA"
         return base_tactic
@@ -200,13 +201,11 @@ class BotUI(ctk.CTk):
         def set_btn(btn, is_active):
             btn.configure(fg_color=COL_BLUE_ACCENT if is_active else COL_GRAY_BTN)
         
-        # Cập nhật màu các nút đang có
         set_btn(self.btn_tactic_be, self.tactic_states["BE"])
         set_btn(self.btn_tactic_pnl, self.tactic_states["PNL"])
         set_btn(self.btn_tactic_step, self.tactic_states["STEP_R"])
         set_btn(self.btn_tactic_swing, self.tactic_states["SWING"])
         
-        # [KAISER FIX] Cập nhật màu cho nút DCA/PCA nếu chúng tồn tại
         if hasattr(self, 'btn_tactic_dca'): set_btn(self.btn_tactic_dca, self.tactic_states["AUTO_DCA"])
         if hasattr(self, 'btn_tactic_pca'): set_btn(self.btn_tactic_pca, self.tactic_states["AUTO_PCA"])
 
@@ -222,6 +221,9 @@ class BotUI(ctk.CTk):
         if value == "BUY": self.btn_action.configure(text=f"VÀO LỆNH MUA {sym}", fg_color=COL_GREEN, hover_color="#009624")
         else: self.btn_action.configure(text=f"VÀO LỆNH BÁN {sym}", fg_color=COL_RED, hover_color="#B71C1C")
 
+    # ==========================================
+    # CÁC HÀM MỞ POPUP & GIAO DIỆN PHỤ
+    # ==========================================
     def open_bot_setting_popup(self):
         ui_popups.open_bot_setting_popup(self)
 
@@ -236,6 +238,20 @@ class BotUI(ctk.CTk):
 
     def show_history_popup(self):
         ui_popups.show_history_popup(self)
+
+    # [V3.0] Hàm gọi Strategy Sandbox
+    def open_strategy_sandbox(self):
+        """Mở cửa sổ cấu hình chiến thuật Lego V3.0 (Kaiser Edition)"""
+        sandbox_window = BotStrategyUI(self)
+        
+        def on_sandbox_close():
+            # Lưu cấu hình để Trigger Hot-Reload bên Bot Daemon
+            self._save_brain_live_config()
+            self.log_message("📡 [V3.0] Đã đóng Sandbox. Daemon sẽ tự động nạp cấu hình mới (Hot-Reload).", error=False)
+            sandbox_window.destroy()
+
+        sandbox_window.protocol("WM_DELETE_WINDOW", on_sandbox_close)
+    # ==========================================
 
     def load_settings(self):
         if os.path.exists(TSL_SETTINGS_FILE):
@@ -299,7 +315,6 @@ class BotUI(ctk.CTk):
         else:
             self.lbl_brain_status.configure(text=f"🧠 BRAIN: {self.brain_status}", text_color=COL_RED)
 
-        # Lấy Context của đồng coin đang chọn trên UI
         sym_ctx = self.latest_market_context.get(sym, {})
         
         if sym_ctx:
@@ -308,9 +323,8 @@ class BotUI(ctk.CTk):
             sl = sym_ctx.get("swing_low", "--")
             atr = sym_ctx.get("atr", "--")
             
-            # [KAISER FIX] Bắt trạng thái MT5 Auto-Wakeup
             if atr == 0.0 or atr == "--":
-                self.lbl_market_context.configure(text="Syncing MT5 Data...", text_color="#FFA500") # Màu cam
+                self.lbl_market_context.configure(text="Syncing MT5 Data...", text_color="#FFA500")
             else:
                 sh_str = f"{sh:.2f}" if isinstance(sh, (int, float)) and sh > 0 else "--"
                 sl_str = f"{sl:.2f}" if isinstance(sl, (int, float)) and sl > 0 else "--"
@@ -456,8 +470,6 @@ class BotUI(ctk.CTk):
 
         existing_items = self.tree.get_children()
         current_tickets_on_chart = []
-        
-        # [KAISER FIX] Trích xuất map Mẹ-Con
         child_to_parent = self.trade_mgr.state.get("child_to_parent", {})
         
         for p in positions:
@@ -483,7 +495,6 @@ class BotUI(ctk.CTk):
             icon = "🟢" if is_buy else "🔴"
             side_txt = "BUY" if is_buy else "SELL"
             
-            # --- [KAISER FIX] Render Nguồn gốc & Thụt lề Lệnh Con ---
             display_ticket = f"#{ticket_str}"
             is_child = ticket_str in child_to_parent
             
@@ -497,7 +508,6 @@ class BotUI(ctk.CTk):
                 origin_tag = "[UI+BOT]"
                 
             order_str = f"{origin_tag} {icon} {side_txt} {p.volume:.2f} {p.symbol} @ {p.price_open:.2f}"
-            # -----------------------------------------------------
 
             sl_txt = f"{p.sl:.2f}" if p.sl > 0 else "---"
             tp_txt = f"{p.tp:.2f}" if p.tp > 0 else "---"
@@ -519,7 +529,6 @@ class BotUI(ctk.CTk):
             rew_str = f"+${rew_usd:.1f} ({rew_pct:.1f}%)" if p.tp > 0 else "No TP"
             rr_str = f"{risk_str}  |  {rew_str}"
             
-            # --- [KAISER FIX] Hiển thị nhãn DCA/PCA trên cột Status ---
             stt_txt = self.tsl_states_map.get(p.ticket, "Running")
             tactic_info = self.trade_mgr.get_trade_tactic(p.ticket)
             stt_extras = []
@@ -527,14 +536,12 @@ class BotUI(ctk.CTk):
             if "AUTO_PCA" in tactic_info: stt_extras.append("PCA")
             if stt_extras:
                 stt_txt += f" | +{'/'.join(stt_extras)}"
-            # ----------------------------------------------------------
 
             values_data = (display_ticket, time_str, order_str, targets_str, fee_str, rr_str, f"${p.profit:.2f}", stt_txt, "❌")
             tag_to_apply = "buy_row" if is_buy else "sell_row"
 
             if ticket_str in existing_items: self.tree.item(ticket_str, values=values_data, tags=(tag_to_apply,))
             else: self.tree.insert("", "end", iid=ticket_str, values=values_data, tags=(tag_to_apply,))
-
 
         for item in existing_items:
             if item not in current_tickets_on_chart:

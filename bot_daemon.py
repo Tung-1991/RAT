@@ -1,147 +1,179 @@
 # -*- coding: utf-8 -*-
 # FILE: bot_daemon.py
-# V8.3: AUTO-WAKEUP MT5 & PERSISTENT CONTEXT (KAISER EDITION)
+# V3.0 PATCH: TÍCH HỢP DATA ENGINE & VOTING ENGINE THEO KIẾN TRÚC MỚI
+# CẬP NHẬT: THÊM CƠ CHẾ HOT-RELOAD CHO STRATEGY SANDBOX (FILE WATCHER)
 
-import time
-import json
 import os
-import logging
-import uuid
-import re
-from datetime import datetime, timedelta
-
+import time
+import threading
+import traceback
+import pandas as pd
+from datetime import datetime
 import config
-from core.exness_connector import ExnessConnector
+import MetaTrader5 as mt5  # Thêm import mt5 nếu ngài đang gọi mt5.TIMEFRAME_H1 ở dưới
+from core.storage_manager import load_state, save_state
+from core.checklist_manager import ChecklistManager
+# [V3.0] Import Module Mới
+from core.data_engine import DataEngine
+from signals.signal_generator import SignalGenerator
 
-# Fail-safe Imports
-try:
-    from signals.atr import calculate_atr
-    from signals.swing_point import get_last_swing_points as get_swing_high_low
-    import signals.signal_generator as sg_module
-except ImportError as e:
-    print(f"❌ LỖI IMPORT MODULE TÍN HIỆU: {e}")
-
-logging.basicConfig(level=logging.INFO, format='[%(asctime)s] [%(levelname)s] - %(message)s')
-logger = logging.getLogger("Daemon")
-
-def _get_sleep_time_to_next_candle(timeframe_str):
-    try:
-        tf_str = timeframe_str.lower()
-        match = re.match(r"(\d+)([mhd])", tf_str)
-        if not match: return 10
-        val, unit = int(match.group(1)), match.group(2)
-        minutes = val if unit == 'm' else (val * 60 if unit == 'h' else val * 1440)
+class BotDaemon:
+    def __init__(self, connector, trade_manager, log_callback=None):
+        self.connector = connector
+        self.trade_manager = trade_manager
+        self.log_callback = log_callback
+        self.running = False
+        self.thread = None
         
-        now = datetime.now()
-        next_run = now.replace(second=2, microsecond=0)
-        minute_to_round = (now.minute // minutes) * minutes + minutes
-        if minute_to_round >= 60:
-            next_run = next_run.replace(minute=0, hour=(now.hour + 1) % 24)
-            if next_run.hour == 0: next_run += timedelta(days=1)
+        self.checklist = ChecklistManager(connector, None)
+        # [V3.0] Khởi tạo Data Engine & Signal Generator (Wrapper)
+        self.data_engine = DataEngine(connector)
+        self.signal_generator = SignalGenerator()
+
+        self.last_signal_time = {}
+        
+        # [V3.0] Biến phục vụ Hot-Reload Sandbox
+        self.last_sandbox_mtime = 0 
+        self.sandbox_file_path = "data/sandbox_rules.json" # Đảm bảo tên file này khớp với file UI Sandbox lưu
+
+    def log(self, msg, error=False):
+        if self.log_callback:
+            self.log_callback(msg, error=error)
         else:
-            next_run = next_run.replace(minute=minute_to_round)
-        return max(5, int((next_run - now).total_seconds()))
-    except: return 10
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] {'❌' if error else '✅'} {msg}")
 
-def reload_brain_config():
-    settings_file = os.path.join(config.DATA_DIR, "brain_settings.json")
-    if os.path.exists(settings_file):
-        try:
-            with open(settings_file, "r", encoding="utf-8") as f:
-                settings = json.load(f)
-                for k, v in settings.items():
-                    if hasattr(config, k) and k != "COIN_LIST":
-                        setattr(config, k, v)
-        except Exception as e:
-            logger.error(f"[DAEMON] Lỗi đọc brain_settings.json: {e}")
+    def start(self):
+        if not self.running:
+            self.running = True
+            self.thread = threading.Thread(target=self._run_loop, daemon=True)
+            self.thread.start()
+            self.log("▶️ Khởi động Bot Daemon V3.0...", error=False)
 
-def run_daemon():
-    logger.info("--- ⚙️ DAEMON V8.3: AUTO-WAKEUP & PERSISTENT CONTEXT ---")
-    connector = ExnessConnector()
-    if not connector.connect(): return
+    def stop(self):
+        if self.running:
+            self.running = False
+            if self.thread:
+                self.thread.join(timeout=2.0)
+            self.log("⏹️ Đã dừng Bot Daemon.", error=False)
 
-    signal_file = os.path.join(config.DATA_DIR, "live_signals.json")
-    
-    # Đưa Context ra ngoài vòng lặp để giữ lại data cũ nếu MT5 rớt mạng tạm thời (Chống hiện --)
-    all_contexts = {} 
-    mt5_error_count = 0
+    def _run_loop(self):
+        while self.running:
+            try:
+                # =========================================================
+                # [V3.0] CƠ CHẾ HOT-RELOAD CHIẾN THUẬT THEO THỜI GIAN THỰC
+                # =========================================================
+                if os.path.exists(self.sandbox_file_path):
+                    current_mtime = os.path.getmtime(self.sandbox_file_path)
+                    if current_mtime > self.last_sandbox_mtime:
+                        if self.last_sandbox_mtime != 0: # Bỏ qua lần nạp đầu tiên lúc mới bật bot
+                            self.log("🔄 Phát hiện cấu hình Sandbox mới. Đang nạp lại (Hot-Reload)...")
+                            if hasattr(self.signal_generator, 'reload_config'):
+                                self.signal_generator.reload_config()
+                                self.log("✅ Nạp chiến thuật mới thành công. Không cần khởi động lại Bot!")
+                        self.last_sandbox_mtime = current_mtime
+                # =========================================================
 
-    while True:
-        try:
-            reload_brain_config()
-            active_symbols = getattr(config, "BOT_ACTIVE_SYMBOLS", [])
-            entry_tf = getattr(config, "entry_timeframe", "15m")
-            
-            all_signals = []
-            cycle_has_error = False
-
-            for symbol in active_symbols:
-                df_h1 = connector.get_historical_data(symbol, config.trend_timeframe, config.NUM_H1_BARS)
-                df_m15 = connector.get_historical_data(symbol, entry_tf, config.NUM_M15_BARS)
+                state = load_state()
+                now = datetime.now()
                 
-                if df_h1 is None or df_m15 is None or df_m15.empty: 
-                    cycle_has_error = True
+                if getattr(config, "RESET_DAILY_LOSS", True) and state.get("last_reset_day") != now.day:
+                    state["daily_loss_count"] = 0
+                    state["trades_today_count"] = 0
+                    state["pnl_today"] = 0.0
+                    state["daily_history"] = []
+                    state["last_reset_day"] = now.day
+                    save_state(state)
+
+                if getattr(config, "CHECK_NEWS_IMPACT", True):
+                    self.checklist.update_forex_factory_news()
+
+                # --- 1. UPDATE QUẢN LÝ LỆNH ĐANG CHẠY (GIỮ NGUYÊN LOGIC CŨ) ---
+                symbol = getattr(config, "UI_ACTIVE_SYMBOL", getattr(config, "SYMBOL", "XAUUSDm"))
+                acc_info = self.connector.get_account_info()
+                
+                # Để hỗ trợ Trailing Stop SWING, cần context của Symbol hiện tại
+                market_context = {}
+                df_h1_tsl = self.connector.get_historical_data(symbol, mt5.TIMEFRAME_H1, getattr(config, "NUM_H1_BARS", 70))
+                if df_h1_tsl is not None and not df_h1_tsl.empty:
+                    # Tận dụng DataEngine để lấy context (swing_h, swing_l, atr, trend)
+                    market_context[symbol] = self.data_engine._build_context(df_h1_tsl, config.__dict__)
+                
+                tsl_status = self.trade_manager.update_running_trades(
+                    account_type="STANDARD", 
+                    all_market_contexts=market_context
+                )
+                
+                if tsl_status:
+                    self.log(f"🔄 TSL Update: {tsl_status}")
+
+                # --- 2. LOGIC QUÉT TÍN HIỆU VÀO LỆNH (V3.0) ---
+                if not getattr(config, "AUTO_TRADE_ENABLED", False):
+                    time.sleep(getattr(config, "DAEMON_LOOP_DELAY", 15))
                     continue
 
-                sig_action = sg_module.get_signal(df_h1, df_m15, config.__dict__) if sg_module else None
+                if acc_info is None:
+                    time.sleep(getattr(config, "DAEMON_LOOP_DELAY", 15))
+                    continue
+
+                check_res = self.checklist.run_pre_trade_checks(acc_info, state, symbol, strict_mode=True)
+                if not check_res["passed"]:
+                    time.sleep(getattr(config, "DAEMON_LOOP_DELAY", 15))
+                    continue
+
+                # LẤY DATA & TẠO PAYLOAD QUA DATA ENGINE (V3.0)
+                # Dùng config.__dict__ để lấy fallback params nếu cần
+                data_package = self.data_engine.fetch_and_prepare(symbol, config.__dict__)
                 
-                atr_val, sh, sl = 0.0, 0.0, 0.0
-                atr_series = calculate_atr(df_m15, config.atr_period)
-                if atr_series is not None: atr_val = round(atr_series.iloc[-1], 5)
+                if not data_package:
+                    time.sleep(getattr(config, "DAEMON_LOOP_DELAY", 15))
+                    continue
+
+                # ĐẨY VÀO SIGNAL GENERATOR (WRAPPER V3.0)
+                signal_val, details = self.signal_generator.generate_signal(data_package)
+
+                # KIỂM TRA ĐIỀU KIỆN VÀO LỆNH
+                current_bar_time = data_package["raw_trigger"].iloc[-1].name if 'raw_trigger' in data_package and not data_package["raw_trigger"].empty else 0
                 
-                res_h, res_l = get_swing_high_low(df_m15, config.__dict__)
-                sh, sl = (round(res_h, 5) if res_h else 0.0), (round(res_l, 5) if res_l else 0.0)
+                # Tránh nhồi lệnh trên cùng 1 nến
+                if self.last_signal_time.get(symbol) != current_bar_time:
+                    if signal_val == 1:
+                        self.log(f"🎯 [V3.0] Tín hiệu MUA từ Sandbox (Mode: {details.get('mode')})")
+                        self._place_trade("BUY", symbol, details)
+                        self.last_signal_time[symbol] = current_bar_time
+                        
+                    elif signal_val == -1:
+                        self.log(f"🎯 [V3.0] Tín hiệu BÁN từ Sandbox (Mode: {details.get('mode')})")
+                        self._place_trade("SELL", symbol, details)
+                        self.last_signal_time[symbol] = current_bar_time
 
-                ema_v = df_h1['close'].ewm(span=config.TREND_EMA_PERIOD, adjust=False).mean().iloc[-1]
-                trend_dir = "UP" if df_h1['close'].iloc[-1] > ema_v else "DOWN"
+            except Exception as e:
+                self.log(f"🔥 Lỗi Daemon Loop: {e}\n{traceback.format_exc()}", error=True)
+            
+            time.sleep(getattr(config, "DAEMON_LOOP_DELAY", 15))
 
-                all_contexts[symbol] = {
-                    "trend": trend_dir,
-                    "swing_high": sh,
-                    "swing_low": sl,
-                    "atr": atr_val
-                }
+    def _place_trade(self, direction, symbol, details):
+        """ Hàm gọi sang Trade Manager (V3.0) """
+        preset_name = getattr(config, "BOT_PRESET", "SCALPING")
+        preset = getattr(config, "PRESETS", {}).get(preset_name, {})
+        
+        bot_risk = preset.get("RISK_PERCENT", getattr(config, "RISK_PER_TRADE_PERCENT", 1.0))
+        bot_tsl = getattr(config, "BOT_TSL_MODE", "OFF")
+        
+        # Trong V3.0, SL/TP tĩnh không còn quan trọng, Trade Manager sẽ ghi đè bằng details
+        dummy_sl = 0.0
+        dummy_tp = 0.0
 
-                if sig_action in ["BUY", "SELL"]:
-                    logger.info(f"🧠 [BRAIN] PHÁT HIỆN TÍN HIỆU {sig_action} - {symbol}")
-                    sl_p = sl - (atr_val * config.sl_atr_multiplier) if sig_action == "BUY" else sh + (atr_val * config.sl_atr_multiplier)
-                    all_signals.append({"signal_id": str(uuid.uuid4()), "timestamp": time.time(), "symbol": symbol,
-                                        "action": sig_action, "sl_price": round(sl_p, 5), "tp_price": 0.0,
-                                        "bot_risk_percent": config.BOT_RISK_PERCENT, "signal_class": "ENTRY", "valid_for": 300})
-
-            # Cơ chế AUTO-WAKEUP MT5
-            if cycle_has_error:
-                mt5_error_count += 1
-                if mt5_error_count >= 3:
-                    logger.warning("⚠️ [DAEMON] MT5 ngái ngủ (Timeout Data). Đang ép Wakeup...")
-                    connector.shutdown()
-                    time.sleep(2)
-                    connector.connect()
-                    mt5_error_count = 0
-            else:
-                mt5_error_count = 0
-
-            sleep_sec = _get_sleep_time_to_next_candle(entry_tf)
-            payload = {
-                "brain_heartbeat": {
-                    "status": "SLEEPING", 
-                    "wakeup_time": time.time() + sleep_sec,
-                    "active_symbols": active_symbols, 
-                    "context": all_contexts 
-                },
-                "pending_signals": all_signals
-            }
-            with open(signal_file, "w", encoding="utf-8") as f: 
-                json.dump(payload, f, indent=4)
-
-            time.sleep(sleep_sec)
-
-        except Exception as e:
-            logger.error(f"[DAEMON] Error: {e}")
-            time.sleep(5)
-
-if __name__ == "__main__":
-    try:
-        run_daemon()
-    except KeyboardInterrupt:
-        logger.info("🛑 Daemon đã dừng bằng tay.")
+        res = self.trade_manager.execute_bot_trade(
+            direction=direction,
+            symbol=symbol,
+            sl_price=dummy_sl,
+            tp_price=dummy_tp,
+            bot_risk_percent=bot_risk,
+            tactic_str=bot_tsl,
+            details=details
+        )
+        
+        if "SUCCESS" in res:
+            self.log(f"🤖 Bot đã vào lệnh {direction} thành công! (TSL: {bot_tsl})")
+        else:
+            self.log(f"⚠️ Bot thất bại khi vào lệnh {direction}: {res}", error=True)

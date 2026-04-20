@@ -1,68 +1,44 @@
 # -*- coding: utf-8 -*-
-# Tên file: signals/volume.py
-
 import pandas as pd
-import logging
-from typing import Dict, Any
 
-logger = logging.getLogger("ExnessBot")
-
-def get_volume_confirmation(
-    df_m15: pd.DataFrame,
-    config: Dict[str, Any]
-) -> bool:
+def get_signal_vector(df: pd.DataFrame, params: dict) -> int:
     """
-    Kiểm tra xác nhận Volume (Logic StdDev - finalplan.txt).
-    Kiểm tra xem Volume của nến breakout (nến cuối cùng)
-    có vượt trội so với trung bình (cộng độ lệch chuẩn) hay không.
-
-    Args:
-        df_m15 (pd.DataFrame): DataFrame dữ liệu M15.
-        config (Dict[str, Any]): Đối tượng config.
-
-    Trả về:
-        bool: True nếu volume mạnh, False nếu không.
+    V3.0: Volume Signal (Price-Volume Relationship).
+    Xử lý logic dòng tiền: 
+    - Giá tăng + Vol tăng = 1 (Dòng tiền vào mạnh)
+    - Giá tăng + Vol giảm = -1 (Dòng tiền out/Bẫy tăng giá)
+    - Giá giảm + Vol tăng = -1 (Áp lực bán mạnh)
+    - Giá giảm + Vol giảm = 1 (Cạn kiệt lực bán)
     """
+    col_vol = 'tick_volume' if 'tick_volume' in df.columns else 'volume'
+    if col_vol not in df.columns or len(df) < 20:
+        return 0
+
+    period = params.get("period", 20)
+    # Ngưỡng để xác định Volume thế nào là "Tăng/Giảm" so với trung bình
+    multiplier = params.get("multiplier", 1.1) 
     
-    volume_ma_period = config["volume_ma_period"]
-    volume_sd_multiplier = config["volume_sd_multiplier"]
+    avg_vol = df[col_vol].shift(1).rolling(window=period).mean().iloc[-1]
+    curr_vol = df[col_vol].iloc[-1]
     
-    try:
-        # Cần ít nhất (chu kỳ + 1 nến breakout) để tính toán
-        if len(df_m15) < volume_ma_period + 1:
-            # logger.debug("Không đủ dữ liệu M15 để tính Volume VMA/StdDev.")
-            return False
+    curr_close = df['close'].iloc[-1]
+    prev_close = df['close'].iloc[-2]
+    
+    price_up = curr_close > prev_close
+    vol_high = curr_vol > (avg_vol * multiplier)
+    vol_low = curr_vol < (avg_vol / multiplier)
 
-        # Lấy volume của nến breakout (nến cuối cùng)
-        breakout_volume = df_m15['volume'].iloc[-1]
+    # --- LOGIC DÒNG TIỀN THEO YÊU CẦU CỦA NGÀI ---
 
-        # Lấy (volume_ma_period) nến TRƯỚC nến breakout để làm cơ sở
-        # Ví dụ: nếu period=20, sẽ lấy 20 nến (từ -21 đến -2)
-        previous_volumes = df_m15['volume'].iloc[-(volume_ma_period + 1) : -1]
+    if price_up:
+        if vol_high:
+            return 1   # Giá tăng + Vol tăng = Hội tụ tăng (Strong Buy)
+        if vol_low:
+            return -1  # Giá tăng + Vol giảm = Phân kỳ giảm (Cash Out/Bull Trap)
+    else:
+        if vol_high:
+            return -1  # Giá giảm + Vol tăng = Hội tụ giảm (Strong Sell)
+        if vol_low:
+            return 1   # Giá giảm + Vol giảm = Phân kỳ tăng (Bearish Exhaustion)
 
-        if len(previous_volumes) < volume_ma_period:
-             # (Check an toàn lần nữa)
-            return False
-
-        # Tính toán VMA (Volume Moving Average) và StdDev
-        vma = previous_volumes.mean()
-        std_dev = previous_volumes.std()
-
-        # Xử lý lỗi (ví dụ: data đầu vào bị lỗi, hoặc std_dev=NaN)
-        if pd.isna(vma) or pd.isna(std_dev) or vma == 0:
-            # logger.warning("VMA hoặc StdDev Volume không hợp lệ (NaN/0).")
-            return False
-
-        # --- Logic Cốt lõi (finalplan.txt) ---
-        volume_threshold = vma + (std_dev * volume_sd_multiplier)
-
-        if breakout_volume > volume_threshold:
-            # logger.debug(f"XÁC NHẬN VOLUME: {breakout_volume:.2f} > {volume_threshold:.2f}")
-            return True
-
-    except Exception as e:
-        logger.error(f"Lỗi nghiêm trọng khi check Volume (StdDev logic): {e}", exc_info=True)
-        pass
-
-    # Mặc định là False
-    return False
+    return 0

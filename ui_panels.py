@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # FILE: ui_panels.py
 # V8.2: STATIC UI PANELS - DEPENDENCY INJECTION (KAISER EDITION)
-# UPDATE: RELOCATED BOT SETTING TO COIN ROW TO FIX OVERFLOW
+# UPDATE: THÊM NÚT STRATEGY SANDBOX V3.0
 
 import customtkinter as ctk
 import tkinter as tk
@@ -52,7 +52,7 @@ def setup_left_panel(app, parent):
     f_set.pack(fill="x", padx=5, pady=5)
     f_set.columnconfigure(1, weight=1)
 
-    # --- DÒNG 1: COIN & CẤU HÌNH BOT (ĐÃ CHUYỂN VỊ TRÍ) ---
+    # --- DÒNG 1: COIN & CẤU HÌNH BOT ---
     ctk.CTkLabel(f_set, text="COIN:", font=FONT_SECTION, text_color="gray").grid(row=0, column=0, sticky="w")
     f_coin_row = ctk.CTkFrame(f_set, fg_color="transparent")
     f_coin_row.grid(row=0, column=1, sticky="ew", padx=5)
@@ -64,7 +64,6 @@ def setup_left_panel(app, parent):
         app.cbo_symbol.set(config.COIN_LIST[0])
     app.cbo_symbol.pack(side="left")
     
-    # [KAISER] Đèn Auto và nút BOT được dời lên đây
     f_bot_controls = ctk.CTkFrame(f_coin_row, fg_color="transparent")
     f_bot_controls.pack(side="left", padx=10)
     
@@ -113,6 +112,18 @@ def setup_left_panel(app, parent):
     
     app.update_tactic_buttons_ui()
 
+    # --- DÒNG 4 (MỚI): NÚT MỞ STRATEGY SANDBOX V3.0 ---
+    app.btn_strategy = ctk.CTkButton(
+        f_set, 
+        text="🧩 STRATEGY SANDBOX V3.0", 
+        font=("Roboto", 14, "bold"), 
+        height=35,
+        fg_color="#1f538d",      
+        hover_color="#14375e", 
+        command=app.open_strategy_sandbox
+    )
+    app.btn_strategy.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(15, 5))
+
     # 3. MANUAL INPUT PANEL
     f_input = ctk.CTkFrame(parent, fg_color="transparent")
     f_input.pack(fill="x", padx=5, pady=(5,0))
@@ -128,7 +139,6 @@ def setup_left_panel(app, parent):
     make_inp(f_input, "TP (Price)", app.var_manual_tp, 1)
     make_inp(f_input, "SL (Price)", app.var_manual_sl, 2)
 
-    # ĐỔI FONT CHỮ TO, BỎ IN NGHIÊNG ĐỂ DỄ NHÌN HƠN
     app.lbl_market_context = ctk.CTkLabel(parent, text="Trend: -- | SHigh: -- | SLow: -- | ATR: --", font=("Roboto", 13, "bold"), text_color="#78909C")
     app.lbl_market_context.pack(pady=(2, 5))
 
@@ -218,8 +228,8 @@ def setup_right_panel(app, parent):
     cols = ("Ticket", "Time", "Order", "Targets", "CostInfo", "RR", "PnL", "Status", "X")
     app.tree = ttk.Treeview(f_tree_container, columns=cols, show="headings", style="Treeview", selectmode="extended") 
     
-    app.tree.tag_configure("buy_row", background="#234d20", foreground="#e0e0e0") # Xanh rêu dịu
-    app.tree.tag_configure("sell_row", background="#5c1a1b", foreground="#e0e0e0") # Đỏ mận dịu
+    app.tree.tag_configure("buy_row", background="#234d20", foreground="#e0e0e0") 
+    app.tree.tag_configure("sell_row", background="#5c1a1b", foreground="#e0e0e0") 
 
     headers = ["Ticket", "Thời gian", "Thông tin Lệnh", "Chốt lời/Lỗ (SL|TP)", "Chi phí/Phí qua đêm", "Rủi ro/Kỳ vọng (%)", "Lợi nhuận", "Trạng thái", "✖"]
     widths = [180, 180, 500, 300, 350, 450, 180, 500, 50]
@@ -255,8 +265,8 @@ def setup_right_panel(app, parent):
     app.txt_log = tk.Text(f_log, font=("Consolas", 18), bg="#121212", fg="#e0e0e0", bd=0, highlightthickness=0, state="disabled", wrap="word")
     app.txt_log.pack(fill="both", expand=True, padx=5, pady=(0,5))
     
-    app.txt_log.tag_config("INFO", foreground="#b0bec5") # Màu cho tin nhắn thường
-    app.txt_log.tag_config("SUCCESS", foreground=COL_GREEN)  # Màu xanh cho lệnh Lãi / Thành công
-    app.txt_log.tag_config("ERROR", foreground=COL_RED)    # Màu đỏ cho lệnh Lỗ / Lỗi
-    app.txt_log.tag_config("WARN", foreground=COL_WARN)    # Màu vàng cảnh báo
-    app.txt_log.tag_config("BLUE", foreground="#29B6F6")   # Màu xanh dương
+    app.txt_log.tag_config("INFO", foreground="#b0bec5") 
+    app.txt_log.tag_config("SUCCESS", foreground=COL_GREEN)  
+    app.txt_log.tag_config("ERROR", foreground=COL_RED)    
+    app.txt_log.tag_config("WARN", foreground=COL_WARN)    
+    app.txt_log.tag_config("BLUE", foreground="#29B6F6")
