@@ -18,6 +18,7 @@ class BotStrategyUI(ctk.CTkToplevel):
         self.title("🧠 V3.0 Bot Strategy Sandbox (Brain Settings)")
         self.geometry("1000x750")
         self.attributes("-topmost", True)
+        self.transient(master)
         self.focus_force()
 
         os.makedirs(TEMPLATE_DIR, exist_ok=True)

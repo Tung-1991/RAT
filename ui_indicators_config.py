@@ -17,6 +17,7 @@ def open_indicator_config_popup(parent, ind_name, current_params, save_callback)
     top.title(f"⚙️ Cấu hình thông số: {ind_name.upper()}")
     top.geometry("450x550")
     top.attributes("-topmost", True)
+    top.transient(parent)
     top.focus_force()
 
     # Header

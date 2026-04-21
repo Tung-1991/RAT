@@ -18,8 +18,8 @@ def get_signal_vector(df: pd.DataFrame, params: dict, context: dict = None) -> i
     fibo_382 = sl + diff * 0.382
     fibo_618 = sl + diff * 0.618
     
-    # Bắt phản ứng giá (Sai số 0.1%)
-    tolerance = 0.001
+    # Bắt phản ứng giá với sai số từ giao diện (mặc định 0.1%)
+    tolerance = float(params.get("tolerance", 0.001))
     if abs(close - fibo_618) / close < tolerance: return 1 
     if abs(close - fibo_382) / close < tolerance: return -1 
     

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # FILE: bot_daemon.py
-# V3.1: STANDALONE DAEMON - SAFE ATOMIC WRITER & CONTEXT BROADCASTER (KAISER EDITION)
+# V3.2: STANDALONE DAEMON - G1 TREND SYNC & ATOMIC WRITER (KAISER EDITION)
 
 import time
 import json
@@ -43,7 +43,7 @@ class StandaloneBotDaemon:
                 "status": "HEALTHY", 
                 "wakeup_time": time.time(), 
                 "active_symbols": active_symbols,
-                "contexts": self.heartbeat_contexts # Bơm data sang UI để vẽ Swing/Trend
+                "contexts": self.heartbeat_contexts # Bơm data sang UI để vẽ Swing/Trend/ATR
             }, 
             "pending_signals": self.pending_signals[-10:] # Chỉ giữ 10 tín hiệu gần nhất
         }
@@ -74,7 +74,7 @@ class StandaloneBotDaemon:
         self._atomic_write_signals(syms) 
 
     def _read_live_config(self):
-        """[ĐÃ FIX] Đọc cấu hình JSON liên tục để hỗ trợ Hot-Reload từ UI"""
+        """Đọc cấu hình JSON liên tục để hỗ trợ Hot-Reload từ UI"""
         try:
             if os.path.exists(BRAIN_SETTINGS_FILE):
                 with open(BRAIN_SETTINGS_FILE, "r", encoding="utf-8") as f:
@@ -105,13 +105,37 @@ class StandaloneBotDaemon:
                         if df_entry is None or context is None:
                             continue
 
-                        # Lưu context để bơm sang UI qua Heartbeat
+                        # --- LOGIC TÍNH TOÁN XU HƯỚNG THEO BỘ LỌC G1 (THAY THẾ EMA50 CŨ) ---
+                        brain_settings = signal_generator._get_brain_settings()
+                        current_mode = signal_generator._detect_market_mode(df_trend, context)
+                        inds_config = brain_settings.get("indicators", {})
+                        voting_rules = brain_settings.get("voting_rules", {})
+                        
+                        g1_inds = {}
+                        for name, cfg in inds_config.items():
+                            if cfg.get("active", False) and cfg.get("group") == "G1":
+                                modes = cfg.get("active_modes", ["ANY"])
+                                if "ANY" in modes or current_mode in modes:
+                                    g1_inds[name] = cfg
+                                    
+                        # Đánh giá G1 để lấy Trend
+                        g1_status = signal_generator._evaluate_group("G1", g1_inds, df_entry, context, current_mode, voting_rules.get("G1", {}))
+                        
+                        if g1_status == 1: 
+                            real_trend = "UP"
+                        elif g1_status == -1: 
+                            real_trend = "DOWN"
+                        else: 
+                            real_trend = "NONE"
+                        # -------------------------------------------------------------------
+
+                        # Lưu context chuẩn hóa để bơm sang UI qua Heartbeat
                         self.heartbeat_contexts[sym] = {
-                            "trend": context.get("trend", "NONE"), # <--- [ĐÃ FIX] Bổ sung Trend lên UI
-                            "swing_high": context.get("swing_high_entry", 0),
-                            "swing_low": context.get("swing_low_entry", 0),
-                            "atr": context.get("atr_entry", 0),
-                            "current_price": context.get("current_price", 0),
+                            "trend": real_trend,
+                            "swing_high": float(context.get("swing_high_entry", 0.0)),
+                            "swing_low": float(context.get("swing_low_entry", 0.0)),
+                            "atr": float(context.get("atr_entry", 0.0)),
+                            "current_price": float(context.get("current_price", 0.0)),
                             "timestamp": time.time()
                         }
 

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # FILE: config.py
-# V3.0: UNIFIED CONFIG - SINGLE SOURCE OF TRUTH (KAISER EDITION)
+# V3.1: UNIFIED CONFIG - SINGLE SOURCE OF TRUTH (KAISER EDITION)
 
 import os
 
@@ -72,7 +72,7 @@ PRESETS = {
 BOT_RISK_PERCENT = 0.30             
 BOT_TP_RR_RATIO = 1.5               
 BOT_DEFAULT_TSL = "BE+STEP_R+SWING" 
-BOT_DAILY_TRADE_LIMIT = 10          # [V3.0] Limit lệnh riêng cho Bot
+BOT_DAILY_TRADE_LIMIT = 10          
 BOT_BYPASS_CHECKLIST = False
 
 # ==============================================================================
@@ -96,7 +96,6 @@ be_atr_buffer = 0.8
 
 # ==============================================================================
 # 7. BỘ NÃO PHÂN TÍCH (SANDBOX V3.0 DEFAULTS - SINGLE SOURCE OF TRUTH)
-# Hệ thống nạp theo thứ tự: config.py -> data/brain_settings.json
 # ==============================================================================
 trend_timeframe = "1h"              
 entry_timeframe = "15m"             
@@ -105,11 +104,10 @@ COOLDOWN_MINUTES = 1
 AUTO_TRADE_ENABLED = False          
 DAEMON_LOOP_DELAY = 15
 
-# [V3.0] Toán lý Math SL
+# Toán lý Math SL
 sl_atr_multiplier = 0.2             
 
-# [V3.0] Cấu hình Mặc định cho 16+ Signals. 
-# Params được chuẩn hóa khớp 100% với biến gọi trong thư mục signals/
+# Cấu hình Mặc định cho 16+ Signals. (Khớp 100% tham số thuật toán)
 SANDBOX_CONFIG = {
     "voting_rules": {
         "max_opposite": 0,
@@ -117,17 +115,17 @@ SANDBOX_CONFIG = {
         "master_rule": "FIX"
     },
     "indicators": {
-        "swing_point": {"active": True, "group": "G1", "active_modes": ["ANY"], "params": {"period": 5}},
+        "swing_point": {"active": True, "group": "G1", "active_modes": ["ANY"], "params": {}}, # Đã xóa period thừa
         "atr": {"active": True, "group": "G1", "active_modes": ["ANY"], "params": {"period": 14, "multiplier": 1.5}},
-        "adx": {"active": True, "group": "G1", "active_modes": ["TREND", "BREAKOUT"], "params": {"period": 14, "weak": 18, "strong": 23}},
+        "adx": {"active": True, "group": "G1", "active_modes": ["TREND", "BREAKOUT"], "params": {"period": 14, "strong": 23}}, # Đã xóa weak thừa
         "ema": {"active": True, "group": "G1", "active_modes": ["ANY"], "params": {"period": 50}},
         "pivot_points": {"active": False, "group": "G3", "active_modes": ["ANY"], "params": {}},
         "ema_cross": {"active": False, "group": "G2", "active_modes": ["TREND", "BREAKOUT"], "params": {"fast": 9, "slow": 21}},
         "volume": {"active": True, "group": "G2", "active_modes": ["BREAKOUT"], "params": {"period": 20, "multiplier": 1.1}},
         "supertrend": {"active": True, "group": "G2", "active_modes": ["TREND"], "params": {"period": 10, "multiplier": 3.0}},
-        "psar": {"active": False, "group": "G2", "active_modes": ["TREND"], "params": {}}, 
+        "psar": {"active": False, "group": "G2", "active_modes": ["TREND"], "params": {"step": 0.02, "max_step": 0.2}}, # Bổ sung step, max_step
         "bollinger_bands": {"active": False, "group": "G2", "active_modes": ["RANGE"], "params": {"period": 20, "std_dev": 2.0}},
-        "fibonacci": {"active": False, "group": "G2", "active_modes": ["RANGE", "EXHAUSTION"], "params": {}},
+        "fibonacci": {"active": False, "group": "G2", "active_modes": ["RANGE", "EXHAUSTION"], "params": {"tolerance": 0.001}}, # Bổ sung tolerance
         "rsi": {"active": False, "group": "G2", "active_modes": ["RANGE"], "params": {"period": 14, "upper": 70, "lower": 30}},
         "stochastic": {"active": False, "group": "G2", "active_modes": ["RANGE"], "params": {"k": 14, "d": 3, "smooth": 3, "upper": 80, "lower": 20}},
         "macd": {"active": False, "group": "G2", "active_modes": ["EXHAUSTION"], "params": {"fast": 12, "slow": 26, "signal": 9}},

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # FILE: ui_panels.py
-# V8.2: STATIC UI PANELS - DEPENDENCY INJECTION (KAISER EDITION)
-# UPDATE: THÊM NÚT STRATEGY SANDBOX V3.0
+# V8.3: STATIC UI PANELS - ERGONOMIC LAYOUT (KAISER EDITION)
+# UPDATE: DI DỜI NÚT SANDBOX LÊN CẠNH NÚT BOT ĐỂ TỐI ƯU KHÔNG GIAN
 
 import customtkinter as ctk
 import tkinter as tk
@@ -52,7 +52,7 @@ def setup_left_panel(app, parent):
     f_set.pack(fill="x", padx=5, pady=5)
     f_set.columnconfigure(1, weight=1)
 
-    # --- DÒNG 1: COIN & CẤU HÌNH BOT ---
+    # --- DÒNG 1: COIN & CẤU HÌNH BOT & SANDBOX ---
     ctk.CTkLabel(f_set, text="COIN:", font=FONT_SECTION, text_color="gray").grid(row=0, column=0, sticky="w")
     f_coin_row = ctk.CTkFrame(f_set, fg_color="transparent")
     f_coin_row.grid(row=0, column=1, sticky="ew", padx=5)
@@ -69,9 +69,24 @@ def setup_left_panel(app, parent):
     
     app.ind_auto_light = ctk.CTkFrame(f_bot_controls, width=14, height=14, corner_radius=7, fg_color=COL_RED)
     app.ind_auto_light.pack(side="left", padx=(0, 6))
-    ctk.CTkButton(f_bot_controls, text="⚙ BOT", width=40, height=24, fg_color="#4A148C", hover_color="#6A1B9A", command=app.open_bot_setting_popup).pack(side="left")
+    
+    # Nút cài đặt Safety (Bot cũ)
+    ctk.CTkButton(f_bot_controls, text="⚙ BOT", width=40, height=24, fg_color="#4A148C", hover_color="#6A1B9A", command=app.open_bot_setting_popup).pack(side="left", padx=(0, 5))
 
-    app.chk_force = ctk.CTkCheckBox(f_coin_row, text="Force", variable=app.var_bypass_checklist, font=("Roboto", 11, "bold"), text_color=COL_WARN, width=60, checkbox_width=18, checkbox_height=18)
+    # Nút mở Strategy Sandbox V3.0 thu gọn lại
+    app.btn_strategy = ctk.CTkButton(
+        f_bot_controls, 
+        text="🧩 SANDBOX", 
+        width=60,
+        height=24,
+        font=("Roboto", 11, "bold"), 
+        fg_color="#1f538d",      
+        hover_color="#14375e", 
+        command=app.open_strategy_sandbox
+    )
+    app.btn_strategy.pack(side="left")
+
+    app.chk_force = ctk.CTkCheckBox(f_coin_row, text="Force", variable=app.var_bypass_checklist, font=("Roboto", 11, "bold"), text_color=COL_WARN, width=50, checkbox_width=18, checkbox_height=18)
     app.chk_force.pack(side="right", padx=0)
 
     # --- DÒNG 2: MODE ---
@@ -112,21 +127,9 @@ def setup_left_panel(app, parent):
     
     app.update_tactic_buttons_ui()
 
-    # --- DÒNG 4 (MỚI): NÚT MỞ STRATEGY SANDBOX V3.0 ---
-    app.btn_strategy = ctk.CTkButton(
-        f_set, 
-        text="🧩 STRATEGY SANDBOX V3.0", 
-        font=("Roboto", 14, "bold"), 
-        height=35,
-        fg_color="#1f538d",      
-        hover_color="#14375e", 
-        command=app.open_strategy_sandbox
-    )
-    app.btn_strategy.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(15, 5))
-
-    # 3. MANUAL INPUT PANEL
+    # 3. MANUAL INPUT PANEL (Được đẩy lên cao hơn)
     f_input = ctk.CTkFrame(parent, fg_color="transparent")
-    f_input.pack(fill="x", padx=5, pady=(5,0))
+    f_input.pack(fill="x", padx=5, pady=(15,0))  # Tăng chút khoảng đệm phía trên cho thoáng
     f_input.grid_columnconfigure((0,1,2), weight=1)
 
     def make_inp(p, t, v, c):
@@ -140,7 +143,7 @@ def setup_left_panel(app, parent):
     make_inp(f_input, "SL (Price)", app.var_manual_sl, 2)
 
     app.lbl_market_context = ctk.CTkLabel(parent, text="Trend: -- | SHigh: -- | SLow: -- | ATR: --", font=("Roboto", 13, "bold"), text_color="#78909C")
-    app.lbl_market_context.pack(pady=(2, 5))
+    app.lbl_market_context.pack(pady=(5, 5))
 
     # 4. LIVE DASHBOARD
     f_dashboard = ctk.CTkFrame(parent, fg_color="#252526", corner_radius=8, border_width=1, border_color="#333")

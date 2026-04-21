@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 # FILE: ui_popups.py
-# V3.7: SUPREME FINAL - KAISER EDITION
-# SINGLE SOURCE OF TRUTH: Chỉ xóa Tab Manual Assist, giữ nguyên 100% logic tính toán cao cấp.
+# V3.8: SUPREME FINAL - TRANSIENT LOCK & TACTIC PREVIEW (KAISER EDITION)
 
 import customtkinter as ctk
 import tkinter as tk
@@ -18,15 +17,15 @@ COL_WARN = "#FFAB00"
 COL_BOT_TAG = "#E040FB"
 
 # ==============================================================================
-# 1. POPUP CẤU HÌNH LÕI (CORE SETTINGS)
+# 1. POPUP CẤU HÌNH LÕI (CHỈ CÒN SAFETY & WATCHLIST)
 # ==============================================================================
 def open_bot_setting_popup(app):
     top = ctk.CTkToplevel(app)
     top.title("Cấu hình Lõi Hệ Thống (Core Settings)")
-    top.geometry("700x800") 
+    top.geometry("700x550") 
     top.attributes("-topmost", True)
+    top.transient(app) # Khóa Z-index, luôn nổi trên App chính
     
-    # Chỉ còn CORE ENGINE, không chia Tab nữa cho gọn
     tab_core = ctk.CTkScrollableFrame(top, fg_color="transparent")
     tab_core.pack(fill="both", expand=True, padx=15, pady=15)
     
@@ -47,37 +46,7 @@ def open_bot_setting_popup(app):
 
     ctk.CTkFrame(tab_core, height=2, fg_color="#333").pack(fill="x", padx=30, pady=5)
     
-    # Risk Management
-    ctk.CTkLabel(tab_core, text="BOT RISK MANAGEMENT (TP = 0.0, Thuần TSL)", font=FONT_BOLD, text_color=COL_BOT_TAG).pack(pady=5)
-    f_bot_risk = ctk.CTkFrame(tab_core, fg_color="transparent")
-    f_bot_risk.pack(fill="x", padx=30)
-    
-    ctk.CTkLabel(f_bot_risk, text="Rủi ro / Lệnh (% Cắt lỗ tài khoản):").pack(side="left")
-    e_bot_risk = ctk.CTkEntry(f_bot_risk, width=80, justify="center")
-    e_bot_risk.insert(0, str(getattr(config, "BOT_RISK_PERCENT", 0.3)))
-    e_bot_risk.pack(side="right")
-
-    ctk.CTkFrame(tab_core, height=2, fg_color="#333").pack(fill="x", padx=30, pady=10)
-
-    # Bot TSL Tactic
-    ctk.CTkLabel(tab_core, text="BOT TSL TACTIC (ĐỘC LẬP VỚI MANUAL)", font=FONT_BOLD, text_color="#29B6F6").pack(pady=(5, 5))
-    f_bot_tsl = ctk.CTkFrame(tab_core, fg_color="#2b2b2b", corner_radius=8)
-    f_bot_tsl.pack(fill="x", padx=15, pady=5)
-
-    current_bot_tsl = getattr(config, "BOT_DEFAULT_TSL", "BE+STEP_R+SWING")
-    app.var_bot_tsl_be = tk.BooleanVar(value="BE" in current_bot_tsl)
-    app.var_bot_tsl_pnl = tk.BooleanVar(value="PNL" in current_bot_tsl)
-    app.var_bot_tsl_step = tk.BooleanVar(value="STEP_R" in current_bot_tsl)
-    app.var_bot_tsl_swing = tk.BooleanVar(value="SWING" in current_bot_tsl)
-
-    ctk.CTkCheckBox(f_bot_tsl, text="BE", variable=app.var_bot_tsl_be).pack(side="left", expand=True, pady=10)
-    ctk.CTkCheckBox(f_bot_tsl, text="PNL", variable=app.var_bot_tsl_pnl).pack(side="left", expand=True, pady=10)
-    ctk.CTkCheckBox(f_bot_tsl, text="STEP_R", variable=app.var_bot_tsl_step).pack(side="left", expand=True, pady=10)
-    ctk.CTkCheckBox(f_bot_tsl, text="SWING", variable=app.var_bot_tsl_swing).pack(side="left", expand=True, pady=10)
-
-    ctk.CTkFrame(tab_core, height=2, fg_color="#333").pack(fill="x", padx=30, pady=10)
-
-    # Safety Guard
+    # Safety Guard (Bot & UI)
     ctk.CTkLabel(tab_core, text="HÀNG RÀO BẢO VỆ & DỮ LIỆU (SAFETY GUARD)", font=FONT_BOLD, text_color="#FFB300").pack(pady=(5, 5))
     f_safety = ctk.CTkFrame(tab_core, fg_color="#2b2b2b", corner_radius=8)
     f_safety.pack(fill="x", padx=15, pady=5)
@@ -120,13 +89,6 @@ def open_bot_setting_popup(app):
 
     def save():
         try:
-            config.BOT_RISK_PERCENT = float(e_bot_risk.get())
-            act_tsl = []
-            if app.var_bot_tsl_be.get(): act_tsl.append("BE")
-            if app.var_bot_tsl_pnl.get(): act_tsl.append("PNL")
-            if app.var_bot_tsl_step.get(): act_tsl.append("STEP_R")
-            if app.var_bot_tsl_swing.get(): act_tsl.append("SWING")
-            config.BOT_DEFAULT_TSL = "+".join(act_tsl) if act_tsl else "OFF"
             config.MAX_DAILY_LOSS_PERCENT, config.MAX_OPEN_POSITIONS = float(e_max_loss.get()), int(e_max_open.get())
             config.MAX_TRADES_PER_DAY, config.MAX_LOSING_STREAK = int(e_max_trades.get()), int(e_max_streak.get())
             config.LOSS_COUNT_MODE, config.COOLDOWN_MINUTES = cbo_loss_mode.get(), int(e_cooldown.get())
@@ -143,6 +105,8 @@ def open_bot_setting_popup(app):
 def open_preset_config_popup(app):
     p_name = app.cbo_preset.get(); data = config.PRESETS.get(p_name, {})
     top = ctk.CTkToplevel(app); top.title(f"Preset: {p_name}"); top.geometry("400x450"); top.attributes("-topmost", True)
+    top.transient(app)
+    
     acc = app.connector.get_account_info(); eq = acc['equity'] if acc else 1000.0
     tick = app.connector.get_market_status(app.cbo_symbol.get()); cp = tick.get("ask", 1000.0) if isinstance(tick, dict) else 1000.0
     
@@ -173,8 +137,8 @@ def open_preset_config_popup(app):
 # ==============================================================================
 def open_tsl_popup(app):
     top = ctk.CTkToplevel(app); top.title("TSL Logic"); top.geometry("420x600"); top.attributes("-topmost", True)
-    curr_bal = app.connector.get_account_info()['balance'] if app.connector.get_account_info() else 1000.0
-
+    top.transient(app)
+    
     def sec(t):
         ctk.CTkLabel(top, text=t, font=("Roboto", 12, "bold"), text_color="#03A9F4").pack(fill="x", padx=15, pady=(10, 2), anchor="w")
         return ctk.CTkFrame(top, fg_color="transparent")
@@ -216,7 +180,9 @@ def open_tsl_popup(app):
 def open_edit_popup(app, ticket):
     pos = next((p for p in app.connector.get_all_open_positions() if p.ticket == ticket), None)
     if not pos: return
-    top = ctk.CTkToplevel(app); top.title(f"Sửa lệnh #{ticket}"); top.geometry("420x680"); top.attributes("-topmost", True)
+    top = ctk.CTkToplevel(app); top.title(f"Sửa lệnh #{ticket}"); top.geometry("450x760"); top.attributes("-topmost", True)
+    top.transient(app)
+    
     is_buy = pos.type == 0; bal = app.connector.get_account_info()['balance'] if app.connector.get_account_info() else 1000.0
 
     ctk.CTkLabel(top, text="NEW SL:", font=FONT_BOLD).pack(pady=(10,2))
@@ -227,6 +193,15 @@ def open_edit_popup(app, ticket):
     e_tp = ctk.CTkEntry(top, justify="center"); e_tp.insert(0, str(pos.tp)); e_tp.pack()
     lbl_h_tp = ctk.CTkLabel(top, text="~ +$0.00", text_color="gray", font=("Roboto", 11)); lbl_h_tp.pack(pady=(0, 5))
     
+    # Khung chứa Live Tactic Preview
+    f_tactic_preview = ctk.CTkFrame(top, fg_color="#1a1a1a", corner_radius=6)
+    f_tactic_preview.pack(fill="x", padx=20, pady=5)
+    lbl_tactic_preview = ctk.CTkLabel(f_tactic_preview, text="TSL Preview", text_color="#29B6F6", font=("Consolas", 12))
+    lbl_tactic_preview.pack(pady=5)
+
+    cur_t = app.trade_mgr.get_trade_tactic(ticket)
+    states = {"BE":"BE" in cur_t, "PNL":"PNL" in cur_t, "STEP":"STEP_R" in cur_t, "SWING":"SWING" in cur_t}
+
     def live_edit(*args):
         try:
             nsl, ntp = float(e_sl.get() or 0), float(e_tp.get() or 0)
@@ -238,38 +213,76 @@ def open_edit_popup(app, ticket):
                 p_dist = abs(pos.price_open - ntp)
                 prof = p_dist * pos.volume * 1.0
                 lbl_h_tp.configure(text=f"~ +${prof:.2f}", text_color="#66BB6A")
+                
+            # Cập nhật Live Trigger Price Preview
+            if nsl > 0:
+                r_dist = abs(pos.price_open - nsl)
+                if r_dist > 0:
+                    preview_txts = []
+                    if states["BE"]:
+                        trig_r = config.TSL_CONFIG.get("BE_OFFSET_RR", 0.8)
+                        trig_p = pos.price_open + (trig_r * r_dist) if is_buy else pos.price_open - (trig_r * r_dist)
+                        preview_txts.append(f"BE @ {trig_p:.2f}")
+                    if states["STEP"]:
+                        sz = config.TSL_CONFIG.get("STEP_R_SIZE", 1.0)
+                        trig_p = pos.price_open + (sz * r_dist) if is_buy else pos.price_open - (sz * r_dist)
+                        preview_txts.append(f"Step 1 @ {trig_p:.2f}")
+                    if states["PNL"] and config.TSL_CONFIG.get("PNL_LEVELS"):
+                        lvl = config.TSL_CONFIG["PNL_LEVELS"][0]
+                        preview_txts.append(f"PNL @ Lãi {lvl[0]}%")
+                    if states["SWING"]:
+                        preview_txts.append("SWING (Đuổi theo nến H1/M15)")
+
+                    if preview_txts:
+                        lbl_tactic_preview.configure(text="Dự kiến Trigger TSL:\n" + " | ".join(preview_txts))
+                    else:
+                        lbl_tactic_preview.configure(text="TSL: OFF")
         except: pass
-    e_sl.bind("<KeyRelease>", live_edit); e_tp.bind("<KeyRelease>", live_edit); live_edit()
+
+    e_sl.bind("<KeyRelease>", live_edit); e_tp.bind("<KeyRelease>", live_edit)
 
     f_ast = ctk.CTkFrame(top, fg_color="transparent"); f_ast.pack(pady=10)
+    
     def do_math():
         ctx = app.latest_market_context.get(pos.symbol, {})
         val = ctx.get("swing_low" if is_buy else "swing_high")
-        if val and str(val) != "--": e_sl.delete(0,'end'); e_sl.insert(0, f"{float(val):.5f}"); live_edit()
+        atr_val = ctx.get("atr")
+        if val and str(val) != "--" and atr_val:
+            mult = getattr(config, "sl_atr_multiplier", 0.2)
+            calc_sl = float(val) - (float(atr_val) * mult) if is_buy else float(val) + (float(atr_val) * mult)
+            e_sl.delete(0,'end'); e_sl.insert(0, f"{calc_sl:.5f}"); live_edit()
+            
     ctk.CTkButton(f_ast, text="Lấy Math SL", width=140, fg_color="#1565C0", command=do_math).pack(side="left", padx=5)
+    
     def do_tp():
         try:
             rr = config.PRESETS.get(app.cbo_preset.get(), {}).get("TP_RR_RATIO", 1.5)
             tp = pos.price_open + (abs(pos.price_open-float(e_sl.get()))*rr if is_buy else -abs(pos.price_open-float(e_sl.get()))*rr)
             e_tp.delete(0,'end'); e_tp.insert(0, f"{tp:.5f}"); live_edit()
         except: pass
+        
     ctk.CTkButton(f_ast, text="Lấy Preset TP", width=140, fg_color="#2E7D32", command=do_tp).pack(side="right", padx=5)
     
     f_chk = ctk.CTkFrame(top, fg_color="transparent"); f_chk.pack()
     chk_dca, chk_pca = ctk.CTkCheckBox(f_chk, text="Auto DCA", font=("Roboto",11)), ctk.CTkCheckBox(f_chk, text="Auto PCA", font=("Roboto",11))
     chk_dca.pack(side="left", padx=10); chk_pca.pack(side="left")
 
-    cur_t = app.trade_mgr.get_trade_tactic(ticket)
     if "AUTO_DCA" in cur_t: chk_dca.select()
     if "AUTO_PCA" in cur_t: chk_pca.select()
-    states = {"BE":"BE" in cur_t, "PNL":"PNL" in cur_t, "STEP":"STEP_R" in cur_t, "SWING":"SWING" in cur_t}
     
     f_t = ctk.CTkFrame(top, fg_color="transparent"); f_t.pack(pady=10)
     btns = {}
-    def tog(k): states[k] = not states[k]; btns[k].configure(fg_color=COL_BLUE_ACCENT if states[k] else COL_GRAY_BTN)
+    
+    def tog(k): 
+        states[k] = not states[k]
+        btns[k].configure(fg_color=COL_BLUE_ACCENT if states[k] else COL_GRAY_BTN)
+        live_edit() # Cập nhật lại Preview ngay khi toggle
+        
     for k in states:
         btns[k] = ctk.CTkButton(f_t, text=k, width=50, fg_color=COL_BLUE_ACCENT if states[k] else COL_GRAY_BTN, command=lambda x=k: tog(x))
         btns[k].pack(side="left", padx=2)
+
+    live_edit() # Lần gọi đầu tiên khi mở popup
 
     def save_e():
         try:
@@ -280,10 +293,12 @@ def open_edit_popup(app, ticket):
             if chk_pca.get(): final_t += "+AUTO_PCA"
             app.trade_mgr.update_trade_tactic(ticket, final_t); top.destroy()
         except Exception as e: messagebox.showerror("Lỗi", str(e))
+        
     ctk.CTkButton(top, text="CẬP NHẬT LỆNH", height=45, fg_color="#2e7d32", font=FONT_BOLD, command=save_e).pack(pady=20, fill="x", padx=40)
 
 def show_history_popup(app):
     top = ctk.CTkToplevel(app); top.title("History"); top.geometry("750x500")
+    top.transient(app)
     cols = ("Time", "Symbol", "Type", "Profit", "Reason")
     tr = ttk.Treeview(top, columns=cols, show="headings"); tr.pack(fill="both", expand=True)
     for c in cols: tr.heading(c, text=c)
