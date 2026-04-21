@@ -24,7 +24,7 @@ def open_bot_setting_popup(app):
     top.title("Cấu hình Lõi Hệ Thống (Core Settings)")
     top.geometry("700x550") 
     top.attributes("-topmost", True)
-    top.transient(app) # Khóa Z-index, luôn nổi trên App chính
+    #top.transient(app) # Khóa Z-index, luôn nổi trên App chính
     
     tab_core = ctk.CTkScrollableFrame(top, fg_color="transparent")
     tab_core.pack(fill="both", expand=True, padx=15, pady=15)
@@ -94,7 +94,9 @@ def open_bot_setting_popup(app):
             config.LOSS_COUNT_MODE, config.COOLDOWN_MINUTES = cbo_loss_mode.get(), int(e_cooldown.get())
             config.NUM_H1_BARS, config.NUM_M15_BARS = int(e_num_h1.get()), int(e_num_m15.get())
             config.BOT_ACTIVE_SYMBOLS = [coin for coin, var in app.bot_coin_vars.items() if var.get()]
-            app.save_settings(); app.log_message("✅ Core Settings Saved."); top.destroy()
+            app._save_brain_live_config() # <-- Sửa dòng này
+            app.log_message("✅ Core Settings Saved.")
+            top.destroy()
         except ValueError: messagebox.showerror("Lỗi", "Dữ liệu nhập sai!")
 
     ctk.CTkButton(top, text="LƯU CẤU HÌNH CỐT LÕI", fg_color=COL_BLUE_ACCENT, height=45, font=FONT_BOLD, command=save).pack(pady=20, fill="x", padx=40)
@@ -105,7 +107,7 @@ def open_bot_setting_popup(app):
 def open_preset_config_popup(app):
     p_name = app.cbo_preset.get(); data = config.PRESETS.get(p_name, {})
     top = ctk.CTkToplevel(app); top.title(f"Preset: {p_name}"); top.geometry("400x450"); top.attributes("-topmost", True)
-    top.transient(app)
+    #top.transient(app)
     
     acc = app.connector.get_account_info(); eq = acc['equity'] if acc else 1000.0
     tick = app.connector.get_market_status(app.cbo_symbol.get()); cp = tick.get("ask", 1000.0) if isinstance(tick, dict) else 1000.0
@@ -137,7 +139,7 @@ def open_preset_config_popup(app):
 # ==============================================================================
 def open_tsl_popup(app):
     top = ctk.CTkToplevel(app); top.title("TSL Logic"); top.geometry("420x600"); top.attributes("-topmost", True)
-    top.transient(app)
+    #top.transient(app)
     
     def sec(t):
         ctk.CTkLabel(top, text=t, font=("Roboto", 12, "bold"), text_color="#03A9F4").pack(fill="x", padx=15, pady=(10, 2), anchor="w")
@@ -181,7 +183,7 @@ def open_edit_popup(app, ticket):
     pos = next((p for p in app.connector.get_all_open_positions() if p.ticket == ticket), None)
     if not pos: return
     top = ctk.CTkToplevel(app); top.title(f"Sửa lệnh #{ticket}"); top.geometry("450x760"); top.attributes("-topmost", True)
-    top.transient(app)
+    #top.transient(app)
     
     is_buy = pos.type == 0; bal = app.connector.get_account_info()['balance'] if app.connector.get_account_info() else 1000.0
 

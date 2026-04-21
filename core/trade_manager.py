@@ -375,6 +375,7 @@ class TradeManager:
                 
                 # Swing luôn trong trạng thái ứng cử, hệ thống sẽ lọc ở dưới xem có tốt hơn SL hiện tại không
                 candidates.append((swing_sl, f"SWING ➔ {swing_sl:.2f}"))
+                milestones.append((0, f"SWING Đợi ➔ {swing_sl:.2f}"))
 
         # ÁP DỤNG SL AN TOÀN NHẤT (Chọn giá trị bảo vệ tốt nhất trong số các Candidates)
         valid_moves = []

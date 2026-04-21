@@ -86,7 +86,7 @@ def setup_left_panel(app, parent):
     )
     app.btn_strategy.pack(side="left")
 
-    app.chk_force = ctk.CTkCheckBox(f_coin_row, text="Force", variable=app.var_bypass_checklist, font=("Roboto", 11, "bold"), text_color=COL_WARN, width=50, checkbox_width=18, checkbox_height=18)
+    app.chk_force = ctk.CTkCheckBox(f_coin_row, text="F", variable=app.var_bypass_checklist, font=("Roboto", 11, "bold"), text_color=COL_WARN, width=50, checkbox_width=18, checkbox_height=18)
     app.chk_force.pack(side="right", padx=0)
 
     # --- DÒNG 2: MODE ---

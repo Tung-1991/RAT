@@ -89,15 +89,12 @@ class StandaloneBotDaemon:
         
         while self.running:
             try:
-                # 1. ĐỌC CONFIG MỚI NHẤT (HOT-RELOAD TỪ SANDBOX V3.0)
                 live_cfg = self._read_live_config()
-                
-                # Ưu tiên lấy từ JSON (UI vừa chỉnh), nếu không có mới lấy từ config.py mặc định
                 bot_active = live_cfg.get("BOT_ACTIVE", live_cfg.get("AUTO_TRADE_ENABLED", getattr(config, "AUTO_TRADE_ENABLED", False)))
                 symbols = live_cfg.get("BOT_ACTIVE_SYMBOLS", getattr(config, "BOT_ACTIVE_SYMBOLS", getattr(config, "SYMBOLS", [])))
                 
-                if bot_active and symbols:
-                    # 2. QUÉT ENTRY & CẬP NHẬT CONTEXT CHO UI
+                # SỬA Ở ĐÂY: Luôn quét Data mien là có symbols, không quan tâm bot_active
+                if symbols:
                     for sym in symbols:
                         if not self.running: break
                         
@@ -105,31 +102,18 @@ class StandaloneBotDaemon:
                         if df_entry is None or context is None:
                             continue
 
-                        # --- LOGIC TÍNH TOÁN XU HƯỚNG THEO BỘ LỌC G1 (THAY THẾ EMA50 CŨ) ---
+                        # --- LOGIC TÍNH TOÁN XU HƯỚNG THEO BỘ LỌC G1 ---
                         brain_settings = signal_generator._get_brain_settings()
                         current_mode = signal_generator._detect_market_mode(df_trend, context)
                         inds_config = brain_settings.get("indicators", {})
                         voting_rules = brain_settings.get("voting_rules", {})
                         
-                        g1_inds = {}
-                        for name, cfg in inds_config.items():
-                            if cfg.get("active", False) and cfg.get("group") == "G1":
-                                modes = cfg.get("active_modes", ["ANY"])
-                                if "ANY" in modes or current_mode in modes:
-                                    g1_inds[name] = cfg
-                                    
-                        # Đánh giá G1 để lấy Trend
+                        g1_inds = {n: c for n, c in inds_config.items() if c.get("active", False) and c.get("group") == "G1" and ("ANY" in c.get("active_modes", ["ANY"]) or current_mode in c.get("active_modes", ["ANY"]))}
                         g1_status = signal_generator._evaluate_group("G1", g1_inds, df_entry, context, current_mode, voting_rules.get("G1", {}))
                         
-                        if g1_status == 1: 
-                            real_trend = "UP"
-                        elif g1_status == -1: 
-                            real_trend = "DOWN"
-                        else: 
-                            real_trend = "NONE"
-                        # -------------------------------------------------------------------
+                        real_trend = "UP" if g1_status == 1 else ("DOWN" if g1_status == -1 else "NONE")
 
-                        # Lưu context chuẩn hóa để bơm sang UI qua Heartbeat
+                        # Luôn bơm Context sang UI
                         self.heartbeat_contexts[sym] = {
                             "trend": real_trend,
                             "swing_high": float(context.get("swing_high_entry", 0.0)),
@@ -139,18 +123,20 @@ class StandaloneBotDaemon:
                             "timestamp": time.time()
                         }
 
-                        signal = signal_generator.generate_signal(df_entry, df_trend, context)
-                        if signal != 0:
-                            action = "BUY" if signal == 1 else "SELL"
-                            self._add_signal(action, sym, context, "ENTRY")
+                        # CHỈ CHẶN BÓP CÒ NẾU TẮT AUTO-TRADE
+                        if bot_active:
+                            signal = signal_generator.generate_signal(df_entry, df_trend, context)
+                            if signal != 0:
+                                action = "BUY" if signal == 1 else "SELL"
+                                self._add_signal(action, sym, context, "ENTRY")
 
-                    # 3. QUÉT DCA/PCA LIÊN TỤC
-                    now = time.time()
-                    if now - self.last_dca_pca_scan >= self.dca_pca_interval:
-                        self._scan_dca_pca()
-                        self.last_dca_pca_scan = now
+                    # Quét DCA/PCA
+                    if bot_active:
+                        now = time.time()
+                        if now - self.last_dca_pca_scan >= self.dca_pca_interval:
+                            self._scan_dca_pca()
+                            self.last_dca_pca_scan = now
 
-                # 4. GHI HEARTBEAT CẬP NHẬT LIÊN TỤC LÊN UI (Truyền symbol mới nhất)
                 self._atomic_write_signals(symbols)
                 time.sleep(getattr(config, "DAEMON_LOOP_DELAY", 2))
 
