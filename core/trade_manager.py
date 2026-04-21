@@ -369,12 +369,14 @@ class TradeManager:
         # 4. SWING
         if "SWING" in active_modes and context:
             sh, sl, atr = context.get("swing_high"), context.get("swing_low"), context.get("atr", 0)
-            if sh and sl and atr:
+            if sh is not None and sl is not None and atr:
                 trail_buf = getattr(config, "trail_atr_buffer", 0.2)
                 swing_sl = sl - (trail_buf * atr) if is_buy else sh + (trail_buf * atr)
                 
-                # Swing luôn trong trạng thái ứng cử, hệ thống sẽ lọc ở dưới xem có tốt hơn SL hiện tại không
+                # Báo cho hệ thống biết mức Swing SL
                 candidates.append((swing_sl, f"SWING ➔ {swing_sl:.2f}"))
+                
+                # Ép hiển thị ra cột Trạng thái trên bảng nếu chưa Hit
                 milestones.append((0, f"SWING Đợi ➔ {swing_sl:.2f}"))
 
         # ÁP DỤNG SL AN TOÀN NHẤT (Chọn giá trị bảo vệ tốt nhất trong số các Candidates)

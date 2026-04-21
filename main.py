@@ -468,6 +468,13 @@ class BotUI(ctk.CTk):
                     trig_p = cur_price + (req_profit_usd / (f_lot * c_size)) if is_buy else cur_price - (req_profit_usd / (f_lot * c_size))
                     milestones.append((abs(cur_price - trig_p), f"PnL {lvl[0]}% | {trig_p:.2f}"))
 
+                if "SWING" in cur_tactic_str and sym_ctx:
+                    sh, sl, atr_val = sym_ctx.get("swing_high", "--"), sym_ctx.get("swing_low", "--"), sym_ctx.get("atr", "--")
+                    if sh != "--" and sl != "--" and atr_val != "--":
+                        t_buf = getattr(config, "trail_atr_buffer", 0.2)
+                        swing_sl = float(sl) - (t_buf * float(atr_val)) if is_buy else float(sh) + (t_buf * float(atr_val))
+                        milestones.append((0, f"SWING | Đợi mốc ➔ {swing_sl:.2f}"))
+
                 if milestones:
                     closest = sorted(milestones, key=lambda x: x[0])[0][1]
                     self.lbl_tsl_preview.configure(text=f"TSL: {closest}")
