@@ -1,21 +1,19 @@
 # -*- coding: utf-8 -*-
 import pandas as pd
 
-def get_signal_vector(df: pd.DataFrame, params: dict) -> int:
-    """
-    V3.0: Supertrend Signal.
-    Xác nhận xu hướng bám đuôi (Trend Follower).
-    """
-    period = params.get("period", 10)
-    multiplier = params.get("multiplier", 3.0)
+def get_signal_vector(df: pd.DataFrame, params: dict, context: dict = None) -> int:
+    p = params.get("period", 10)
+    m = float(params.get("multiplier", 3.0))
     
-    # Tên cột mặc định: SUPERTd_10_3.0 (Cột direction: 1 hoặc -1)
-    col_dir = f"SUPERTd_{period}_{multiplier}"
+    # Cột hướng của Supertrend (1 là Up, -1 là Down)
+    col_dir = f"SUPERTd_{p}_{m}"
     
     if col_dir not in df.columns:
         return 0
-
-    direction = df[col_dir].iloc[-1]
+        
+    val = df[col_dir].iloc[-1]
     
-    # Supertrend trả về 1 cho UP và -1 cho DOWN
-    return int(direction) if direction in [1, -1] else 0
+    if val == 1: return 1
+    if val == -1: return -1
+    
+    return 0

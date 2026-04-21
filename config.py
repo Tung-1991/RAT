@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # FILE: config.py
-# V6.6: PARENT-CHILD BASKET DCA/PCA SETTINGS (KAISER EDITION)
+# V3.0: UNIFIED CONFIG - SINGLE SOURCE OF TRUTH (KAISER EDITION)
 
 import os
 
@@ -13,7 +13,11 @@ COIN_LIST = [
 ]
 DEFAULT_SYMBOL = "ETHUSD"           
 BOT_ACTIVE_SYMBOLS = ["ETHUSD"]     
-MAGIC_NUMBER = 8888                 
+
+# TÁCH BIỆT LUỒNG LỆNH (V3.0 ARCHITECTURE)
+MANUAL_MAGIC_NUMBER = 8888                 
+BOT_MAGIC_NUMBER = 9999
+
 LOOP_SLEEP_SECONDS = 0.25           
 RESET_HOUR = 6                      
 DATA_DIR = "data"                   
@@ -33,19 +37,11 @@ ACCOUNT_TYPES_CONFIG = {
 DEFAULT_ACCOUNT_TYPE = "STANDARD"
 
 COMMISSION_RATES = {
-    "BTCUSD": 16.5,   
-    "ETHUSD": 1.25,   
-    "XAUUSD": 7.0,    
-    "USOIL": 0.0,     
-    "UKOIL": 0.0,     
-    "EURUSD": 7.0,    
-    "GBPUSD": 7.0,
-    "USDJPY": 7.0,
-    "USDCHF": 7.0,
-    "AUDUSD": 7.0,
-    "USDCAD": 7.0
+    "BTCUSD": 16.5, "ETHUSD": 1.25, "XAUUSD": 7.0, "USOIL": 0.0, "UKOIL": 0.0,     
+    "EURUSD": 7.0, "GBPUSD": 7.0, "USDJPY": 7.0, "USDCHF": 7.0, "AUDUSD": 7.0, "USDCAD": 7.0
 }
 
+# GIỚI HẠN CHUNG
 MAX_DAILY_LOSS_PERCENT = 2.5        
 LOSS_COUNT_MODE = "TOTAL"           
 MAX_LOSING_STREAK = 3               
@@ -76,6 +72,8 @@ PRESETS = {
 BOT_RISK_PERCENT = 0.30             
 BOT_TP_RR_RATIO = 1.5               
 BOT_DEFAULT_TSL = "BE+STEP_R+SWING" 
+BOT_DAILY_TRADE_LIMIT = 10          # [V3.0] Limit lệnh riêng cho Bot
+BOT_BYPASS_CHECKLIST = False
 
 # ==============================================================================
 # 5. LOGIC TRAILING STOP CƠ BẢN (BE & STEP & PNL)
@@ -95,73 +93,61 @@ TSL_CONFIG = {
 TSL_LOGIC_MODE = "STATIC"       
 trail_atr_buffer = 0.2          
 be_atr_buffer = 0.8             
-USE_DYNAMIC_ATR_BUFFER = False  
 
 # ==============================================================================
-# 7. BỘ NÃO PHÂN TÍCH - DAEMON & SIGNAL
+# 7. BỘ NÃO PHÂN TÍCH (SANDBOX V3.0 DEFAULTS - SINGLE SOURCE OF TRUTH)
+# Hệ thống nạp theo thứ tự: config.py -> data/brain_settings.json
 # ==============================================================================
 trend_timeframe = "1h"              
 entry_timeframe = "15m"             
 NUM_H1_BARS, NUM_M15_BARS = 70, 70  
 COOLDOWN_MINUTES = 1                
+AUTO_TRADE_ENABLED = False          
+DAEMON_LOOP_DELAY = 15
 
-ALLOW_LONG_TRADES = True            
-ALLOW_SHORT_TRADES = True           
-
-# --- LỌC XU HƯỚNG (TREND H1) ---
-USE_TREND_FILTER = True
-USE_SUPERTREND_FILTER = False       
-USE_EMA_TREND_FILTER = True
-USE_ADX_FILTER = True               
-
-# --- VÙNG XÁM ADX (LỌC NHIỄU) ---
-USE_ADX_GREY_ZONE = True            
-ADX_WEAK = 18                       
-ADX_STRONG = 23                     
-ADX_MIN_LEVEL = 15                  
-
-# --- LOGIC VÀO LỆNH (ENTRY M15) ---
-ENTRY_LOGIC_MODE = "DYNAMIC"        
-
-# --- LỌC XÁC NHẬN NẾN & VOLUME ---
-USE_CANDLE_FILTER = True            
-min_body_percent = 30.0             
-PULLBACK_CANDLE_PATTERN = "ENGULFING" 
-USE_VOLUME_FILTER = False           
-volume_ma_period = 20               
-volume_sd_multiplier = 0.1          
-
-# --- SL KỸ THUẬT (MATH SL) ---
+# [V3.0] Toán lý Math SL
 sl_atr_multiplier = 0.2             
-USE_EMERGENCY_EXIT = True           
+
+# [V3.0] Cấu hình Mặc định cho 16+ Signals. 
+# Params được chuẩn hóa khớp 100% với biến gọi trong thư mục signals/
+SANDBOX_CONFIG = {
+    "voting_rules": {
+        "max_opposite": 0,
+        "max_none": 1,
+        "master_rule": "FIX"
+    },
+    "indicators": {
+        "swing_point": {"active": True, "group": "G1", "active_modes": ["ANY"], "params": {"period": 5}},
+        "atr": {"active": True, "group": "G1", "active_modes": ["ANY"], "params": {"period": 14, "multiplier": 1.5}},
+        "adx": {"active": True, "group": "G1", "active_modes": ["TREND", "BREAKOUT"], "params": {"period": 14, "weak": 18, "strong": 23}},
+        "ema": {"active": True, "group": "G1", "active_modes": ["ANY"], "params": {"period": 50}},
+        "pivot_points": {"active": False, "group": "G3", "active_modes": ["ANY"], "params": {}},
+        "ema_cross": {"active": False, "group": "G2", "active_modes": ["TREND", "BREAKOUT"], "params": {"fast": 9, "slow": 21}},
+        "volume": {"active": True, "group": "G2", "active_modes": ["BREAKOUT"], "params": {"period": 20, "multiplier": 1.1}},
+        "supertrend": {"active": True, "group": "G2", "active_modes": ["TREND"], "params": {"period": 10, "multiplier": 3.0}},
+        "psar": {"active": False, "group": "G2", "active_modes": ["TREND"], "params": {}}, 
+        "bollinger_bands": {"active": False, "group": "G2", "active_modes": ["RANGE"], "params": {"period": 20, "std_dev": 2.0}},
+        "fibonacci": {"active": False, "group": "G2", "active_modes": ["RANGE", "EXHAUSTION"], "params": {}},
+        "rsi": {"active": False, "group": "G2", "active_modes": ["RANGE"], "params": {"period": 14, "upper": 70, "lower": 30}},
+        "stochastic": {"active": False, "group": "G2", "active_modes": ["RANGE"], "params": {"k": 14, "d": 3, "smooth": 3, "upper": 80, "lower": 20}},
+        "macd": {"active": False, "group": "G2", "active_modes": ["EXHAUSTION"], "params": {"fast": 12, "slow": 26, "signal": 9}},
+        "multi_candle": {"active": True, "group": "G3", "active_modes": ["EXHAUSTION"], "params": {}},
+        "candle": {"active": False, "group": "G3", "active_modes": ["ANY"], "params": {}}
+    }
+}
 
 # ==============================================================================
-# 8. CHU KỲ CÁC CHỈ BÁO
-# ==============================================================================
-atr_period = 14                 
-swing_period = 5                
-
-ST_ATR_PERIOD = 10              
-ST_MULTIPLIER = 3.0             
-
-DI_PERIOD = 14                  
-ADX_PERIOD = 14                 
-
-TREND_EMA_PERIOD = 50           
-ENTRY_EMA_PERIOD = 21           
-
-# ==============================================================================
-# 9. TÍNH NĂNG NHỒI LỆNH (AUTO DCA/PCA - PARENT/CHILD BASKET)
+# 8. TÍNH NĂNG NHỒI LỆNH (AUTO DCA/PCA - PARENT/CHILD BASKET)
 # ==============================================================================
 DCA_CONFIG = {
-    "ENABLED": False,               # Công tắc tổng (fallback nếu không dùng config từ UI)
-    "MAX_STEPS": 3,                 # Số lần nhồi lỗ tối đa
-    "STEP_MULTIPLIER": 1.5,         # Hệ số Volume so với lệnh trước
-    "DISTANCE_ATR_R": 1.0           # Khoảng cách đi ngược hướng kích hoạt (nhân với ATR)
+    "ENABLED": False,               
+    "MAX_STEPS": 3,                 
+    "STEP_MULTIPLIER": 1.5,         
+    "DISTANCE_ATR_R": 1.0           
 }
 PCA_CONFIG = {
-    "ENABLED": False,               # Công tắc tổng
-    "MAX_STEPS": 2,                 # Số lần nhồi thuận tối đa
-    "STEP_MULTIPLIER": 0.5,         # Hệ số Volume (nhỏ dần để giữ an toàn)
-    "CONFIRM_INDICATOR": "ADX"      # Yêu cầu ADX > 25 (hoặc ADX_STRONG) để nhồi
+    "ENABLED": False,               
+    "MAX_STEPS": 2,                 
+    "STEP_MULTIPLIER": 0.5,         
+    "CONFIRM_ADX": 23               
 }

@@ -1,177 +1,214 @@
-import os
-import json
+# -*- coding: utf-8 -*-
+# FILE: ui_bot_strategy.py
+# V3.0: UNIFIED BOT STRATEGY UI - SINGLE SOURCE OF TRUTH (KAISER EDITION)
+
 import customtkinter as ctk
-import tkinter.messagebox as messagebox
+import json
+import os
+import config
+from tkinter import messagebox
 
-CONFIG_PATH = "data/bot_sandbox_presets.json"
-
-DEFAULT_CONFIG = {
-    "voting_rules": {"max_opposite": 0, "max_none": 1, "master_rule": "FIX"},
-    "indicators": {
-        "swing_point": {"active": True, "module": "signals.swing_point", "group": "G1", "active_modes": ["ANY"], "params": {"period": 5}},
-        "atr": {"active": True, "module": "signals.atr", "group": "G1", "active_modes": ["ANY"], "params": {"period": 14, "multiplier": 1.5}},
-        "adx": {"active": True, "module": "signals.adx", "group": "G1", "active_modes": ["TREND", "BREAKOUT"], "params": {"period": 14, "weak": 18, "strong": 23}},
-        "ema_single": {"active": True, "module": "signals.ema", "group": "G1", "active_modes": ["ANY"], "params": {"period": 50}},
-        "pivot_points": {"active": False, "module": "signals.pivot_points", "group": "G3", "active_modes": ["ANY"], "params": {}},
-        "ema_cross": {"active": False, "module": "signals.ema_cross", "group": "G2", "active_modes": ["TREND", "BREAKOUT"], "params": {"fast": 9, "slow": 21}},
-        "volume": {"active": True, "module": "signals.volume", "group": "G2", "active_modes": ["BREAKOUT"], "params": {"period": 20, "std_dev": 2.0}},
-        "supertrend": {"active": True, "module": "signals.supertrend", "group": "G2", "active_modes": ["TREND"], "params": {"period": 10, "multiplier": 3.0}},
-        "psar": {"active": False, "module": "signals.psar", "group": "G2", "active_modes": ["TREND"], "params": {"step": 0.02, "max_step": 0.2}},
-        "bollinger_bands": {"active": False, "module": "signals.bollinger_bands", "group": "G2", "active_modes": ["RANGE"], "params": {"period": 20, "std_dev": 2.0}},
-        "fibonacci": {"active": False, "module": "signals.fibonacci", "group": "G2", "active_modes": ["RANGE", "EXHAUSTION"], "params": {"lookback": 50}},
-        "rsi": {"active": False, "module": "signals.rsi", "group": "G2", "active_modes": ["RANGE"], "params": {"period": 14, "overbought": 70, "oversold": 30}},
-        "stochastic": {"active": False, "module": "signals.stochastic", "group": "G2", "active_modes": ["RANGE"], "params": {"k_period": 14, "d_period": 3, "smooth": 3}},
-        "macd": {"active": False, "module": "signals.macd", "group": "G2", "active_modes": ["EXHAUSTION"], "params": {"fast": 12, "slow": 26, "signal": 9}},
-        "multi_candle": {"active": True, "module": "signals.multi_candle", "group": "G3", "active_modes": ["EXHAUSTION"], "params": {}}
-    }
-}
+BRAIN_SETTINGS_PATH = "data/brain_settings.json"
 
 class BotStrategyUI(ctk.CTkToplevel):
     def __init__(self, master=None):
         super().__init__(master)
-        self.title("RAT - Kaiser Sandbox V3.0")
-        self.geometry("900x650")
-        self.grab_set()
+        self.title("🧠 V3.0 Bot Strategy Sandbox (Brain Settings)")
+        self.geometry("900x700")
+        self.attributes("-topmost", True)
+        self.focus_force()
 
-        self.config = self._load_config()
-        self.current_indicator = None
-        self.param_entries = {}
-        self.mode_vars = {}
-        self.active_var = ctk.BooleanVar()
+        # Dữ liệu Gốc
+        self.brain_data = self._load_brain_data()
+        self.ind_widgets = {}
 
         self._build_ui()
-        
-        first_ind = list(self.config["indicators"].keys())[0]
-        self._select_indicator(first_ind)
 
-    def _load_config(self):
-        os.makedirs("data", exist_ok=True)
-        if not os.path.exists(CONFIG_PATH):
-            with open(CONFIG_PATH, "w") as f:
-                json.dump(DEFAULT_CONFIG, f, indent=4)
-            return DEFAULT_CONFIG.copy()
-        try:
-            with open(CONFIG_PATH, "r") as f:
-                return json.load(f)
-        except Exception:
-            return DEFAULT_CONFIG.copy()
+    def _load_brain_data(self):
+        """Ưu tiên đọc từ file JSON, nếu lỗi/thiếu thì lấy từ config.py"""
+        base_data = {
+            "voting_rules": getattr(config, "SANDBOX_CONFIG", {}).get("voting_rules", {}),
+            "indicators": getattr(config, "SANDBOX_CONFIG", {}).get("indicators", {}),
+            "dca_config": getattr(config, "DCA_CONFIG", {}),
+            "pca_config": getattr(config, "PCA_CONFIG", {})
+        }
 
-    def _save_config(self):
-        self._cache_current_indicator()
-        try:
-            self.config["voting_rules"]["max_opposite"] = int(self.entry_max_opp.get())
-            self.config["voting_rules"]["max_none"] = int(self.entry_max_none.get())
-        except ValueError:
-            messagebox.showerror("Error", "Rules values must be integers.")
-            return
-            
-        self.config["voting_rules"]["master_rule"] = self.combo_master.get()
+        if os.path.exists(BRAIN_SETTINGS_PATH):
+            try:
+                with open(BRAIN_SETTINGS_PATH, "r", encoding="utf-8") as f:
+                    saved_data = json.load(f)
+                    # Merge data để tránh thiếu key do update config mới
+                    for k in base_data.keys():
+                        if k in saved_data:
+                            base_data[k].update(saved_data[k])
+            except Exception as e:
+                print(f"[UI Sandbox] Lỗi đọc JSON: {e}. Dùng default config.")
 
-        with open(CONFIG_PATH, "w") as f:
-            json.dump(self.config, f, indent=4)
-        messagebox.showinfo("Saved", "Sandbox Configuration Saved Successfully!")
+        return base_data
 
     def _build_ui(self):
-        self.grid_columnconfigure(0, weight=1)
-        self.grid_columnconfigure(1, weight=3)
-        self.grid_rowconfigure(1, weight=1)
+        self.tabview = ctk.CTkTabview(self)
+        self.tabview.pack(fill="both", expand=True, padx=10, pady=10)
 
-        top_frame = ctk.CTkFrame(self)
-        top_frame.grid(row=0, column=0, columnspan=2, padx=10, pady=10, sticky="ew")
+        self.tab_inds = self.tabview.add("Chỉ báo (Signals)")
+        self.tab_rules = self.tabview.add("Luật Vote (Voting Rules)")
+        self.tab_dca_pca = self.tabview.add("Nhồi Lệnh (DCA/PCA)")
+
+        self._build_indicators_tab()
+        self._build_voting_tab()
+        self._build_dca_pca_tab()
+
+        btn_frame = ctk.CTkFrame(self, fg_color="transparent")
+        btn_frame.pack(fill="x", padx=10, pady=(0, 10))
         
-        ctk.CTkLabel(top_frame, text="Max Opposite:").pack(side="left", padx=5)
-        self.entry_max_opp = ctk.CTkEntry(top_frame, width=50)
-        self.entry_max_opp.insert(0, str(self.config["voting_rules"].get("max_opposite", 0)))
-        self.entry_max_opp.pack(side="left", padx=5)
+        save_btn = ctk.CTkButton(btn_frame, text="💾 LƯU CẤU HÌNH BRAIN", fg_color="#28a745", hover_color="#218838", command=self.save_strategy)
+        save_btn.pack(side="right", padx=5)
 
-        ctk.CTkLabel(top_frame, text="Max None:").pack(side="left", padx=5)
-        self.entry_max_none = ctk.CTkEntry(top_frame, width=50)
-        self.entry_max_none.insert(0, str(self.config["voting_rules"].get("max_none", 1)))
-        self.entry_max_none.pack(side="left", padx=5)
+    def _build_indicators_tab(self):
+        scroll_frame = ctk.CTkScrollableFrame(self.tab_inds)
+        scroll_frame.pack(fill="both", expand=True, padx=5, pady=5)
 
-        ctk.CTkLabel(top_frame, text="Master Rule:").pack(side="left", padx=5)
-        self.combo_master = ctk.CTkOptionMenu(top_frame, values=["FIX", "SOFT", "PASS"], width=80)
-        self.combo_master.set(self.config["voting_rules"].get("master_rule", "FIX"))
-        self.combo_master.pack(side="left", padx=5)
+        headers = ["Chỉ báo", "Kích hoạt", "Nhóm (Group)", "Chế độ (Mode)"]
+        for col, h in enumerate(headers):
+            lbl = ctk.CTkLabel(scroll_frame, text=h, font=("Arial", 12, "bold"))
+            lbl.grid(row=0, column=col, padx=15, pady=5, sticky="w")
 
-        btn_save = ctk.CTkButton(top_frame, text="Save Sandbox", command=self._save_config, fg_color="green")
-        btn_save.pack(side="right", padx=10)
-
-        self.left_frame = ctk.CTkScrollableFrame(self, label_text="Lego Blocks")
-        self.left_frame.grid(row=1, column=0, padx=10, pady=(0, 10), sticky="nsew")
-
-        self.right_frame = ctk.CTkFrame(self)
-        self.right_frame.grid(row=1, column=1, padx=(0, 10), pady=(0, 10), sticky="nsew")
-
-        self.lbl_ind_name = ctk.CTkLabel(self.right_frame, text="Select an Indicator", font=("Arial", 16, "bold"))
-        self.lbl_ind_name.pack(pady=10)
-
-        self.chk_active = ctk.CTkCheckBox(self.right_frame, text="Enable Indicator", variable=self.active_var)
-        self.chk_active.pack(pady=10, anchor="w", padx=20)
-
-        mode_frame = ctk.CTkFrame(self.right_frame)
-        mode_frame.pack(fill="x", padx=20, pady=10)
-        ctk.CTkLabel(mode_frame, text="Active Modes (Tags):").pack(anchor="w", padx=5, pady=5)
+        row = 1
+        inds_data = self.brain_data.get("indicators", {})
         
-        self.mode_container = ctk.CTkFrame(mode_frame, fg_color="transparent")
-        self.mode_container.pack(fill="x", padx=5, pady=5)
+        for ind_name, cfg in inds_data.items():
+            # Tên
+            ctk.CTkLabel(scroll_frame, text=ind_name.upper()).grid(row=row, column=0, padx=15, pady=5, sticky="w")
+            
+            # Active (Checkbox)
+            active_var = ctk.BooleanVar(value=cfg.get("active", False))
+            cb = ctk.CTkCheckBox(scroll_frame, text="ON", variable=active_var, width=50)
+            cb.grid(row=row, column=1, padx=15, pady=5, sticky="w")
+            
+            # Group (Dropdown)
+            group_var = ctk.StringVar(value=cfg.get("group", "G2"))
+            grp_cb = ctk.CTkComboBox(scroll_frame, values=["G1", "G2", "G3"], variable=group_var, width=80)
+            grp_cb.grid(row=row, column=2, padx=15, pady=5, sticky="w")
+            
+            # Active Modes (Lấy phần tử đầu tiên làm đại diện trên UI cho đơn giản)
+            modes_list = cfg.get("active_modes", ["ANY"])
+            mode_var = ctk.StringVar(value=modes_list[0] if modes_list else "ANY")
+            mode_cb = ctk.CTkComboBox(scroll_frame, values=["ANY", "TREND", "RANGE", "BREAKOUT", "EXHAUSTION"], variable=mode_var, width=120)
+            mode_cb.grid(row=row, column=3, padx=15, pady=5, sticky="w")
+
+            self.ind_widgets[ind_name] = {
+                "active_var": active_var,
+                "group_var": group_var,
+                "mode_var": mode_var,
+                "params": cfg.get("params", {}) # Giữ nguyên params mặc định
+            }
+            row += 1
+
+    def _build_voting_tab(self):
+        rules = self.brain_data.get("voting_rules", {})
         
-        modes = ["TREND", "RANGE", "BREAKOUT", "EXHAUSTION", "ANY"]
-        for m in modes:
-            var = ctk.StringVar(value="")
-            chk = ctk.CTkCheckBox(self.mode_container, text=m, variable=var, onvalue=m, offvalue="")
-            chk.pack(side="left", padx=10)
-            self.mode_vars[m] = {"widget": chk, "var": var}
+        frame = ctk.CTkFrame(self.tab_rules)
+        frame.pack(fill="x", padx=20, pady=20)
 
-        self.params_frame = ctk.CTkScrollableFrame(self.right_frame, label_text="Dynamic Parameters")
-        self.params_frame.pack(fill="both", expand=True, padx=20, pady=10)
+        ctk.CTkLabel(frame, text="Phiếu Nghịch Tối Đa (Max Opposite):").grid(row=0, column=0, padx=10, pady=10, sticky="w")
+        self.vote_max_opp = ctk.StringVar(value=str(rules.get("max_opposite", 0)))
+        ctk.CTkEntry(frame, textvariable=self.vote_max_opp, width=100).grid(row=0, column=1, padx=10, pady=10)
 
-        for ind in self.config["indicators"].keys():
-            btn = ctk.CTkButton(self.left_frame, text=ind.upper(), command=lambda i=ind: self._select_indicator(i))
-            btn.pack(pady=5, padx=5, fill="x")
+        ctk.CTkLabel(frame, text="Phiếu Trắng Tối Đa (Max None):").grid(row=1, column=0, padx=10, pady=10, sticky="w")
+        self.vote_max_none = ctk.StringVar(value=str(rules.get("max_none", 1)))
+        ctk.CTkEntry(frame, textvariable=self.vote_max_none, width=100).grid(row=1, column=1, padx=10, pady=10)
 
-    def _cache_current_indicator(self):
-        if not self.current_indicator:
-            return
+        ctk.CTkLabel(frame, text="Master Rule (Khi lố max_none):").grid(row=2, column=0, padx=10, pady=10, sticky="w")
+        self.vote_master = ctk.StringVar(value=rules.get("master_rule", "FIX"))
+        ctk.CTkComboBox(frame, values=["FIX", "PASS"], variable=self.vote_master, width=100).grid(row=2, column=1, padx=10, pady=10)
+
+    def _build_dca_pca_tab(self):
+        dca_cfg = self.brain_data.get("dca_config", {})
+        pca_cfg = self.brain_data.get("pca_config", {})
+
+        # --- DCA ---
+        dca_frame = ctk.CTkFrame(self.tab_dca_pca)
+        dca_frame.pack(fill="x", padx=10, pady=10)
         
-        ind_data = self.config["indicators"][self.current_indicator]
-        ind_data["active"] = self.active_var.get()
+        self.dca_active = ctk.BooleanVar(value=dca_cfg.get("ENABLED", False))
+        ctk.CTkCheckBox(dca_frame, text="Kích hoạt AUTO DCA (Gồng lỗ/Bắt đáy)", variable=self.dca_active, font=("Arial", 14, "bold")).grid(row=0, column=0, columnspan=2, padx=10, pady=10, sticky="w")
         
-        active_modes = [m for m, d in self.mode_vars.items() if d["var"].get() == m]
-        ind_data["active_modes"] = active_modes
-
-        for p_name, entry in self.param_entries.items():
-            val_str = entry.get()
-            try:
-                if "." in val_str:
-                    ind_data["params"][p_name] = float(val_str)
-                else:
-                    ind_data["params"][p_name] = int(val_str)
-            except ValueError:
-                ind_data["params"][p_name] = val_str
-
-    def _select_indicator(self, ind_name):
-        self._cache_current_indicator()
-        self.current_indicator = ind_name
-        self.lbl_ind_name.configure(text=f"Settings: {ind_name.upper()}")
+        ctk.CTkLabel(dca_frame, text="Max Steps (Số lệnh):").grid(row=1, column=0, padx=10, pady=5, sticky="w")
+        self.dca_steps = ctk.StringVar(value=str(dca_cfg.get("MAX_STEPS", 3)))
+        ctk.CTkEntry(dca_frame, textvariable=self.dca_steps, width=100).grid(row=1, column=1, padx=10, pady=5)
         
-        ind_data = self.config["indicators"][ind_name]
-        self.active_var.set(ind_data.get("active", False))
+        ctk.CTkLabel(dca_frame, text="Step Multiplier (Lot * x):").grid(row=2, column=0, padx=10, pady=5, sticky="w")
+        self.dca_mult = ctk.StringVar(value=str(dca_cfg.get("STEP_MULTIPLIER", 1.5)))
+        ctk.CTkEntry(dca_frame, textvariable=self.dca_mult, width=100).grid(row=2, column=1, padx=10, pady=5)
 
-        active_modes = ind_data.get("active_modes", [])
-        for m, d in self.mode_vars.items():
-            d["var"].set(m if m in active_modes else "")
+        # --- PCA ---
+        pca_frame = ctk.CTkFrame(self.tab_dca_pca)
+        pca_frame.pack(fill="x", padx=10, pady=10)
 
-        for widget in self.params_frame.winfo_children():
-            widget.destroy()
+        self.pca_active = ctk.BooleanVar(value=pca_cfg.get("ENABLED", False))
+        ctk.CTkCheckBox(pca_frame, text="Kích hoạt AUTO PCA (Nhồi thuận Trend)", variable=self.pca_active, font=("Arial", 14, "bold")).grid(row=0, column=0, columnspan=2, padx=10, pady=10, sticky="w")
         
-        self.param_entries.clear()
+        ctk.CTkLabel(pca_frame, text="Max Steps (Số lệnh):").grid(row=1, column=0, padx=10, pady=5, sticky="w")
+        self.pca_steps = ctk.StringVar(value=str(pca_cfg.get("MAX_STEPS", 2)))
+        ctk.CTkEntry(pca_frame, textvariable=self.pca_steps, width=100).grid(row=1, column=1, padx=10, pady=5)
         
-        for p_name, p_val in ind_data.get("params", {}).items():
-            row = ctk.CTkFrame(self.params_frame, fg_color="transparent")
-            row.pack(fill="x", pady=5)
-            ctk.CTkLabel(row, text=p_name, width=150, anchor="w").pack(side="left", padx=5)
-            entry = ctk.CTkEntry(row)
-            entry.insert(0, str(p_val))
-            entry.pack(side="left", fill="x", expand=True, padx=5)
-            self.param_entries[p_name] = entry
+        ctk.CTkLabel(pca_frame, text="Step Multiplier (Lot * x):").grid(row=2, column=0, padx=10, pady=5, sticky="w")
+        self.pca_mult = ctk.StringVar(value=str(pca_cfg.get("STEP_MULTIPLIER", 0.5)))
+        ctk.CTkEntry(pca_frame, textvariable=self.pca_mult, width=100).grid(row=2, column=1, padx=10, pady=5)
+
+    def save_strategy(self):
+        try:
+            # 1. Thu thập Indicator config
+            new_inds = {}
+            for ind_name, widgets in self.ind_widgets.items():
+                mode_val = widgets["mode_var"].get()
+                new_inds[ind_name] = {
+                    "active": widgets["active_var"].get(),
+                    "group": widgets["group_var"].get(),
+                    "active_modes": [mode_val] if mode_val != "ANY" else ["ANY"], 
+                    "params": widgets["params"] # Pass default params back
+                }
+
+            # 2. Thu thập Voting rules
+            new_voting = {
+                "max_opposite": int(self.vote_max_opp.get() or 0),
+                "max_none": int(self.vote_max_none.get() or 1),
+                "master_rule": self.vote_master.get()
+            }
+
+            # 3. Thu thập DCA/PCA config
+            new_dca = {
+                "ENABLED": self.dca_active.get(),
+                "MAX_STEPS": int(self.dca_steps.get() or 3),
+                "STEP_MULTIPLIER": float(self.dca_mult.get() or 1.5),
+                "DISTANCE_ATR_R": getattr(config, "DCA_CONFIG", {}).get("DISTANCE_ATR_R", 1.0)
+            }
+            new_pca = {
+                "ENABLED": self.pca_active.get(),
+                "MAX_STEPS": int(self.pca_steps.get() or 2),
+                "STEP_MULTIPLIER": float(self.pca_mult.get() or 0.5),
+                "CONFIRM_ADX": getattr(config, "PCA_CONFIG", {}).get("CONFIRM_ADX", 23)
+            }
+
+            # 4. Đóng gói Flat JSON
+            output_data = {
+                "voting_rules": new_voting,
+                "indicators": new_inds,
+                "dca_config": new_dca,
+                "pca_config": new_pca,
+                # Giữ nguyên một số thông số nền tảng nếu có
+                "trend_timeframe": "1h",
+                "entry_timeframe": "15m",
+                "NUM_H1_BARS": 70,
+                "NUM_M15_BARS": 70
+            }
+
+            os.makedirs(os.path.dirname(BRAIN_SETTINGS_PATH), exist_ok=True)
+            with open(BRAIN_SETTINGS_PATH, "w", encoding="utf-8") as f:
+                json.dump(output_data, f, indent=4)
+
+            messagebox.showinfo("Thành công", f"Đã lưu cấu hình Bot V3.0 vào\n{BRAIN_SETTINGS_PATH}\n(Daemon sẽ tự động Hot-Reload)")
+            self.destroy()
+
+        except Exception as e:
+            messagebox.showerror("Lỗi", f"Không thể lưu cấu hình:\n{e}")

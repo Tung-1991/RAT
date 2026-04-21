@@ -1,27 +1,23 @@
+# -*- coding: utf-8 -*-
 import pandas as pd
 
-def get_signal_vector(df: pd.DataFrame, params: dict) -> int:
-    length = params.get("period", 14)
-    weak_threshold = params.get("weak", 18)
+def get_signal_vector(df: pd.DataFrame, params: dict, context: dict = None) -> int:
+    p = params.get("period", 14)
+    strong = params.get("strong", 23)
     
-    col_adx = f"ADX_{length}"
-    col_dmp = f"DMP_{length}"
-    col_dmn = f"DMN_{length}"
-
-    if col_adx not in df.columns or col_dmp not in df.columns or col_dmn not in df.columns:
+    col_adx = f"ADX_{p}"
+    col_dmp = f"DMP_{p}" # +DI
+    col_dmn = f"DMN_{p}" # -DI
+    
+    if col_adx not in df.columns:
         return 0
-
-    latest = df.iloc[-1]
-    adx = latest[col_adx]
-    dmp = latest[col_dmp]
-    dmn = latest[col_dmn]
-
-    if adx < weak_threshold:
-        return 0
-
-    if dmp > dmn:
-        return 1
-    if dmn > dmp:
-        return -1
+        
+    adx_val = df[col_adx].iloc[-1]
+    dmp_val = df[col_dmp].iloc[-1]
+    dmn_val = df[col_dmn].iloc[-1]
+    
+    if adx_val >= strong:
+        if dmp_val > dmn_val: return 1
+        if dmn_val > dmp_val: return -1
         
     return 0

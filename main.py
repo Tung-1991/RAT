@@ -295,7 +295,9 @@ class BotUI(ctk.CTk):
                 
                 acc = self.connector.get_account_info()
                 tick = mt5.symbol_info_tick(sym)
-                pos = [p for p in self.connector.get_all_open_positions() if p.magic == config.MAGIC_NUMBER]
+                bot_magic = getattr(config, "BOT_MAGIC_NUMBER", 9999)
+                manual_magic = getattr(config, "MANUAL_MAGIC_NUMBER", 8888)
+                pos = [p for p in self.connector.get_all_open_positions() if p.magic in (bot_magic, manual_magic)]
                 self.after(0, self.update_ui, acc, self.trade_mgr.state, 
                                 self.checklist_mgr.run_pre_trade_checks(acc, self.trade_mgr.state, sym, self.var_strict_mode.get()), 
                                 tick, self.cbo_preset.get(), sym, pos)

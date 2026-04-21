@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # FILE: core/trade_manager.py
-# V8.4: 15-MIN CACHE ENGINE, SWING TSL FIX & TSL UI SYNC (KAISER EDITION)
+# V3.0: UNIFIED TRADE MANAGER - DYNAMIC SL & MAGIC SPLIT (KAISER EDITION)
 
 import logging
 import config
@@ -49,17 +49,22 @@ class TradeManager:
         save_state(self.state)
 
     # ====================================================================================
-    # 1. HÀM THỰC THI LỆNH CHO BOT (Không TP - Thoát bằng TSL)
+    # 1. HÀM THỰC THI LỆNH CHO BOT (V3.0 - Dynamic SL & Bot Magic Number)
     # ====================================================================================
-    def execute_bot_trade(self, direction, symbol, sl_price, tp_price, bot_risk_percent, tactic_str):
+    def execute_bot_trade(self, direction, symbol, sl_price, tp_price, bot_risk_percent, tactic_str, details=None):
         config.SYMBOL = symbol 
         acc_info = self.connector.get_account_info()
         
-        res = self.checklist.run_pre_trade_checks(acc_info, self.state, symbol, strict_mode=True)
+        bot_bypass = getattr(config, "BOT_BYPASS_CHECKLIST", True) 
+
+        res = self.checklist.run_pre_trade_checks(acc_info, self.state, symbol, strict_mode=not bot_bypass)
         if not res["passed"]:
-            fail_reasons = [c['msg'] for c in res['checks'] if c['status'] == 'FAIL']
-            self.log(f"⚠️ [BOT BLOCKED] Bị chặn bởi hệ thống an toàn: {fail_reasons}", error=True)
-            return "CHECKLIST_FAIL"
+            if bot_bypass:
+                self.log(f"⚠️ [BOT FORCE] Bỏ qua cảnh báo an toàn Checklist để test")
+            else:
+                fail_reasons = [c['msg'] for c in res['checks'] if c['status'] == 'FAIL']
+                self.log(f"⚠️ [BOT BLOCKED] Bị chặn bởi hệ thống an toàn: {fail_reasons}", error=True)
+                return "CHECKLIST_FAIL"
 
         tick = mt5.symbol_info_tick(symbol)
         sym_info = mt5.symbol_info(symbol)
@@ -68,13 +73,28 @@ class TradeManager:
             return "ERR_NO_TICK"
         
         current_price = tick.ask if direction == "BUY" else tick.bid
-        equity = acc_info['equity']
-        contract_size = sym_info.trade_contract_size
+
+        # --- [V3.0] TÍNH TOÁN SL ĐỘNG DỰA TRÊN DETAILS (SWING H/L & ATR) ---
+        if details:
+            swing_high = details.get("swing_high", 0.0)
+            swing_low = details.get("swing_low", 0.0)
+            atr = details.get("atr", 0.0)
+            sl_mult = getattr(config, "sl_atr_multiplier", 0.2)
+
+            if atr > 0:
+                if direction == "BUY" and swing_low > 0:
+                    sl_price = swing_low - (atr * sl_mult)
+                elif direction == "SELL" and swing_high > 0:
+                    sl_price = swing_high + (atr * sl_mult)
+        # -------------------------------------------------------------------
 
         sl_distance = abs(current_price - sl_price)
-        if sl_distance <= 0: 
-            self.log("❌ [BOT] Lỗi Math SL: Khoảng cách SL = 0", error=True)
+        if sl_distance <= 0 or sl_price <= 0: 
+            self.log("❌ [BOT] Lỗi Math SL: Không có dữ liệu Swing/ATR hợp lệ hoặc SL = 0", error=True)
             return "ERR_CALC_SL_ZERO"
+
+        equity = acc_info['equity']
+        contract_size = sym_info.trade_contract_size
 
         risk_usd = equity * (bot_risk_percent / 100.0)
         raw_lot = risk_usd / (sl_distance * contract_size)
@@ -84,7 +104,10 @@ class TradeManager:
         order_type = mt5.ORDER_TYPE_BUY if direction == "BUY" else mt5.ORDER_TYPE_SELL
         comment = "[BOT]_AUTO_ENTRY"
         
-        result = self.connector.place_order(symbol, order_type, lot_size, sl_price, tp_price, config.MAGIC_NUMBER, comment)
+        # [V3.0] Sử dụng Magic Number riêng của Bot
+        bot_magic = getattr(config, "BOT_MAGIC_NUMBER", 9999)
+        
+        result = self.connector.place_order(symbol, order_type, lot_size, sl_price, tp_price, bot_magic, comment)
         
         if result and result.retcode == 10009:
             ticket_id = result.order
@@ -104,7 +127,7 @@ class TradeManager:
         return "MT5_ERROR"
 
     # ====================================================================================
-    # 2. HÀM THỰC THI LỆNH TAY (Có TP Cứng)
+    # 2. HÀM THỰC THI LỆNH TAY (V3.0 - Manual Magic Number)
     # ====================================================================================
     def execute_manual_trade(self, direction, preset_name, symbol, strict_mode, 
                              manual_lot=0.0, manual_tp=0.0, manual_sl=0.0, bypass_checklist=False, 
@@ -120,7 +143,11 @@ class TradeManager:
             else:
                 return "CHECKLIST_FAIL"
 
-        params = config.PRESETS.get(preset_name, config.PRESETS["SCALPING"])
+        params = getattr(config, "PRESETS", {}).get(preset_name, {})
+        if not params:
+            # Fallback nếu UI gửi preset không tồn tại
+            params = {"SL_PERCENT": 0.4, "TP_RR_RATIO": 1.5, "RISK_PERCENT": 0.3}
+
         tick = mt5.symbol_info_tick(symbol)
         sym_info = mt5.symbol_info(symbol)
         if not tick or not sym_info: return "ERR_NO_TICK"
@@ -132,7 +159,7 @@ class TradeManager:
         if manual_sl > 0: 
             sl_distance = abs(price - manual_sl)
         else:
-            sl_percent = params["SL_PERCENT"] / 100.0
+            sl_percent = params.get("SL_PERCENT", 0.5) / 100.0
             sl_distance = price * sl_percent
 
         if sl_distance <= 0: return "ERR_CALC_SL_ZERO"
@@ -140,7 +167,7 @@ class TradeManager:
         if manual_lot > 0: 
             lot_size = manual_lot
         else:
-            current_risk_pct = params.get("RISK_PERCENT", config.RISK_PER_TRADE_PERCENT)
+            current_risk_pct = params.get("RISK_PERCENT", getattr(config, "RISK_PER_TRADE_PERCENT", 0.3))
             risk_usd = equity * (current_risk_pct / 100.0)
             raw_lot = risk_usd / (sl_distance * contract_size)
             lot_size = round(raw_lot / config.LOT_STEP) * config.LOT_STEP
@@ -151,14 +178,17 @@ class TradeManager:
         if manual_tp > 0: 
             tp_price = manual_tp
         else:
-            rr_ratio = params["TP_RR_RATIO"]
+            rr_ratio = params.get("TP_RR_RATIO", 1.5)
             real_sl_dist = abs(price - sl_price)
             tp_price = price + (real_sl_dist * rr_ratio) if direction == "BUY" else price - (real_sl_dist * rr_ratio)
 
         order_type = mt5.ORDER_TYPE_BUY if direction == "BUY" else mt5.ORDER_TYPE_SELL
         comment = f"[USER]_{preset_name}"
         
-        result = self.connector.place_order(symbol, order_type, lot_size, sl_price, tp_price, config.MAGIC_NUMBER, comment)
+        # [V3.0] Sử dụng Magic Number riêng của lệnh Tay
+        manual_magic = getattr(config, "MANUAL_MAGIC_NUMBER", 8888)
+        
+        result = self.connector.place_order(symbol, order_type, lot_size, sl_price, tp_price, manual_magic, comment)
         
         if result and result.retcode == 10009:
             ticket_id = result.order
@@ -236,8 +266,13 @@ class TradeManager:
                 save_state(self.state)
 
             # 2. XỬ LÝ TSL & DCA/PCA CHO TỪNG LỆNH ĐỘC LẬP
-            bot_positions = [p for p in current_positions if p.magic == config.MAGIC_NUMBER]
-            for pos in bot_positions:
+            bot_magic = getattr(config, "BOT_MAGIC_NUMBER", 9999)
+            manual_magic = getattr(config, "MANUAL_MAGIC_NUMBER", 8888)
+            
+            # Quét tất cả lệnh thuộc về Bot hoặc Manual
+            tracked_positions = [p for p in current_positions if p.magic in (bot_magic, manual_magic)]
+            
+            for pos in tracked_positions:
                 symbol_context = all_market_contexts.get(pos.symbol, {}) if all_market_contexts else {}
                 tsl_status_map[pos.ticket] = self._apply_individual_trailing_logic(pos, symbol_context)
 
@@ -272,7 +307,7 @@ class TradeManager:
         curr_r = curr_dist / one_r_dist
         
         candidates, milestones = [], []
-        tsl_cfg = config.TSL_CONFIG
+        tsl_cfg = getattr(config, "TSL_CONFIG", {})
 
         # 1. BREAK-EVEN
         if "BE" in active_modes:
@@ -309,7 +344,7 @@ class TradeManager:
             if acc:
                 profit_usd = pos.profit + getattr(pos, 'swap', 0.0) + getattr(pos, 'commission', 0.0)
                 pnl_pct = (profit_usd / acc['balance']) * 100
-                levels = sorted(tsl_cfg["PNL_LEVELS"], key=lambda x: x[0])
+                levels = sorted(tsl_cfg.get("PNL_LEVELS", []), key=lambda x: x[0])
                 for lvl in levels:
                     if pnl_pct >= lvl[0]:
                         lock_dist = (acc['balance'] * (lvl[1]/100.0)) / (pos.volume * contract_size)
@@ -332,7 +367,6 @@ class TradeManager:
                     if tsl_mode == "AGGRESSIVE" or (tsl_mode == "DYNAMIC" and trend_adx != "UP"): swing_sl = sh - (trail_buf * atr)
                     else: swing_sl = sl - (trail_buf * atr) 
                 else: 
-                    # SỬA LỖI LOGIC: Ép lệnh SELL ngược trend dùng đáy (sl) để cắt sát
                     if tsl_mode == "AGGRESSIVE" or (tsl_mode == "DYNAMIC" and trend_adx != "DOWN"): swing_sl = sl + (trail_buf * atr)
                     else: swing_sl = sh + (trail_buf * atr)
                 
@@ -390,11 +424,9 @@ class TradeManager:
 
         # --- 2. THUẬT TOÁN CACHE 15 PHÚT (GIẢM TẢI 99% CHO EXNESS) ---
         now = datetime.now()
-        # Tạo Key đổi mới duy nhất sau mỗi 15 phút (00, 15, 30, 45)
         cache_key = f"{pos.symbol}_{now.day}_{now.hour}_{now.minute // 15}"
         
         if cache_key != self.dca_pca_cache.get(f"{pos.symbol}_key"):
-            # CHỈ LẤY DATA EXNESS 1 LẦN DUY NHẤT MỖI KHI NẾN M15 ĐÓNG
             rates_m15 = mt5.copy_rates_from_pos(pos.symbol, mt5.TIMEFRAME_M15, 0, 30)
             if rates_m15 is None or len(rates_m15) < 30: return
             
@@ -416,7 +448,6 @@ class TradeManager:
                     if adx_res is not None and not adx_res.empty:
                         adx_value = adx_res.iloc[-1, 0]
 
-            # Lưu lại vào Cache
             self.dca_pca_cache[f"{pos.symbol}_key"] = cache_key
             self.dca_pca_cache[pos.symbol] = {
                 "pullback_signal": pullback_signal,
@@ -424,14 +455,13 @@ class TradeManager:
                 "current_bar_time": int(rates_m15[-1]['time'])
             }
 
-        # --- DÙNG LẠI DỮ LIỆU ĐÃ CACHE (Không làm nghẽn cổ chai) ---
         cached_data = self.dca_pca_cache.get(pos.symbol, {})
         pullback_signal = cached_data.get("pullback_signal")
         adx_value = cached_data.get("adx_value", 0.0)
         current_bar_time = cached_data.get("current_bar_time", 0)
         
         last_time_db = self.state.get("last_child_bar_time", {})
-        if last_time_db.get(s_ticket) == current_bar_time: return # Đã nhồi ở nến này rồi
+        if last_time_db.get(s_ticket) == current_bar_time: return 
 
         # --- 3. LOGIC DCA (GỒNG LỖ - BẮT NHỊP HỒI) ---
         if "AUTO_DCA" in tactic_str:
@@ -473,8 +503,9 @@ class TradeManager:
         if child_tactic.startswith("+"): child_tactic = child_tactic[1:]
         if not child_tactic: child_tactic = "OFF"
         
-        # Mặc định lấy SL/TP của mẹ để đặt lệnh ban đầu
-        result = self.connector.place_order(parent_pos.symbol, parent_pos.type, new_lot, parent_pos.sl, parent_pos.tp, getattr(config, "MAGIC_NUMBER", 8888), f"[{mode}]_Child")
+        # [V3.0] Lệnh con kế thừa Magic Number của lệnh Mẹ
+        child_magic = parent_pos.magic
+        result = self.connector.place_order(parent_pos.symbol, parent_pos.type, new_lot, parent_pos.sl, parent_pos.tp, child_magic, f"[{mode}]_Child")
         
         if result and result.retcode == 10009:
             child_ticket = result.order
@@ -495,13 +526,11 @@ class TradeManager:
             
             self.log(f"🔥 [{mode} XÁC NHẬN NẾN] Mẹ #{s_parent} đẻ Con #{s_child} | Vol: {new_lot:.2f}")
 
-            # NẾU LÀ DCA -> GỌI LUỒNG TÍNH LẠI TAKE PROFIT TRUNG BÌNH
             if mode == "DCA":
                 threading.Thread(target=self._adjust_basket_tp, args=(parent_pos.ticket,), daemon=True).start()
 
     def _adjust_basket_tp(self, parent_ticket):
-        """ Kéo TP của Rổ DCA về gần điểm hòa vốn để giải cứu """
-        time.sleep(1.5) # Đợi Broker update vị thế
+        time.sleep(1.5) 
         s_parent = str(parent_ticket)
         children = self.state.get("parent_baskets", {}).get(s_parent, [])
         if not children: return
@@ -519,20 +548,16 @@ class TradeManager:
         is_buy = basket_pos[0].type == mt5.ORDER_TYPE_BUY
         sym_info = mt5.symbol_info(basket_pos[0].symbol)
         
-        # KIỂM TRA RULE: Lệnh này đập tay có TP hay Bot tự chạy không có TP?
         has_manual_tp = basket_pos[0].tp > 0
         
         if has_manual_tp:
-            # Lệnh Tay: Kéo TP về giá Trung Bình Rổ + 30 points
             tp_offset = 30 * sym_info.point
         else:
-            # Lệnh Bot: Ép dùng TP cứu hộ = Giá Trung Bình Rổ + 50 points
             tp_offset = 50 * sym_info.point
             
         new_tp = avg_price + tp_offset if is_buy else avg_price - tp_offset
         new_tp = round(new_tp / sym_info.point) * sym_info.point
         
-        # Cập nhật TP cho toàn bộ lệnh Mẹ và Con
         for p in basket_pos:
             if abs(p.tp - new_tp) > sym_info.point * 2:
                 self.connector.modify_position(p.ticket, p.sl, new_tp)

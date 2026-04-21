@@ -120,7 +120,9 @@ class ChecklistManager:
 
         # 6. Open Position Check
         positions = self.connector.get_all_open_positions()
-        my_pos = [p for p in positions if p.magic == config.MAGIC_NUMBER]
+        bot_magic = getattr(config, "BOT_MAGIC_NUMBER", 9999)
+        manual_magic = getattr(config, "MANUAL_MAGIC_NUMBER", 8888)
+        my_pos = [p for p in positions if p.magic in (bot_magic, manual_magic)]
         
         try:
             max_open_pos = config.MAX_OPEN_POSITIONS
