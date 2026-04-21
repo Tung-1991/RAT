@@ -19,6 +19,8 @@ class SignalListener:
         self, 
         trade_manager: Any, 
         get_auto_trade_cb: Callable[[], bool],
+        get_preset_cb: Callable[[], str],           # [ĐÃ FIX] Thêm tham số này để không bị Crash
+        get_tsl_mode_cb: Callable[[], str],         # [ĐÃ FIX] Thêm tham số này để không bị Crash
         ui_heartbeat_cb: Callable[[dict], None],
         log_cb: Callable[[str, bool], None]
     ):
@@ -27,6 +29,8 @@ class SignalListener:
         """
         self.trade_manager = trade_manager
         self.get_auto_trade = get_auto_trade_cb
+        self.get_preset = get_preset_cb             # [ĐÃ FIX] Khởi tạo biến
+        self.get_tsl_mode = get_tsl_mode_cb         # [ĐÃ FIX] Khởi tạo biến
         self.update_ui_heartbeat = ui_heartbeat_cb
         self.log_ui = log_cb
         

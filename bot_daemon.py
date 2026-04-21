@@ -19,6 +19,7 @@ logger = logging.getLogger("BotDaemon")
 
 SIGNAL_FILE = os.path.join(getattr(config, "DATA_DIR", "data"), "live_signals.json")
 SIGNAL_FILE_TMP = SIGNAL_FILE + ".tmp"
+BRAIN_SETTINGS_FILE = os.path.join(getattr(config, "DATA_DIR", "data"), "brain_settings.json")
 
 class StandaloneBotDaemon:
     def __init__(self):
@@ -34,9 +35,8 @@ class StandaloneBotDaemon:
         self.pending_signals = []
         self.heartbeat_contexts = {} # Lưu trữ Swing, ATR để đẩy lên UI
 
-    def _atomic_write_signals(self):
+    def _atomic_write_signals(self, active_symbols):
         """Ghi file an toàn (Atomic Write) để UI đọc không bao giờ bị crash"""
-        active_symbols = getattr(config, "BOT_ACTIVE_SYMBOLS", getattr(config, "SYMBOLS", []))
         
         payload = {
             "brain_heartbeat": {
@@ -68,7 +68,20 @@ class StandaloneBotDaemon:
             "context": context 
         })
         logger.info(f"Đã phát tín hiệu {action} cho {symbol} ({signal_class})")
-        self._atomic_write_signals() # Ghi ngay lập tức
+        # Ghi ngay lập tức, tự đọc lại active_symbols từ file json để ghi
+        live_cfg = self._read_live_config()
+        syms = live_cfg.get("BOT_ACTIVE_SYMBOLS", getattr(config, "SYMBOLS", []))
+        self._atomic_write_signals(syms) 
+
+    def _read_live_config(self):
+        """[ĐÃ FIX] Đọc cấu hình JSON liên tục để hỗ trợ Hot-Reload từ UI"""
+        try:
+            if os.path.exists(BRAIN_SETTINGS_FILE):
+                with open(BRAIN_SETTINGS_FILE, "r", encoding="utf-8") as f:
+                    return json.load(f)
+        except Exception:
+            pass
+        return {}
 
     def run(self):
         self.running = True
@@ -76,9 +89,12 @@ class StandaloneBotDaemon:
         
         while self.running:
             try:
-                # 1. Đọc config mới nhất
-                bot_active = getattr(config, "BOT_ACTIVE", False) or getattr(config, "AUTO_TRADE_ENABLED", False)
-                symbols = getattr(config, "BOT_ACTIVE_SYMBOLS", getattr(config, "SYMBOLS", []))
+                # 1. ĐỌC CONFIG MỚI NHẤT (HOT-RELOAD TỪ SANDBOX V3.0)
+                live_cfg = self._read_live_config()
+                
+                # Ưu tiên lấy từ JSON (UI vừa chỉnh), nếu không có mới lấy từ config.py mặc định
+                bot_active = live_cfg.get("BOT_ACTIVE", live_cfg.get("AUTO_TRADE_ENABLED", getattr(config, "AUTO_TRADE_ENABLED", False)))
+                symbols = live_cfg.get("BOT_ACTIVE_SYMBOLS", getattr(config, "BOT_ACTIVE_SYMBOLS", getattr(config, "SYMBOLS", [])))
                 
                 if bot_active and symbols:
                     # 2. QUÉT ENTRY & CẬP NHẬT CONTEXT CHO UI
@@ -91,6 +107,7 @@ class StandaloneBotDaemon:
 
                         # Lưu context để bơm sang UI qua Heartbeat
                         self.heartbeat_contexts[sym] = {
+                            "trend": context.get("trend", "NONE"), # <--- [ĐÃ FIX] Bổ sung Trend lên UI
                             "swing_high": context.get("swing_high_entry", 0),
                             "swing_low": context.get("swing_low_entry", 0),
                             "atr": context.get("atr_entry", 0),
@@ -109,8 +126,8 @@ class StandaloneBotDaemon:
                         self._scan_dca_pca()
                         self.last_dca_pca_scan = now
 
-                # 4. GHI HEARTBEAT CẬP NHẬT LIÊN TỤC LÊN UI (Kể cả khi không có lệnh)
-                self._atomic_write_signals()
+                # 4. GHI HEARTBEAT CẬP NHẬT LIÊN TỤC LÊN UI (Truyền symbol mới nhất)
+                self._atomic_write_signals(symbols)
                 time.sleep(getattr(config, "DAEMON_LOOP_DELAY", 2))
 
             except Exception as e:

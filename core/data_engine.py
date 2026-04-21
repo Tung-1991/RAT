@@ -118,12 +118,21 @@ class DataEngine:
         # Sóng Giảm (Để tìm Resistance cho lệnh Sell)
         fibo_618_resistance = swing_l_trend + (wave_up_dist * 0.618)
 
+        # ====== [ĐÃ FIX] TÍNH TOÁN TREND BẰNG EMA50 ======
+        try:
+            ema50 = df_trend['close'].ewm(span=50, adjust=False).mean().iloc[-1]
+            trend_status = "UP" if current_price > ema50 else "DOWN"
+        except:
+            trend_status = "NONE"
+        # =================================================
+
         # Đóng gói toàn bộ vào Context
         context = {
             "symbol": symbol,
             "current_price": current_price,
             "entry_timeframe": tf_entry,
             "trend_timeframe": tf_trend,
+            "trend": trend_status,  # <--- [ĐÃ FIX] Bổ sung Key này để UI hiển thị được Trend
             
             # Smart SL Data Points
             "atr_entry": atr_entry,

@@ -124,6 +124,7 @@ class BotUI(ctk.CTk):
         self.thread = threading.Thread(target=self.bg_update_loop, daemon=True)
         self.thread.start()
         
+        # [ĐÃ FIX] Đảm bảo SignalListener nhận đủ 6 tham số
         self.signal_listener = SignalListener(
             trade_manager=self.trade_mgr,
             get_auto_trade_cb=lambda: self.var_auto_trade.get(),
@@ -174,9 +175,10 @@ class BotUI(ctk.CTk):
         self.brain_wakeup_time = heartbeat.get("wakeup_time", 0)
         self.brain_active_symbols = heartbeat.get("active_symbols", [])
             
-        context = heartbeat.get("context", {})
-        if context:
-            self.latest_market_context = context
+        # [ĐÃ FIX] Sửa thành "contexts" để khớp với Bot Daemon Multi-Coin
+        contexts = heartbeat.get("contexts", {}) 
+        if contexts:
+            self.latest_market_context = contexts
 
     def on_auto_trade_toggle(self):
         if self.var_auto_trade.get():
@@ -317,6 +319,7 @@ class BotUI(ctk.CTk):
         else:
             self.lbl_brain_status.configure(text=f"🧠 BRAIN: {self.brain_status}", text_color=COL_RED)
 
+        # [ĐÃ FIX] Truy xuất context của ĐÚNG symbol đang chọn trên UI
         sym_ctx = self.latest_market_context.get(sym, {})
         
         if sym_ctx:
@@ -555,6 +558,7 @@ class BotUI(ctk.CTk):
         except: ml = mt = ms = 0.0
         
         if ms == 0.0 and self.var_assist_math_sl.get():
+            # [ĐÃ FIX] Sửa thành contexts
             target_sym_ctx = self.latest_market_context.get(s, {})
             sl_val = target_sym_ctx.get("swing_low") if d == "BUY" else target_sym_ctx.get("swing_high")
             atr_val = target_sym_ctx.get("atr")
