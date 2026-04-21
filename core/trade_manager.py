@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # FILE: core/trade_manager.py
-# V3.0: UNIFIED TRADE MANAGER - FAST STATELESS TSL (BASED 100% ON FILE 1 ARCHITECTURE)
+# V3.0: UNIFIED TRADE MANAGER - FAST STATELESS TSL (KAISER EDITION FINAL)
 
 import logging
 import json
@@ -9,9 +9,9 @@ import time
 import MetaTrader5 as mt5
 import config
 from core.data_engine import data_engine
+from core.storage_manager import load_state, save_state  # THÊM save_state
 
 class TradeManager:
-    # GIỮ NGUYÊN 100% HÀM INIT CỦA FILE 1
     def __init__(self, connector, checklist_manager, log_callback=None):
         self.connector = connector
         self.checklist = checklist_manager
@@ -19,6 +19,13 @@ class TradeManager:
         self.brain_path = "data/brain_settings.json"
         self.last_brain_read = 0
         self.brain_settings = {}
+        self.state = load_state() 
+        
+        # Đảm bảo state luôn có biến này để không bị lỗi
+        if "active_trades" not in self.state: 
+            self.state["active_trades"] = []
+        if "trade_tactics" not in self.state:
+            self.state["trade_tactics"] = {}
 
     def log(self, msg, error=False):
         if self.log_callback: 
@@ -41,23 +48,21 @@ class TradeManager:
         return self.brain_settings
 
     # ====================================================================================
-    # 1. HÀM THỰC THI LỆNH CHO BOT (DÙNG CONNECTOR CỦA FILE 1)
+    # 1. HÀM THỰC THI LỆNH CHO BOT 
     # ====================================================================================
     def execute_bot_trade(self, direction, symbol, context, market_mode="ANY"):
         config.SYMBOL = symbol 
         
-        # DÙNG CONNECTOR LẤY ACCOUNT INFO (File 1)
         acc_info = self.connector.get_account_info()
         bot_bypass = getattr(config, "BOT_BYPASS_CHECKLIST", True) 
 
-        # DÙNG CHECKLIST QUẢN LÝ (File 1)
-        res = self.checklist.run_pre_trade_checks(acc_info, {}, symbol, strict_mode=not bot_bypass)
+        res = self.checklist.run_pre_trade_checks(acc_info, self.state, symbol, strict_mode=not bot_bypass)
         if not res["passed"]:
             if bot_bypass:
                 self.log(f"⚠️ [BOT FORCE] Bỏ qua cảnh báo an toàn Checklist để test")
             else:
                 fail_reasons = [c['msg'] for c in res['checks'] if c['status'] == 'FAIL']
-                self.log(f"⚠️ [BOT BLOCKED] Bị chặn bởi hệ thống an toàn: {fail_reasons}", error=True)
+                self.log(f"⚠️ [BOT BLOCKED] Bị chặn bởi an toàn: {fail_reasons}", error=True)
                 return "CHECKLIST_FAIL"
 
         tick = mt5.symbol_info_tick(symbol)
@@ -68,7 +73,7 @@ class TradeManager:
         
         current_price = tick.ask if direction == "BUY" else tick.bid
 
-        # --- SMART SL THEO CONTEXT ---
+        # --- SMART SL ---
         sl_mode = getattr(config, "ENTRY_SL_MODE", "Swing M15 + ATR")
         buffer_atr = context.get("atr_entry", 0.0005)
         
@@ -87,7 +92,7 @@ class TradeManager:
         reward_ratio = getattr(config, "REWARD_RATIO", 1.5)
         tp_price = current_price + (sl_distance * reward_ratio) if direction == "BUY" else current_price - (sl_distance * reward_ratio)
 
-        # --- TÍNH VOLUME THEO TOÁN HỌC CỦA FILE 1 ---
+        # --- TÍNH VOLUME ---
         brain = self._get_brain_settings()
         risk_tsl = brain.get("risk_tsl", {})
         base_risk = risk_tsl.get("base_risk", getattr(config, "BOT_RISK_PERCENT", 0.3))
@@ -105,7 +110,6 @@ class TradeManager:
         comment = f"[BOT]_AUTO_{market_mode}"
         bot_magic = getattr(config, "BOT_MAGIC_NUMBER", 9999)
         
-        # DÙNG HÀM PLACE_ORDER TỪ CONNECTOR (File 1)
         result = self.connector.place_order(symbol, order_type, lot_size, sl_price, tp_price, bot_magic, comment)
         
         if result and result.retcode == 10009:
@@ -118,13 +122,13 @@ class TradeManager:
         return "MT5_ERROR"
 
     # ====================================================================================
-    # 2. HÀM THỰC THI LỆNH TAY (DÙNG CONNECTOR CỦA FILE 1)
+    # 2. HÀM THỰC THI LỆNH TAY
     # ====================================================================================
     def execute_manual_trade(self, direction, preset_name, symbol, strict_mode, 
-                             manual_lot=0.0, manual_tp=0.0, manual_sl=0.0, bypass_checklist=False):
+                             manual_lot=0.0, manual_tp=0.0, manual_sl=0.0, bypass_checklist=False, tactic_str=""):
         config.SYMBOL = symbol 
         acc_info = self.connector.get_account_info()
-        res = self.checklist.run_pre_trade_checks(acc_info, {}, symbol, strict_mode)
+        res = self.checklist.run_pre_trade_checks(acc_info, self.state, symbol, strict_mode)
         
         if not res["passed"]:
             if bypass_checklist:
@@ -175,31 +179,60 @@ class TradeManager:
         comment = f"[USER]_{preset_name}"
         manual_magic = getattr(config, "MANUAL_MAGIC_NUMBER", 8888)
         
-        # DÙNG HÀM PLACE_ORDER TỪ CONNECTOR
         result = self.connector.place_order(symbol, order_type, lot_size, sl_price, tp_price, manual_magic, comment)
         
         if result and result.retcode == 10009:
             ticket_id = result.order
+            self.update_trade_tactic(ticket_id, tactic_str) 
             self.log(f"🚀 [USER EXEC] {direction} {symbol} #{ticket_id} | Vol: {lot_size:.2f}")
             return f"SUCCESS|{ticket_id}"
         
         return f"ERR_MT5: {result.comment if result else 'Unknown Connection Error'}"
 
+    def update_trade_tactic(self, ticket, tactic_str):
+        self.state["trade_tactics"][str(ticket)] = tactic_str
+        save_state(self.state) # ĐÃ FIX: Lưu vĩnh viễn xuống ổ cứng
+
+    def get_trade_tactic(self, ticket):
+        return self.state.get("trade_tactics", {}).get(str(ticket), "OFF")
+
     # ====================================================================================
-    # 3. QUẢN LÝ LỆNH CHẠY & TSL (FULL 4 MODES THEO CHUẨN ĐỘC LẬP)
+    # 3. QUẢN LÝ LỆNH CHẠY (TSL & DỌN RÁC)
     # ====================================================================================
     def update_running_trades(self, account_type="STANDARD", all_market_contexts=None):
         tsl_status_map = {} 
         try:
-            # LẤY POSITIONS BẰNG CONNECTOR (Bản 1)
             current_positions = self.connector.get_all_open_positions()
+            current_tickets = [p.ticket for p in current_positions]
+            
+            # --- ĐÃ FIX: DỌN DẸP LỆNH ĐÓNG ĐỂ UI HIỂN THỊ ĐÚNG ---
+            tracked_tickets = list(self.state.get("active_trades", []))
+            closed_tickets = [t for t in tracked_tickets if t not in current_tickets]
+            
+            if closed_tickets:
+                for ticket in closed_tickets:
+                    self.log(f"📉 Phát hiện lệnh #{ticket} đã đóng.")
+                    if ticket in self.state["active_trades"]:
+                        self.state["active_trades"].remove(ticket)
+                    if str(ticket) in self.state.get("trade_tactics", {}): 
+                        del self.state["trade_tactics"][str(ticket)]
+                save_state(self.state)
+            # -----------------------------------------------------
+
             bot_magic = getattr(config, "BOT_MAGIC_NUMBER", 9999)
             manual_magic = getattr(config, "MANUAL_MAGIC_NUMBER", 8888)
-            
             tracked_positions = [p for p in current_positions if p.magic in (bot_magic, manual_magic)]
             
+            needs_save = False
             for pos in tracked_positions:
+                if pos.ticket not in self.state["active_trades"]:
+                    self.state["active_trades"].append(pos.ticket)
+                    needs_save = True
+                
                 self._apply_advanced_tsl(pos)
+                tsl_status_map[pos.ticket] = "Running"
+                
+            if needs_save: save_state(self.state)
 
         except Exception as e:
             self.log(f"❌ Lỗi TSL update loop: {e}", error=True)
@@ -239,7 +272,6 @@ class TradeManager:
             step_sl = pos.price_open + lock_distance if is_buy else pos.price_open - lock_distance
             candidates.append(step_sl)
 
-        # LẤY TÀI KHOẢN QUA CONNECTOR
         acc = self.connector.get_account_info()
         pnl_levels = tsl_cfg.get("PNL_LEVELS", []) 
         if acc and pnl_levels:
@@ -269,7 +301,6 @@ class TradeManager:
         
         if is_buy:
             if best_sl > pos.sl and best_sl <= (current_price - min_stop_level):
-                # SỬA LỆNH QUA CONNECTOR (File 1)
                 self.connector.modify_position(pos.ticket, best_sl, pos.tp)
                 self.log(f"⚡ [TSL] Dời SL #{pos.ticket} ➔ {best_sl:.5f}")
         else:

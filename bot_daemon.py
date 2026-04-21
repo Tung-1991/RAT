@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 # FILE: bot_daemon.py
-# V3.0: STANDALONE DAEMON - LIVE SIGNALS WRITER (KAISER EDITION)
-# GIẢI QUYẾT TRIỆT ĐỂ LỖI IMPORT BẰNG CÁCH GIAO TIẾP QUA JSON (TÁCH BIỆT HOÀN TOÀN)
+# V3.0: STANDALONE DAEMON - LIVE SIGNALS WRITER (KAISER EDITION FINAL)
 
 import time
 import json
@@ -13,10 +12,9 @@ import MetaTrader5 as mt5
 
 import config
 from core.exness_connector import ExnessConnector
-from core.data_engine import DataEngine
-from signals.signal_generator import SignalGenerator
+from core.data_engine import data_engine
+from signals.signal_generator import signal_generator
 
-# Logging riêng cho Daemon process để dễ debug ngầm
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] [DAEMON] %(message)s")
 logger = logging.getLogger("BotDaemon")
 
@@ -27,58 +25,54 @@ class StandaloneBotDaemon:
     def __init__(self):
         self.running = False
         
-        # 1. Khởi tạo kết nối MT5 riêng cho tiến trình ngầm
         self.connector = ExnessConnector()
         if not self.connector.connect():
             logger.error("Không thể kết nối MT5. Daemon sẽ dừng.")
-            return
             
-        self.data_engine = DataEngine(self.connector)
-        self.signal_gen = SignalGenerator()
-        
         self.dca_pca_interval = 15
         self.last_dca_pca_scan = 0
 
     def _update_state(self, symbol, status, signal="NONE"):
-        """Ghi trạng thái để UI Dashboard hiển thị"""
         state = {}
         if os.path.exists(STATE_FILE):
             try:
                 with open(STATE_FILE, "r", encoding="utf-8") as f:
                     state = json.load(f)
-            except: pass
+            except Exception:
+                pass
         
         state[symbol] = {
             "status": status,
             "last_signal": signal,
             "timestamp": time.time()
         }
+        
         os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
         try:
             with open(STATE_FILE, "w", encoding="utf-8") as f:
                 json.dump(state, f, indent=4)
-        except: pass
+        except Exception:
+            pass
 
     def _write_signal(self, action, symbol, context, signal_class="ENTRY"):
-        """Ghi tín hiệu vào live_signals.json để SignalListener (trong main.py) bắt lấy"""
         signal_data = {
             "signal_id": str(uuid.uuid4()),
             "timestamp": time.time(),
-            "valid_for": 300, # Tín hiệu sống trong 5 phút
+            "valid_for": 300, 
             "action": action,
             "symbol": symbol,
             "signal_class": signal_class,
-            "sl_price": 0.0, # Nhường TradeManager tính toán SL
+            "sl_price": 0.0, 
             "tp_price": 0.0,
             "bot_risk_percent": getattr(config, "BOT_RISK_PERCENT", 0.3),
-            "context": context # Chuyển toàn bộ Context (Swing/ATR) sang cho TradeManager
+            "context": context 
         }
         
         payload = {
             "brain_heartbeat": {
                 "status": "HEALTHY", 
                 "wakeup_time": 0, 
-                "active_symbols": getattr(config, "BOT_ACTIVE_SYMBOLS", [])
+                "active_symbols": getattr(config, "BOT_ACTIVE_SYMBOLS", getattr(config, "SYMBOLS", []))
             }, 
             "pending_signals": []
         }
@@ -88,11 +82,10 @@ class StandaloneBotDaemon:
                 with open(SIGNAL_FILE, "r", encoding="utf-8") as f:
                     data = json.load(f)
                     payload["pending_signals"] = data.get("pending_signals", [])
-            except: pass
+            except Exception:
+                pass
             
         payload["pending_signals"].append(signal_data)
-        
-        # Chỉ giữ 10 tín hiệu gần nhất để file không bị phình to
         payload["pending_signals"] = payload["pending_signals"][-10:] 
         
         os.makedirs(os.path.dirname(SIGNAL_FILE), exist_ok=True)
@@ -104,13 +97,11 @@ class StandaloneBotDaemon:
             logger.error(f"Lỗi ghi tín hiệu: {e}")
 
     def run(self):
-        """Vòng lặp vĩnh cửu của Daemon Process"""
         self.running = True
         logger.info("Bot Daemon (Standalone) đã khởi động thành công.")
         
         while self.running:
             try:
-                # Nếu tắt cả Auto Trade lẫn Bot Active thì ngủ
                 if not getattr(config, "BOT_ACTIVE", False) and not getattr(config, "AUTO_TRADE_ENABLED", False):
                     time.sleep(2)
                     continue
@@ -120,33 +111,29 @@ class StandaloneBotDaemon:
                     time.sleep(2)
                     continue
 
-                # ==================================
-                # LUỒNG 1: QUÉT ENTRY SIGNAL
-                # ==================================
+                # QUÉT ENTRY
                 for sym in symbols:
                     if not self.running: break
                     
-                    data_package = self.data_engine.fetch_and_prepare(sym, self.signal_gen.config)
-                    if not data_package or "context" not in data_package:
+                    df_entry, df_trend, context = data_engine.fetch_and_prepare(sym)
+                    if df_entry is None or context is None:
                         self._update_state(sym, "Lỗi Data")
                         continue
 
-                    final_signal, details = self.signal_gen.generate_signal(data_package)
+                    signal = signal_generator.generate_signal(df_entry, df_trend, context)
                     
                     sig_str = "NONE"
-                    if final_signal == 1: sig_str = "BUY"
-                    elif final_signal == -1: sig_str = "SELL"
+                    if signal == 1: sig_str = "BUY"
+                    elif signal == -1: sig_str = "SELL"
                     
                     self._update_state(sym, "Đang quét", sig_str)
 
-                    if final_signal != 0:
-                        action = "BUY" if final_signal == 1 else "SELL"
-                        self._write_signal(action, sym, details, "ENTRY")
-                        time.sleep(2) # Chống spam lệnh liên thanh
+                    if signal != 0:
+                        action = "BUY" if signal == 1 else "SELL"
+                        self._write_signal(action, sym, context, "ENTRY")
+                        time.sleep(2) 
 
-                # ==================================
-                # LUỒNG 2: QUÉT DCA/PCA
-                # ==================================
+                # QUÉT DCA/PCA
                 now = time.time()
                 if now - self.last_dca_pca_scan >= self.dca_pca_interval:
                     self._scan_dca_pca()
@@ -159,8 +146,7 @@ class StandaloneBotDaemon:
                 time.sleep(5)
 
     def _scan_dca_pca(self):
-        """Quét mở lệnh và bắn tín hiệu nhồi DCA/PCA sang live_signals.json"""
-        brain = self.signal_gen.config
+        brain = signal_generator._get_brain_settings()
         dca_cfg = brain.get("dca_config", getattr(config, "DCA_CONFIG", {}))
         pca_cfg = brain.get("pca_config", getattr(config, "PCA_CONFIG", {}))
         
@@ -170,7 +156,7 @@ class StandaloneBotDaemon:
         positions = mt5.positions_get()
         if not positions: return
 
-        bot_magic = getattr(config, "BOT_MAGIC_NUMBER", 999999)
+        bot_magic = getattr(config, "BOT_MAGIC_NUMBER", 9999)
         bot_positions = {}
         for pos in positions:
             if pos.magic == bot_magic:
@@ -179,16 +165,11 @@ class StandaloneBotDaemon:
                 bot_positions[pos.symbol].append(pos)
 
         for symbol, pos_list in bot_positions.items():
-            data_package = self.data_engine.fetch_and_prepare(symbol, brain)
-            if not data_package or "context" not in data_package: continue
+            df_entry, df_trend, context = data_engine.fetch_and_prepare(symbol)
+            if df_entry is None or context is None: continue
             
-            df_trigger = data_package["raw_trigger"]
-            context = data_package["context"]
-            
-            tick = mt5.symbol_info_tick(symbol)
-            if not tick: continue
-            current_price = tick.ask if pos_list[0].type == mt5.ORDER_TYPE_BUY else tick.bid
-            atr_val = context.get("atr", 0.0005)
+            current_price = context.get("current_price", 0)
+            atr_val = context.get("atr_entry", 0.0005)
             
             pos_list.sort(key=lambda x: x.time)
             first_pos = pos_list[0]
@@ -199,7 +180,7 @@ class StandaloneBotDaemon:
             if dca_cfg.get("ENABLED", False) and profit_points < 0 and len(pos_list) < dca_cfg.get("MAX_STEPS", 3):
                 dist_atr_r = dca_cfg.get("DISTANCE_ATR_R", 1.0)
                 if abs(profit_points) >= (dist_atr_r * atr_val):
-                    last_closed_candle = df_trigger.iloc[-2]
+                    last_closed_candle = df_entry.iloc[-2]
                     is_bullish = last_closed_candle['close'] > last_closed_candle['open']
                     if (first_pos.type == mt5.ORDER_TYPE_BUY and is_bullish) or (first_pos.type == mt5.ORDER_TYPE_SELL and not is_bullish):
                         action = "BUY" if first_pos.type == mt5.ORDER_TYPE_BUY else "SELL"
@@ -215,13 +196,12 @@ class StandaloneBotDaemon:
                 if first_pos.type == mt5.ORDER_TYPE_SELL and (first_pos.sl > 0 and first_pos.sl < first_pos.price_open): is_safe = True
 
                 if is_safe and profit_points >= (dist_atr_r * atr_val):
-                    mode = self.signal_gen._detect_market_mode(context, df_trigger)
-                    if mode == "BREAKOUT":
+                    adx_val = df_trend[f"ADX_{14}"].iloc[-1] if f"ADX_{14}" in df_trend.columns else 0
+                    if adx_val >= pca_cfg.get("CONFIRM_ADX", 23):
                         action = "BUY" if first_pos.type == mt5.ORDER_TYPE_BUY else "SELL"
                         self._write_signal(action, symbol, context, "PCA")
                         time.sleep(1)
 
-# Entry point để Subprocess Popen từ main.py gọi được
 if __name__ == "__main__":
     daemon = StandaloneBotDaemon()
     try:
