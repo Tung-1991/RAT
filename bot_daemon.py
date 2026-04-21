@@ -1,153 +1,231 @@
 # -*- coding: utf-8 -*-
 # FILE: bot_daemon.py
-# V3.0: UNIFIED BOT DAEMON - HOT RELOAD & PIPELINE (KAISER EDITION)
+# V3.0: STANDALONE DAEMON - LIVE SIGNALS WRITER (KAISER EDITION)
+# GIẢI QUYẾT TRIỆT ĐỂ LỖI IMPORT BẰNG CÁCH GIAO TIẾP QUA JSON (TÁCH BIỆT HOÀN TOÀN)
 
 import time
-import threading
-import logging
+import json
 import os
+import uuid
+import logging
 from datetime import datetime
+import MetaTrader5 as mt5
+
 import config
+from core.exness_connector import ExnessConnector
 from core.data_engine import DataEngine
 from signals.signal_generator import SignalGenerator
 
-logger = logging.getLogger("ExnessBot")
+# Logging riêng cho Daemon process để dễ debug ngầm
+logging.basicConfig(level=logging.INFO, format="[%(asctime)s] [DAEMON] %(message)s")
+logger = logging.getLogger("BotDaemon")
 
-class BotDaemon:
-    def __init__(self, connector, trade_mgr, checklist_mgr, log_callback=None):
-        self.connector = connector
-        self.trade_mgr = trade_mgr
-        self.checklist_mgr = checklist_mgr
-        self.log_callback = log_callback
+SIGNAL_FILE = os.path.join(getattr(config, "DATA_DIR", "data"), "live_signals.json")
+STATE_FILE = os.path.join(getattr(config, "DATA_DIR", "data"), "bot_state.json")
+
+class StandaloneBotDaemon:
+    def __init__(self):
+        self.running = False
         
-        self.data_engine = DataEngine(connector)
+        # 1. Khởi tạo kết nối MT5 riêng cho tiến trình ngầm
+        self.connector = ExnessConnector()
+        if not self.connector.connect():
+            logger.error("Không thể kết nối MT5. Daemon sẽ dừng.")
+            return
+            
+        self.data_engine = DataEngine(self.connector)
         self.signal_gen = SignalGenerator()
         
-        self.running = False
-        self.thread = None
-        self.last_config_mtime = 0
-        self.brain_file_path = "data/brain_settings.json"
+        self.dca_pca_interval = 15
+        self.last_dca_pca_scan = 0
 
-    def log(self, msg, error=False):
-        if self.log_callback:
-            self.log_callback(f"[DAEMON] {msg}", error=error)
-        else:
-            logger.info(f"[DAEMON] {msg}")
-
-    def _check_hot_reload(self):
-        """Giám sát sự thay đổi của file cấu hình Sandbox để Hot-Reload"""
+    def _update_state(self, symbol, status, signal="NONE"):
+        """Ghi trạng thái để UI Dashboard hiển thị"""
+        state = {}
+        if os.path.exists(STATE_FILE):
+            try:
+                with open(STATE_FILE, "r", encoding="utf-8") as f:
+                    state = json.load(f)
+            except: pass
+        
+        state[symbol] = {
+            "status": status,
+            "last_signal": signal,
+            "timestamp": time.time()
+        }
+        os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
         try:
-            if os.path.exists(self.brain_file_path):
-                current_mtime = os.path.getmtime(self.brain_file_path)
-                if current_mtime > self.last_config_mtime:
-                    if self.last_config_mtime != 0:
-                        self.log("Phát hiện thay đổi cấu hình. Đang tiến hành Hot-Reload...")
-                    self.signal_gen.reload_config()
-                    self.last_config_mtime = current_mtime
+            with open(STATE_FILE, "w", encoding="utf-8") as f:
+                json.dump(state, f, indent=4)
+        except: pass
+
+    def _write_signal(self, action, symbol, context, signal_class="ENTRY"):
+        """Ghi tín hiệu vào live_signals.json để SignalListener (trong main.py) bắt lấy"""
+        signal_data = {
+            "signal_id": str(uuid.uuid4()),
+            "timestamp": time.time(),
+            "valid_for": 300, # Tín hiệu sống trong 5 phút
+            "action": action,
+            "symbol": symbol,
+            "signal_class": signal_class,
+            "sl_price": 0.0, # Nhường TradeManager tính toán SL
+            "tp_price": 0.0,
+            "bot_risk_percent": getattr(config, "BOT_RISK_PERCENT", 0.3),
+            "context": context # Chuyển toàn bộ Context (Swing/ATR) sang cho TradeManager
+        }
+        
+        payload = {
+            "brain_heartbeat": {
+                "status": "HEALTHY", 
+                "wakeup_time": 0, 
+                "active_symbols": getattr(config, "BOT_ACTIVE_SYMBOLS", [])
+            }, 
+            "pending_signals": []
+        }
+        
+        if os.path.exists(SIGNAL_FILE):
+            try:
+                with open(SIGNAL_FILE, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    payload["pending_signals"] = data.get("pending_signals", [])
+            except: pass
+            
+        payload["pending_signals"].append(signal_data)
+        
+        # Chỉ giữ 10 tín hiệu gần nhất để file không bị phình to
+        payload["pending_signals"] = payload["pending_signals"][-10:] 
+        
+        os.makedirs(os.path.dirname(SIGNAL_FILE), exist_ok=True)
+        try:
+            with open(SIGNAL_FILE, "w", encoding="utf-8") as f:
+                json.dump(payload, f, indent=4)
+            logger.info(f"Đã phát tín hiệu {action} cho {symbol} ({signal_class})")
         except Exception as e:
-            logger.error(f"[Watchdog] Lỗi Hot-Reload: {e}")
+            logger.error(f"Lỗi ghi tín hiệu: {e}")
 
-    def start(self):
-        if not self.running:
-            self.running = True
-            self.thread = threading.Thread(target=self._run_loop, daemon=True)
-            self.thread.start()
-            self.log("Đã khởi động tiến trình ngầm (Bot Daemon).")
-
-    def stop(self):
-        self.running = False
-        if self.thread:
-            self.thread.join(timeout=2.0)
-            self.log("Đã dừng tiến trình ngầm.")
-
-    def _run_loop(self):
+    def run(self):
+        """Vòng lặp vĩnh cửu của Daemon Process"""
+        self.running = True
+        logger.info("Bot Daemon (Standalone) đã khởi động thành công.")
+        
         while self.running:
             try:
-                # 1. Kiểm tra Hot-Reload
-                self._check_hot_reload()
+                # Nếu tắt cả Auto Trade lẫn Bot Active thì ngủ
+                if not getattr(config, "BOT_ACTIVE", False) and not getattr(config, "AUTO_TRADE_ENABLED", False):
+                    time.sleep(2)
+                    continue
 
-                # 2. Kiểm tra cờ cho phép Auto Trade
-                if getattr(config, "AUTO_TRADE_ENABLED", False):
-                    self._process_trading_cycle()
+                symbols = getattr(config, "BOT_ACTIVE_SYMBOLS", getattr(config, "SYMBOLS", []))
+                if not symbols:
+                    time.sleep(2)
+                    continue
+
+                # ==================================
+                # LUỒNG 1: QUÉT ENTRY SIGNAL
+                # ==================================
+                for sym in symbols:
+                    if not self.running: break
+                    
+                    data_package = self.data_engine.fetch_and_prepare(sym, self.signal_gen.config)
+                    if not data_package or "context" not in data_package:
+                        self._update_state(sym, "Lỗi Data")
+                        continue
+
+                    final_signal, details = self.signal_gen.generate_signal(data_package)
+                    
+                    sig_str = "NONE"
+                    if final_signal == 1: sig_str = "BUY"
+                    elif final_signal == -1: sig_str = "SELL"
+                    
+                    self._update_state(sym, "Đang quét", sig_str)
+
+                    if final_signal != 0:
+                        action = "BUY" if final_signal == 1 else "SELL"
+                        self._write_signal(action, sym, details, "ENTRY")
+                        time.sleep(2) # Chống spam lệnh liên thanh
+
+                # ==================================
+                # LUỒNG 2: QUÉT DCA/PCA
+                # ==================================
+                now = time.time()
+                if now - self.last_dca_pca_scan >= self.dca_pca_interval:
+                    self._scan_dca_pca()
+                    self.last_dca_pca_scan = now
+
+                time.sleep(getattr(config, "DAEMON_LOOP_DELAY", 5))
 
             except Exception as e:
-                logger.error(f"Lỗi trong vòng lặp Daemon: {e}")
-            
-            # Nghỉ ngơi giữa các chu kỳ để tránh spam API
-            time.sleep(getattr(config, "DAEMON_LOOP_DELAY", 15))
+                logger.error(f"Lỗi Loop trong Daemon: {e}")
+                time.sleep(5)
 
-    def _process_trading_cycle(self):
-        """Chu kỳ quét và vào lệnh của Bot"""
+    def _scan_dca_pca(self):
+        """Quét mở lệnh và bắn tín hiệu nhồi DCA/PCA sang live_signals.json"""
+        brain = self.signal_gen.config
+        dca_cfg = brain.get("dca_config", getattr(config, "DCA_CONFIG", {}))
+        pca_cfg = brain.get("pca_config", getattr(config, "PCA_CONFIG", {}))
         
-        # 1. Kiểm tra giới hạn số lệnh của Bot trong ngày
-        limit = getattr(config, "BOT_DAILY_TRADE_LIMIT", 10)
-        bot_trades_today = self._count_bot_trades_today()
-        
-        if bot_trades_today >= limit:
-            return # Đã chạm ngưỡng, im lặng đợi ngày hôm sau
+        if not dca_cfg.get("ENABLED", False) and not pca_cfg.get("ENABLED", False):
+            return
 
-        # Lấy danh sách cặp tiền Bot được phép giao dịch
-        active_symbols = getattr(config, "BOT_ACTIVE_SYMBOLS", [])
-        
-        for symbol in active_symbols:
-            if not self.running: break
+        positions = mt5.positions_get()
+        if not positions: return
+
+        bot_magic = getattr(config, "BOT_MAGIC_NUMBER", 999999)
+        bot_positions = {}
+        for pos in positions:
+            if pos.magic == bot_magic:
+                if pos.symbol not in bot_positions: 
+                    bot_positions[pos.symbol] = []
+                bot_positions[pos.symbol].append(pos)
+
+        for symbol, pos_list in bot_positions.items():
+            data_package = self.data_engine.fetch_and_prepare(symbol, brain)
+            if not data_package or "context" not in data_package: continue
             
-            # Tránh vào lệnh liên tục (Cooldown)
-            if self._is_cooling_down(symbol):
-                continue
-
-            # 2. Bơm Dữ Liệu (Data Pipeline)
-            brain_config = self.signal_gen.config
-            data_package = self.data_engine.fetch_and_prepare(symbol, brain_config)
+            df_trigger = data_package["raw_trigger"]
+            context = data_package["context"]
             
-            if not data_package or "context" not in data_package:
-                continue
-
-            # 3. Phân Tích Tín Hiệu (Signal & Voting)
-            final_signal, details = self.signal_gen.generate_signal(data_package)
-
-            # 4. Thực Thi Lệnh
-            if final_signal != 0:
-                direction = "BUY" if final_signal == 1 else "SELL"
-                
-                # Tham số lệnh cho Bot
-                bot_risk = getattr(config, "BOT_RISK_PERCENT", 0.3)
-                bot_tsl = getattr(config, "BOT_DEFAULT_TSL", "BE+STEP_R+SWING")
-                
-                self.log(f"⚡ Tín hiệu {direction} xác nhận trên {symbol} (Chế độ: {details.get('mode')})")
-                
-                # TP và SL truyền vào là 0 vì TradeManager V3.0 sẽ tự tính dựa trên `details` (Swing + ATR)
-                res = self.trade_mgr.execute_bot_trade(
-                    direction=direction,
-                    symbol=symbol,
-                    sl_price=0.0,
-                    tp_price=0.0,
-                    bot_risk_percent=bot_risk,
-                    tactic_str=bot_tsl,
-                    details=details
-                )
-                
-                if res == "SUCCESS":
-                    self._mark_cooldown(symbol)
-
-    def _count_bot_trades_today(self) -> int:
-        """Đếm số lệnh do đích thân Bot bắn trong ngày (lọc qua Magic Number)"""
-        # Đây là ước tính dựa trên tổng lệnh, vì TradeManager V3 gộp chung counter
-        # Trong thực tế, có thể đếm từ daily_history hoặc list active_trades.
-        # Để đơn giản và an toàn, dùng biến trades_today_count của state hiện tại.
-        return self.trade_mgr.state.get("trades_today_count", 0)
-
-    def _is_cooling_down(self, symbol: str) -> bool:
-        """Kiểm tra Cooldown (chống spam nhiều lệnh cùng 1 lúc trên 1 cặp)"""
-        if not hasattr(self, "_cooldown_map"):
-            self._cooldown_map = {}
+            tick = mt5.symbol_info_tick(symbol)
+            if not tick: continue
+            current_price = tick.ask if pos_list[0].type == mt5.ORDER_TYPE_BUY else tick.bid
+            atr_val = context.get("atr", 0.0005)
             
-        last_time = self._cooldown_map.get(symbol, 0)
-        cooldown_seconds = getattr(config, "COOLDOWN_MINUTES", 1) * 60
-        
-        return (time.time() - last_time) < cooldown_seconds
+            pos_list.sort(key=lambda x: x.time)
+            first_pos = pos_list[0]
+            
+            profit_points = (current_price - first_pos.price_open) if first_pos.type == mt5.ORDER_TYPE_BUY else (first_pos.price_open - current_price)
+            
+            # LOGIC DCA
+            if dca_cfg.get("ENABLED", False) and profit_points < 0 and len(pos_list) < dca_cfg.get("MAX_STEPS", 3):
+                dist_atr_r = dca_cfg.get("DISTANCE_ATR_R", 1.0)
+                if abs(profit_points) >= (dist_atr_r * atr_val):
+                    last_closed_candle = df_trigger.iloc[-2]
+                    is_bullish = last_closed_candle['close'] > last_closed_candle['open']
+                    if (first_pos.type == mt5.ORDER_TYPE_BUY and is_bullish) or (first_pos.type == mt5.ORDER_TYPE_SELL and not is_bullish):
+                        action = "BUY" if first_pos.type == mt5.ORDER_TYPE_BUY else "SELL"
+                        self._write_signal(action, symbol, context, "DCA")
+                        time.sleep(1)
+                        continue
 
-    def _mark_cooldown(self, symbol: str):
-        if not hasattr(self, "_cooldown_map"):
-            self._cooldown_map = {}
-        self._cooldown_map[symbol] = time.time()
+            # LOGIC PCA
+            if pca_cfg.get("ENABLED", False) and profit_points > 0 and len(pos_list) < pca_cfg.get("MAX_STEPS", 2):
+                dist_atr_r = pca_cfg.get("DISTANCE_ATR_R", 1.5)
+                is_safe = False
+                if first_pos.type == mt5.ORDER_TYPE_BUY and first_pos.sl > first_pos.price_open: is_safe = True
+                if first_pos.type == mt5.ORDER_TYPE_SELL and (first_pos.sl > 0 and first_pos.sl < first_pos.price_open): is_safe = True
+
+                if is_safe and profit_points >= (dist_atr_r * atr_val):
+                    mode = self.signal_gen._detect_market_mode(context, df_trigger)
+                    if mode == "BREAKOUT":
+                        action = "BUY" if first_pos.type == mt5.ORDER_TYPE_BUY else "SELL"
+                        self._write_signal(action, symbol, context, "PCA")
+                        time.sleep(1)
+
+# Entry point để Subprocess Popen từ main.py gọi được
+if __name__ == "__main__":
+    daemon = StandaloneBotDaemon()
+    try:
+        if daemon.connector._is_connected:
+            daemon.run()
+    except KeyboardInterrupt:
+        logger.info("Đang tắt tiến trình Daemon...")
