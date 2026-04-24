@@ -1,7 +1,4 @@
 # -*- coding: utf-8 -*-
-# FILE: core/storage_manager.py
-# V8.2: UPGRADED STORAGE FOR DCA/PCA & CLEAN STATE MANAGEMENT
-
 import json
 import os
 import csv
@@ -10,21 +7,18 @@ from typing import Dict, Any
 import config 
 
 STATE_FILE = "data/bot_state.json"
+BRAIN_FILE = "data/brain_settings.json"
 HISTORY_FILE = "data/trade_history_log.csv" 
-MASTER_LOG_FILE = "data/trade_history_master.csv" # File log chi tiết
+MASTER_LOG_FILE = "data/trade_history_master.csv"
 
 def get_today_str():
-    """Lấy ngày theo phiên (trừ đi giờ reset để tính phiên)"""
     now = datetime.now()
     if now.hour < config.RESET_HOUR:
-        # Ví dụ: 2h sáng ngày 10/1 => Vẫn tính là phiên ngày 09/1
         prev_day = now - timedelta(days=1)
         return prev_day.strftime("%Y-%m-%d")
-    else:
-        return now.strftime("%Y-%m-%d")
+    return now.strftime("%Y-%m-%d")
 
 def append_trade_log(ticket, symbol, type_str, volume, pnl, close_reason):
-    """Ghi 1 dòng vào file CSV ngay lập tức (Giờ máy tính)"""
     file_exists = os.path.isfile(MASTER_LOG_FILE)
     try:
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S") 
@@ -32,10 +26,9 @@ def append_trade_log(ticket, symbol, type_str, volume, pnl, close_reason):
             writer = csv.writer(f)
             if not file_exists:
                 writer.writerow(["Time", "Ticket", "Symbol", "Type", "Vol", "PnL ($)", "Reason"])
-            
             writer.writerow([now_str, ticket, symbol, type_str, volume, f"{pnl:.2f}", close_reason])
-    except Exception as e:
-        print(f"Lỗi ghi log CSV: {e}")
+    except:
+        pass
 
 def save_daily_history_to_csv(prev_date, pnl, trades_count, win_streak, lose_streak):
     file_exists = os.path.isfile(HISTORY_FILE)
@@ -44,12 +37,10 @@ def save_daily_history_to_csv(prev_date, pnl, trades_count, win_streak, lose_str
             writer = csv.writer(f)
             if not file_exists:
                 writer.writerow(["Date", "PnL ($)", "Total Trades", "End Streak"])
-            
             streak_str = f"L{lose_streak}" if lose_streak > 0 else f"W{win_streak}"
             writer.writerow([prev_date, f"{pnl:.2f}", trades_count, streak_str])
-            print(f">>> Đã lưu lịch sử ngày {prev_date} vào {HISTORY_FILE}")
-    except Exception as e:
-        print(f"Lỗi lưu lịch sử CSV: {e}")
+    except:
+        pass
 
 def load_state() -> Dict[str, Any]:
     default_state = {
@@ -58,15 +49,15 @@ def load_state() -> Dict[str, Any]:
         "starting_balance": 0.0,
         "trades_today_count": 0,
         "losing_streak": 0,
-        "daily_loss_count": 0,      # Đồng bộ từ Trade Manager
+        "daily_loss_count": 0,
         "active_trades": [],
         "tsl_disabled_tickets": [], 
         "daily_history": [],
         "trade_tactics": {},        
-        "initial_r_dist": {},       # Đồng bộ từ Trade Manager
+        "initial_r_dist": {},
         "parent_baskets": {},       
         "child_to_parent": {},       
-        "last_child_bar_time": {}   # Khóa nến chống xả lệnh liên thanh
+        "last_child_bar_time": {}
     }
     
     os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
@@ -78,7 +69,6 @@ def load_state() -> Dict[str, Any]:
         with open(STATE_FILE, "r") as f:
             state = json.load(f)
             
-            # --- Migrations cho version cũ (Chống Crash khi nâng cấp bản Bot) ---
             if "daily_history" not in state: state["daily_history"] = []
             if "tsl_disabled_tickets" not in state: state["tsl_disabled_tickets"] = []
             if "trade_tactics" not in state: state["trade_tactics"] = {} 
@@ -88,13 +78,10 @@ def load_state() -> Dict[str, Any]:
             if "last_child_bar_time" not in state: state["last_child_bar_time"] = {} 
             if "daily_loss_count" not in state: state["daily_loss_count"] = 0    
 
-            # LOGIC NGÀY MỚI (Dùng hàm get_today_str mới)
             current_date = get_today_str()
             saved_date = state.get("date")
 
             if saved_date != current_date:
-                print(f"--- [NEW SESSION] Chuyển từ {saved_date} sang {current_date} ---")
-                
                 save_daily_history_to_csv(
                     saved_date, 
                     state.get("pnl_today", 0), 
@@ -103,7 +90,6 @@ def load_state() -> Dict[str, Any]:
                     state.get("losing_streak", 0)
                 )
 
-                # Reset các biến đếm theo ngày
                 state["date"] = current_date
                 state["pnl_today"] = 0.0
                 state["trades_today_count"] = 0
@@ -111,16 +97,65 @@ def load_state() -> Dict[str, Any]:
                 state["daily_loss_count"] = 0  
                 state["daily_history"] = [] 
                 state["starting_balance"] = 0.0 
-                # Lưu ý: active_trades, trade_tactics, parent_baskets... KHÔNG reset vì lệnh treo qua đêm
                 
-            return state
-    except Exception as e:
-        print(f"Lỗi đọc state: {e}. Dùng default.")
+        return state
+    except:
         return default_state
 
 def save_state(state: Dict[str, Any]):
     try:
         with open(STATE_FILE, "w") as f:
             json.dump(state, f, indent=4)
-    except Exception as e:
-        print(f"Lỗi lưu state: {e}")
+    except:
+        pass
+
+def load_brain_settings() -> Dict[str, Any]:
+    default_brain = {
+        "MASTER_EVAL_MODE": getattr(config, "MASTER_EVAL_MODE", "VETO"),
+        "MIN_MATCHING_VOTES": getattr(config, "MIN_MATCHING_VOTES", 3),
+        "G0_TIMEFRAME": getattr(config, "G0_TIMEFRAME", "1d"),
+        "G1_TIMEFRAME": getattr(config, "G1_TIMEFRAME", "1h"),
+        "G2_TIMEFRAME": getattr(config, "G2_TIMEFRAME", "15m"),
+        "G3_TIMEFRAME": getattr(config, "G3_TIMEFRAME", "15m"),
+        "voting_rules": {
+            "G0": {"max_opposite": 0, "max_none": 0, "master_rule": "PASS"},
+            "G1": {"max_opposite": 0, "max_none": 0, "master_rule": "FIX"},
+            "G2": {"max_opposite": 0, "max_none": 1, "master_rule": "FIX"},
+            "G3": {"max_opposite": 0, "max_none": 1, "master_rule": "IGNORE"}
+        },
+        "indicators": getattr(config, "SANDBOX_CONFIG", {}).get("indicators", {})
+    }
+    
+    os.makedirs(os.path.dirname(BRAIN_FILE), exist_ok=True)
+    if not os.path.exists(BRAIN_FILE):
+        return default_brain
+
+    try:
+        with open(BRAIN_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            
+            for key in ["MASTER_EVAL_MODE", "MIN_MATCHING_VOTES", "G0_TIMEFRAME", "G1_TIMEFRAME", "G2_TIMEFRAME", "G3_TIMEFRAME"]:
+                if key in data: default_brain[key] = data[key]
+            
+            if "voting_rules" in data:
+                for grp in ["G0", "G1", "G2", "G3"]:
+                    if grp in data["voting_rules"]:
+                        default_brain["voting_rules"][grp] = data["voting_rules"][grp]
+            
+            if "indicators" in data:
+                for ind, cfg in data["indicators"].items():
+                    if ind in default_brain["indicators"]:
+                        default_brain["indicators"][ind].update(cfg)
+                    else:
+                        default_brain["indicators"][ind] = cfg
+            return default_brain
+    except:
+        return default_brain
+
+def save_brain_settings(data: Dict[str, Any]):
+    try:
+        os.makedirs(os.path.dirname(BRAIN_FILE), exist_ok=True)
+        with open(BRAIN_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4)
+    except:
+        pass

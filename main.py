@@ -319,14 +319,22 @@ class BotUI(ctk.CTk):
         else:
             self.lbl_brain_status.configure(text=f"🧠 BRAIN: {self.brain_status}", text_color=COL_RED)
 
-        # [ĐÃ FIX] Truy xuất context của ĐÚNG symbol đang chọn trên UI
         sym_ctx = self.latest_market_context.get(sym, {})
         
         if sym_ctx:
+            # Đọc Dropdown Selector để lấy đúng thông số TF muốn xem
+            selected_tf = getattr(self, "var_dashboard_tf", tk.StringVar(value="G1")).get()
+            
+            if selected_tf in ["G1", "G0"]: # Nhóm Trend vĩ mô
+                sh = sym_ctx.get("swing_high_trend", sym_ctx.get("swing_high", "--"))
+                sl = sym_ctx.get("swing_low_trend", sym_ctx.get("swing_low", "--"))
+                atr = sym_ctx.get("atr_trend", sym_ctx.get("atr", "--"))
+            else: # G2, G3 (Nhóm Entry bóp cò)
+                sh = sym_ctx.get("swing_high_entry", sym_ctx.get("swing_high", "--"))
+                sl = sym_ctx.get("swing_low_entry", sym_ctx.get("swing_low", "--"))
+                atr = sym_ctx.get("atr_entry", sym_ctx.get("atr", "--"))
+                
             tr = sym_ctx.get("trend", "--")
-            sh = sym_ctx.get("swing_high", "--")
-            sl = sym_ctx.get("swing_low", "--")
-            atr = sym_ctx.get("atr", "--")
             
             if atr == 0.0 or atr == "--":
                 self.lbl_market_context.configure(text="Syncing MT5 Data...", text_color="#FFA500")
@@ -566,10 +574,13 @@ class BotUI(ctk.CTk):
         except: ml = mt = ms = 0.0
         
         if ms == 0.0 and self.var_assist_math_sl.get():
-            # [ĐÃ FIX] Sửa thành contexts
             target_sym_ctx = self.latest_market_context.get(s, {})
-            sl_val = target_sym_ctx.get("swing_low") if d == "BUY" else target_sym_ctx.get("swing_high")
-            atr_val = target_sym_ctx.get("atr")
+            if d == "BUY":
+                sl_val = target_sym_ctx.get("swing_low_entry", target_sym_ctx.get("swing_low"))
+            else:
+                sl_val = target_sym_ctx.get("swing_high_entry", target_sym_ctx.get("swing_high"))
+                
+            atr_val = target_sym_ctx.get("atr_entry", target_sym_ctx.get("atr"))
             
             if sl_val and atr_val:
                 sl_mult = getattr(config, "sl_atr_multiplier", 0.2)

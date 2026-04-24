@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # FILE: core/trade_manager.py
-# V3.2: UNIFIED TRADE MANAGER - PREDICTIVE TSL MILESTONES (KAISER EDITION)
+# V4.0: UNIFIED TRADE MANAGER - MULTI-TF CONTEXT READY (KAISER EDITION)
 
 import logging
 import json
@@ -70,15 +70,20 @@ class TradeManager:
         
         current_price = tick.ask if direction == "BUY" else tick.bid
 
-        # TÍNH TOÁN SMART SL AN TOÀN
-        buffer_atr = context.get("atr", 0.0005) # Lấy ATR chuẩn xác từ Context đã fix
+        # TÍNH TOÁN SMART SL AN TOÀN (V4.0 Multi-TF Context Support)
+        buffer_atr = context.get("atr_entry", context.get("atr", 0.0005))
+        swing_l = context.get("swing_low_entry", context.get("swing_low", current_price))
+        swing_h = context.get("swing_high_entry", context.get("swing_high", current_price))
+        swing_l_trend = context.get("swing_low_trend", swing_l)
+        swing_h_trend = context.get("swing_high_trend", swing_h)
+
         sl_mode = getattr(config, "ENTRY_SL_MODE", "Swing M15 + ATR")
         
         try:
             if sl_mode == "Swing M15 + ATR":
-                sl_price = context.get("swing_low", current_price) - buffer_atr if direction == "BUY" else context.get("swing_high", current_price) + buffer_atr
+                sl_price = swing_l - buffer_atr if direction == "BUY" else swing_h + buffer_atr
             elif sl_mode == "Swing H1 + ATR":
-                sl_price = context.get("swing_low_trend", current_price) - (buffer_atr * 1.5) if direction == "BUY" else context.get("swing_high_trend", current_price) + (buffer_atr * 1.5)
+                sl_price = swing_l_trend - (buffer_atr * 1.5) if direction == "BUY" else swing_h_trend + (buffer_atr * 1.5)
             else:
                 sl_price = current_price - (buffer_atr * 2) if direction == "BUY" else current_price + (buffer_atr * 2)
         except:
@@ -368,7 +373,11 @@ class TradeManager:
 
         # 4. SWING
         if "SWING" in active_modes and context:
-            sh, sl, atr = context.get("swing_high"), context.get("swing_low"), context.get("atr", 0)
+            # Hỗ trợ lấy dữ liệu đa khung từ Context V4
+            sh = context.get("swing_high", context.get("swing_high_entry"))
+            sl = context.get("swing_low", context.get("swing_low_entry"))
+            atr = context.get("atr", context.get("atr_entry", 0))
+
             if sh is not None and sl is not None and atr:
                 trail_buf = getattr(config, "trail_atr_buffer", 0.2)
                 swing_sl = sl - (trail_buf * atr) if is_buy else sh + (trail_buf * atr)

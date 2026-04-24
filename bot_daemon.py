@@ -133,14 +133,11 @@ class StandaloneBotDaemon:
             except:
                 real_trend = "NONE"
 
-            self.heartbeat_contexts[sym] = {
+            self.heartbeat_contexts[sym] = context.copy()
+            self.heartbeat_contexts[sym].update({
                 "trend": real_trend,
-                "swing_high": float(context.get("swing_high_entry", 0.0)),
-                "swing_low": float(context.get("swing_low_entry", 0.0)),
-                "atr": float(context.get("atr_entry", 0.0)),
-                "current_price": float(context.get("current_price", 0.0)),
                 "timestamp": time.time()
-            }
+            })
 
             if bot_active:
                 signal = signal_generator.generate_signal_v4(dfs, context)

@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 # FILE: ui_panels.py
-# V8.3: STATIC UI PANELS - ERGONOMIC LAYOUT (KAISER EDITION)
-# UPDATE: DI DỜI NÚT SANDBOX LÊN CẠNH NÚT BOT ĐỂ TỐI ƯU KHÔNG GIAN
+# V8.4: STATIC UI PANELS - MULTI-TF DASHBOARD SELECTOR (KAISER EDITION)
 
 import customtkinter as ctk
 import tkinter as tk
@@ -70,10 +69,8 @@ def setup_left_panel(app, parent):
     app.ind_auto_light = ctk.CTkFrame(f_bot_controls, width=14, height=14, corner_radius=7, fg_color=COL_RED)
     app.ind_auto_light.pack(side="left", padx=(0, 6))
     
-    # Nút cài đặt Safety (Bot cũ)
     ctk.CTkButton(f_bot_controls, text="⚙ BOT", width=40, height=24, fg_color="#4A148C", hover_color="#6A1B9A", command=app.open_bot_setting_popup).pack(side="left", padx=(0, 5))
 
-    # Nút mở Strategy Sandbox V3.0 thu gọn lại
     app.btn_strategy = ctk.CTkButton(
         f_bot_controls, 
         text="🧩 SANDBOX", 
@@ -102,7 +99,7 @@ def setup_left_panel(app, parent):
     app.cbo_account_type.set(config.DEFAULT_ACCOUNT_TYPE)
     app.cbo_account_type.pack(side="right", fill="x", padx=(5,0))
 
-    # --- DÒNG 3: TACTIC (ĐÃ RÚT GỌN CHỈ CÒN TSL) ---
+    # --- DÒNG 3: TACTIC ---
     ctk.CTkLabel(f_set, text="TACTIC:", font=FONT_SECTION, text_color="gray").grid(row=2, column=0, sticky="w", pady=5)
     f_tsl_row = ctk.CTkFrame(f_set, fg_color="transparent")
     f_tsl_row.grid(row=2, column=1, sticky="ew", padx=5)
@@ -127,9 +124,9 @@ def setup_left_panel(app, parent):
     
     app.update_tactic_buttons_ui()
 
-    # 3. MANUAL INPUT PANEL (Được đẩy lên cao hơn)
+    # 3. MANUAL INPUT PANEL
     f_input = ctk.CTkFrame(parent, fg_color="transparent")
-    f_input.pack(fill="x", padx=5, pady=(15,0))  # Tăng chút khoảng đệm phía trên cho thoáng
+    f_input.pack(fill="x", padx=5, pady=(15,0))
     f_input.grid_columnconfigure((0,1,2), weight=1)
 
     def make_inp(p, t, v, c):
@@ -142,8 +139,16 @@ def setup_left_panel(app, parent):
     make_inp(f_input, "TP (Price)", app.var_manual_tp, 1)
     make_inp(f_input, "SL (Price)", app.var_manual_sl, 2)
 
-    app.lbl_market_context = ctk.CTkLabel(parent, text="Trend: -- | SHigh: -- | SLow: -- | ATR: --", font=("Roboto", 13, "bold"), text_color="#78909C")
-    app.lbl_market_context.pack(pady=(5, 5))
+    # 3.5 MULTI-TF CONTEXT PREVIEW
+    f_context = ctk.CTkFrame(parent, fg_color="transparent")
+    f_context.pack(fill="x", padx=5, pady=(5, 5))
+    
+    app.var_dashboard_tf = tk.StringVar(value="G1")
+    app.cbo_dashboard_tf = ctk.CTkOptionMenu(f_context, values=["G0", "G1", "G2", "G3"], variable=app.var_dashboard_tf, width=60, font=("Roboto", 11, "bold"))
+    app.cbo_dashboard_tf.pack(side="left", padx=(5, 10))
+    
+    app.lbl_market_context = ctk.CTkLabel(f_context, text="Trend: -- | SHigh: -- | SLow: -- | ATR: --", font=("Roboto", 13, "bold"), text_color="#78909C")
+    app.lbl_market_context.pack(side="left", fill="x")
 
     # 4. LIVE DASHBOARD
     f_dashboard = ctk.CTkFrame(parent, fg_color="#252526", corner_radius=8, border_width=1, border_color="#333")
