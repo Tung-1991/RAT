@@ -245,13 +245,10 @@ class TradeManager:
             # XỬ LÝ ĐÓNG LỆNH & CHỐT RỔ BẢO VỆ MẸ-CON
             closed_tickets = [t for t in tracked_tickets if t not in current_tickets]
             if closed_tickets:
-                time_from = datetime.now() - timedelta(days=3)
-                time_to = datetime.now() + timedelta(days=1)
-
                 for ticket in closed_tickets:
                     s_ticket = str(ticket)
                     
-                # QUÉT LỊCH SỬ DEALS ĐỂ LẤY PNL THỰC TẾ
+                    # QUÉT LỊCH SỬ DEALS ĐỂ LẤY PNL THỰC TẾ
                     deals = mt5.history_deals_get(position=ticket)
                     if deals:
                         deal_out = [d for d in deals if d.entry == mt5.DEAL_ENTRY_OUT]
@@ -263,11 +260,9 @@ class TradeManager:
                             self.state["trades_today_count"] += 1
                             if real_pnl < 0: self.state["daily_loss_count"] += 1
                             
-                            # Xác định chiều lệnh gốc (Đóng bằng Deal SELL -> Lệnh gốc là BUY)
                             pos_type_str = "BUY" if d_out.type == mt5.DEAL_TYPE_SELL else "SELL"
                             pnl_sign = "+" if real_pnl >= 0 else ""
                             
-                            # Lưu vào History và bắn Log chuẩn xác ra UI
                             append_trade_log(ticket, d_out.symbol, pos_type_str, d_out.volume, real_pnl, "Closed")
                             self.log(f"[DỌN DẸP] Đóng lệnh {pos_type_str} {d_out.symbol} #{ticket} | Vol: {d_out.volume:.2f} | PnL: {pnl_sign}${real_pnl:.2f}")
                     
@@ -394,28 +389,27 @@ class TradeManager:
                 trail_buf = getattr(config, "trail_atr_buffer", 0.2)
                 tsl_mode = tsl_cfg.get("TSL_LOGIC_MODE", "STATIC")
                 
-                # Xác định có Trend hay không dựa vào market_mode (Thay cho ADX cũ)
+                # [KAISER UPGRADE]: Xác định trạng thái xu hướng thay cho ADX
                 is_trending = context.get("market_mode", "TREND") in ["TREND", "BREAKOUT"]
                 
                 swing_sl = 0.0
-                
                 if is_buy: # LỆNH LONG
                     if tsl_mode == "STATIC":
-                        swing_sl = sl - (trail_buf * atr) # Bám đáy (Xa)
+                        swing_sl = sl - (trail_buf * atr) # Bám đáy (An toàn/Xa)
                     elif tsl_mode == "AGGRESSIVE":
-                        swing_sl = sh - (trail_buf * atr) # Bám đỉnh (Sát)
+                        swing_sl = sh - (trail_buf * atr) # Bám đỉnh (Gắt/Sát)
                     elif tsl_mode == "DYNAMIC":
-                        if is_trending: swing_sl = sl - (trail_buf * atr)
-                        else:           swing_sl = sh - (trail_buf * atr)
+                        if is_trending: swing_sl = sl - (trail_buf * atr) # Có Trend -> Bám đáy
+                        else:           swing_sl = sh - (trail_buf * atr) # Sideway -> Bám đỉnh
                 
                 else: # LỆNH SHORT
                     if tsl_mode == "STATIC":
-                        swing_sl = sh + (trail_buf * atr) # Bám đỉnh (Xa)
+                        swing_sl = sh + (trail_buf * atr) # Bám đỉnh (An toàn/Xa)
                     elif tsl_mode == "AGGRESSIVE":
-                        swing_sl = sl + (trail_buf * atr) # Bám đáy (Sát)
+                        swing_sl = sl + (trail_buf * atr) # Bám đáy (Gắt/Sát)
                     elif tsl_mode == "DYNAMIC":
-                        if is_trending: swing_sl = sh + (trail_buf * atr)
-                        else:           swing_sl = sl + (trail_buf * atr)
+                        if is_trending: swing_sl = sh + (trail_buf * atr) # Có Trend -> Bám đỉnh
+                        else:           swing_sl = sl + (trail_buf * atr) # Sideway -> Bám đáy
 
                 candidates.append((swing_sl, f"SWING ➔ {swing_sl:.2f}"))
                 milestones.append((0, f"SWING Đợi ➔ {swing_sl:.2f}"))
