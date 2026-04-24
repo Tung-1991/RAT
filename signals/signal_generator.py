@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # FILE: signals/signal_generator.py
-# V3.0: 2-TIER VOTING SYSTEM (KAISER EDITION)
+# V4.0: 4-TIER PIPELINE, EARLY-EXIT & TRIGGER MODES (KAISER EDITION)
 
 import logging
 import json
@@ -9,7 +9,6 @@ import config
 
 logger = logging.getLogger("SignalGenerator")
 
-# ĐÃ SỬA: Ánh xạ đúng tên hàm get_signal_vector từ các file indicator
 from signals.rsi import get_signal_vector as rsi_signal
 from signals.macd import get_signal_vector as macd_signal
 from signals.bollinger_bands import get_signal_vector as bollinger_bands_signal
@@ -50,6 +49,7 @@ class SignalGenerator:
             
         return {
             "voting_rules": {
+                "G0": {"max_opposite": 0, "max_none": 0, "master_rule": "PASS"},
                 "G1": {"max_opposite": 0, "max_none": 0, "master_rule": "FIX"},
                 "G2": {"max_opposite": 0, "max_none": 1, "master_rule": "FIX"},
                 "G3": {"max_opposite": 0, "max_none": 1, "master_rule": "IGNORE"}
@@ -58,8 +58,8 @@ class SignalGenerator:
         }
 
     def _detect_market_mode(self, df, context):
+        if df is None or df.empty: return "ANY"
         try:
-            from signals.adx import get_signal_vector
             adx_val = df[f"ADX_{14}"].iloc[-1] if f"ADX_{14}" in df.columns else 0
             if adx_val > 25:
                 return "BREAKOUT" if adx_val > 40 else "TREND"
@@ -69,7 +69,7 @@ class SignalGenerator:
             return "ANY"
 
     def _evaluate_group(self, group_name, group_indicators, df, context, current_mode, rules):
-        if not group_indicators: return 0
+        if not group_indicators or df is None or df.empty: return 0
 
         votes = []
         for ind_name, ind_cfg in group_indicators.items():
@@ -77,10 +77,16 @@ class SignalGenerator:
             if func:
                 try:
                     params = ind_cfg.get("params", {})
+                    trigger_mode = ind_cfg.get("trigger_mode", "STRICT_CLOSE")
+                    
+                    # Cắt đuôi nến nếu là STRICT_CLOSE để khóa cản tĩnh, chống repaint
+                    eval_df = df.iloc[:-1] if trigger_mode == "STRICT_CLOSE" else df
+                    if eval_df.empty: continue
+                    
                     if ind_name in ["Fibonacci", "PivotPoints", "SwingPoint"]:
-                         signal = func(df, params, context)
+                         signal = func(eval_df, params, context)
                     else:
-                         signal = func(df, params)
+                         signal = func(eval_df, params)
                     votes.append(signal)
                 except Exception as e:
                     logger.error(f"Lỗi tính toán {ind_name}: {e}")
@@ -108,6 +114,77 @@ class SignalGenerator:
             return main_direction
         return 0
 
+    # =========================================================================
+    # PIPELINE V4.0: ÁNH XẠ MULTI-TF + EARLY-EXIT + VETO/VOTING
+    # =========================================================================
+    def _evaluate_pipeline_v4(self, dfs, context, current_mode, voting_rules, active_inds):
+        eval_mode = getattr(config, "MASTER_EVAL_MODE", "VETO")
+        min_votes = getattr(config, "MIN_MATCHING_VOTES", 3)
+        votes = {}
+
+        # Duyệt tuần tự từ trên xuống để tối ưu CPU (Early-Exit)
+        for grp in ["G0", "G1", "G2", "G3"]:
+            rule = voting_rules.get(grp, {}).get("master_rule", "IGNORE")
+            if rule == "IGNORE": continue
+            
+            df_grp = dfs.get(grp)
+            if df_grp is None or df_grp.empty:
+                if rule == "FIX": return 0 
+                continue
+
+            status = self._evaluate_group(grp, active_inds[grp], df_grp, context, current_mode, voting_rules.get(grp, {}))
+            votes[grp] = status
+
+            # CHẶN LẬP TỨC nếu chế độ là VETO
+            if eval_mode == "VETO":
+                if rule == "FIX" and status == 0:
+                    return 0 
+                
+                active_votes = [v for v in votes.values() if v != 0]
+                if len(set(active_votes)) > 1:
+                    return 0 
+
+        # Xử lý tổng hợp kết quả
+        if eval_mode == "VETO":
+            active_votes = [v for v in votes.values() if v != 0]
+            if not active_votes: return 0
+            final_dir = active_votes[0]
+            for grp, status in votes.items():
+                rule = voting_rules.get(grp, {}).get("master_rule", "IGNORE")
+                if rule == "FIX" and status != final_dir: return 0
+            return final_dir
+        
+        elif eval_mode == "VOTING":
+            buy_votes = sum(1 for v in votes.values() if v == 1)
+            sell_votes = sum(1 for v in votes.values() if v == -1)
+            
+            if buy_votes >= min_votes and buy_votes > sell_votes: return 1
+            if sell_votes >= min_votes and sell_votes > buy_votes: return -1
+            return 0
+        
+        return 0
+
+    def generate_signal_v4(self, dfs, context):
+        settings = self._get_brain_settings()
+        voting_rules = settings.get("voting_rules", {})
+        inds_config = settings.get("indicators", {})
+        
+        current_mode = self._detect_market_mode(dfs.get("G1"), context)
+
+        active_inds_by_group = {"G0": {}, "G1": {}, "G2": {}, "G3": {}}
+        for name, cfg in inds_config.items():
+            if cfg.get("active", False):
+                modes = cfg.get("active_modes", ["ANY"])
+                if "ANY" in modes or current_mode in modes:
+                    grp = cfg.get("group", "G2")
+                    if grp in active_inds_by_group:
+                        active_inds_by_group[grp][name] = cfg
+
+        return self._evaluate_pipeline_v4(dfs, context, current_mode, voting_rules, active_inds_by_group)
+
+    # =========================================================================
+    # HÀM CŨ (GIỮ NGUYÊN ĐỂ KHÔNG CRASH DAEMON CŨ CHƯA KỊP CẬP NHẬT)
+    # =========================================================================
     def _evaluate_master_rules(self, g1_status, g2_status, g3_status, voting_rules):
         groups_status = {"G1": g1_status, "G2": g2_status, "G3": g3_status}
         final_direction = 0

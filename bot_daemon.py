@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # FILE: bot_daemon.py
-# V3.2: STANDALONE DAEMON - G1 TREND SYNC & ATOMIC WRITER (KAISER EDITION)
+# V4.0: DECOUPLED THREADS & SIGNAL DEBUGGER (KAISER EDITION)
 
 import time
 import json
@@ -20,137 +20,149 @@ logger = logging.getLogger("BotDaemon")
 SIGNAL_FILE = os.path.join(getattr(config, "DATA_DIR", "data"), "live_signals.json")
 SIGNAL_FILE_TMP = SIGNAL_FILE + ".tmp"
 BRAIN_SETTINGS_FILE = os.path.join(getattr(config, "DATA_DIR", "data"), "brain_settings.json")
+DEBUG_STATE_FILE = os.path.join(getattr(config, "DATA_DIR", "data"), "current_signal_state.json")
 
 class StandaloneBotDaemon:
     def __init__(self):
         self.running = False
-        
         self.connector = ExnessConnector()
         if not self.connector.connect():
             logger.error("Không thể kết nối MT5. Daemon sẽ dừng.")
             
-        self.dca_pca_interval = 2 # Quét DCA/PCA nhanh mỗi 2s
+        self.dca_pca_interval = 2
         self.last_dca_pca_scan = 0
-        
         self.pending_signals = []
-        self.heartbeat_contexts = {} # Lưu trữ Swing, ATR để đẩy lên UI
+        self.heartbeat_contexts = {}
 
     def _atomic_write_signals(self, active_symbols):
-        """Ghi file an toàn (Atomic Write) để UI đọc không bao giờ bị crash"""
-        
         payload = {
             "brain_heartbeat": {
                 "status": "HEALTHY", 
                 "wakeup_time": time.time(), 
                 "active_symbols": active_symbols,
-                "contexts": self.heartbeat_contexts # Bơm data sang UI để vẽ Swing/Trend/ATR
+                "contexts": self.heartbeat_contexts
             }, 
-            "pending_signals": self.pending_signals[-10:] # Chỉ giữ 10 tín hiệu gần nhất
+            "pending_signals": self.pending_signals[-10:]
         }
-        
         os.makedirs(os.path.dirname(SIGNAL_FILE), exist_ok=True)
         try:
             with open(SIGNAL_FILE_TMP, "w", encoding="utf-8") as f:
                 json.dump(payload, f, indent=4)
-            os.replace(SIGNAL_FILE_TMP, SIGNAL_FILE) # Đổi tên nguyên tử
+            os.replace(SIGNAL_FILE_TMP, SIGNAL_FILE)
         except Exception as e:
             logger.error(f"Lỗi ghi tín hiệu: {e}")
+
+    def _write_signal_debugger(self, debug_state):
+        try:
+            os.makedirs(os.path.dirname(DEBUG_STATE_FILE), exist_ok=True)
+            with open(DEBUG_STATE_FILE, "w", encoding="utf-8") as f:
+                json.dump({
+                    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"), 
+                    "states": debug_state
+                }, f, indent=4, ensure_ascii=False)
+        except Exception:
+            pass
 
     def _add_signal(self, action, symbol, context, signal_class="ENTRY"):
         sig_id = str(uuid.uuid4())
         self.pending_signals.append({
-            "signal_id": sig_id,
-            "timestamp": time.time(),
-            "valid_for": 300 if signal_class == "ENTRY" else 60, # DCA/PCA chỉ sống 60s
-            "action": action,
-            "symbol": symbol,
-            "signal_class": signal_class,
-            "context": context 
+            "signal_id": sig_id, "timestamp": time.time(),
+            "valid_for": 300 if signal_class == "ENTRY" else 60,
+            "action": action, "symbol": symbol,
+            "signal_class": signal_class, "context": context 
         })
         logger.info(f"Đã phát tín hiệu {action} cho {symbol} ({signal_class})")
-        # Ghi ngay lập tức, tự đọc lại active_symbols từ file json để ghi
         live_cfg = self._read_live_config()
         syms = live_cfg.get("BOT_ACTIVE_SYMBOLS", getattr(config, "SYMBOLS", []))
         self._atomic_write_signals(syms) 
 
     def _read_live_config(self):
-        """Đọc cấu hình JSON liên tục để hỗ trợ Hot-Reload từ UI"""
         try:
             if os.path.exists(BRAIN_SETTINGS_FILE):
                 with open(BRAIN_SETTINGS_FILE, "r", encoding="utf-8") as f:
                     return json.load(f)
-        except Exception:
-            pass
+        except: pass
         return {}
 
     def run(self):
         self.running = True
-        logger.info("Bot Daemon (Standalone) đã khởi động thành công.")
+        logger.info("Bot Daemon V4.0 (Decoupled Threads) đã khởi động.")
+        last_signal_scan = 0
         
         while self.running:
             try:
                 live_cfg = self._read_live_config()
                 bot_active = live_cfg.get("BOT_ACTIVE", live_cfg.get("AUTO_TRADE_ENABLED", getattr(config, "AUTO_TRADE_ENABLED", False)))
                 symbols = live_cfg.get("BOT_ACTIVE_SYMBOLS", getattr(config, "BOT_ACTIVE_SYMBOLS", getattr(config, "SYMBOLS", [])))
-                
-                # SỬA Ở ĐÂY: Luôn quét Data mien là có symbols, không quan tâm bot_active
-                if symbols:
-                    for sym in symbols:
-                        if not self.running: break
-                        
-                        df_entry, df_trend, context = data_engine.fetch_and_prepare(sym)
-                        if df_entry is None or context is None:
-                            continue
+                daemon_delay = getattr(config, "DAEMON_LOOP_DELAY", 15)
+                now = time.time()
 
-                        # --- LOGIC TÍNH TOÁN XU HƯỚNG THEO BỘ LỌC G1 ---
-                        brain_settings = signal_generator._get_brain_settings()
-                        current_mode = signal_generator._detect_market_mode(df_trend, context)
-                        inds_config = brain_settings.get("indicators", {})
-                        voting_rules = brain_settings.get("voting_rules", {})
-                        
-                        g1_inds = {n: c for n, c in inds_config.items() if c.get("active", False) and c.get("group") == "G1" and ("ANY" in c.get("active_modes", ["ANY"]) or current_mode in c.get("active_modes", ["ANY"]))}
-                        g1_status = signal_generator._evaluate_group("G1", g1_inds, df_entry, context, current_mode, voting_rules.get("G1", {}))
-                        
-                        real_trend = "UP" if g1_status == 1 else ("DOWN" if g1_status == -1 else "NONE")
+                # 1. QUÉT TÍN HIỆU ENTRY (Chu kỳ 15s)
+                if symbols and (now - last_signal_scan >= daemon_delay):
+                    self._scan_signals(symbols, bot_active)
+                    last_signal_scan = now
+                    self._atomic_write_signals(symbols)
 
-                        # Luôn bơm Context sang UI
-                        self.heartbeat_contexts[sym] = {
-                            "trend": real_trend,
-                            "swing_high": float(context.get("swing_high_entry", 0.0)),
-                            "swing_low": float(context.get("swing_low_entry", 0.0)),
-                            "atr": float(context.get("atr_entry", 0.0)),
-                            "current_price": float(context.get("current_price", 0.0)),
-                            "timestamp": time.time()
-                        }
+                # 2. QUÉT DCA/PCA (Chu kỳ 2s - Độc lập hoàn toàn)
+                if bot_active and symbols and (now - self.last_dca_pca_scan >= self.dca_pca_interval):
+                    self._scan_dca_pca()
+                    self.last_dca_pca_scan = now
 
-                        # CHỈ CHẶN BÓP CÒ NẾU TẮT AUTO-TRADE
-                        if bot_active:
-                            signal = signal_generator.generate_signal(df_entry, df_trend, context)
-                            if signal != 0:
-                                action = "BUY" if signal == 1 else "SELL"
-                                self._add_signal(action, sym, context, "ENTRY")
-
-                    # Quét DCA/PCA
-                    if bot_active:
-                        now = time.time()
-                        if now - self.last_dca_pca_scan >= self.dca_pca_interval:
-                            self._scan_dca_pca()
-                            self.last_dca_pca_scan = now
-
-                self._atomic_write_signals(symbols)
-                time.sleep(getattr(config, "DAEMON_LOOP_DELAY", 2))
+                # Luồng gốc ngủ rất ngắn để không gây kẹt tiến trình
+                time.sleep(0.5)
 
             except Exception as e:
                 logger.error(f"Lỗi Loop trong Daemon: {e}")
-                time.sleep(5)
+                time.sleep(2)
+
+    def _scan_signals(self, symbols, bot_active):
+        signal_debug_state = {}
+        for sym in symbols:
+            if not self.running: break
+            
+            dfs, context = data_engine.fetch_data_v4(sym)
+            if dfs is None or context is None:
+                signal_debug_state[sym] = "Đang tải dữ liệu MT5..."
+                continue
+
+            try:
+                df_g1 = dfs.get("G1")
+                current_price = context.get("current_price", 0)
+                ema50 = float(df_g1['close'].ewm(span=50, adjust=False).mean().iloc[-1])
+                real_trend = "UP" if current_price > ema50 else "DOWN"
+            except:
+                real_trend = "NONE"
+
+            self.heartbeat_contexts[sym] = {
+                "trend": real_trend,
+                "swing_high": float(context.get("swing_high_entry", 0.0)),
+                "swing_low": float(context.get("swing_low_entry", 0.0)),
+                "atr": float(context.get("atr_entry", 0.0)),
+                "current_price": float(context.get("current_price", 0.0)),
+                "timestamp": time.time()
+            }
+
+            if bot_active:
+                signal = signal_generator.generate_signal_v4(dfs, context)
+                if signal == 1:
+                    self._add_signal("BUY", sym, context, "ENTRY")
+                    signal_debug_state[sym] = "✅ ĐÃ BÓP CÒ BUY"
+                elif signal == -1:
+                    self._add_signal("SELL", sym, context, "ENTRY")
+                    signal_debug_state[sym] = "✅ ĐÃ BÓP CÒ SELL"
+                else:
+                    signal_debug_state[sym] = "⏳ Đang chờ điều kiện bóp cò..."
+            else:
+                signal_debug_state[sym] = "⏸️ Bot đang tắt (Manual Mode)"
+
+        self._write_signal_debugger(signal_debug_state)
 
     def _scan_dca_pca(self):
         brain = signal_generator._get_brain_settings()
         dca_cfg = brain.get("dca_config", getattr(config, "DCA_CONFIG", {}))
         pca_cfg = brain.get("pca_config", getattr(config, "PCA_CONFIG", {}))
         
-        if not dca_cfg.get("ENABLED", False) and not pca_cfg.get("ENABLED", False):
-            return
+        if not dca_cfg.get("ENABLED", False) and not pca_cfg.get("ENABLED", False): return
 
         positions = mt5.positions_get()
         if not positions: return
@@ -159,49 +171,42 @@ class StandaloneBotDaemon:
         bot_positions = {}
         for pos in positions:
             if pos.magic == bot_magic:
-                if pos.symbol not in bot_positions: 
-                    bot_positions[pos.symbol] = []
+                if pos.symbol not in bot_positions: bot_positions[pos.symbol] = []
                 bot_positions[pos.symbol].append(pos)
 
         for symbol, pos_list in bot_positions.items():
             context = self.heartbeat_contexts.get(symbol)
             if not context:
-                _, _, context = data_engine.fetch_and_prepare(symbol)
-                if not context: continue
+                dfs, ctx = data_engine.fetch_data_v4(symbol)
+                if not ctx: continue
+                context = ctx
 
             current_price = context.get("current_price", 0)
             atr_val = context.get("atr", context.get("atr_entry", 0.0005))
+            if atr_val == 0: atr_val = 0.0005
             
             pos_list.sort(key=lambda x: x.time)
             first_pos = pos_list[0]
-            
             profit_points = (current_price - first_pos.price_open) if first_pos.type == mt5.ORDER_TYPE_BUY else (first_pos.price_open - current_price)
             
-            # LOGIC DCA
+            # DCA
             if dca_cfg.get("ENABLED", False) and profit_points < 0 and len(pos_list) < dca_cfg.get("MAX_STEPS", 3):
-                dist_atr_r = dca_cfg.get("DISTANCE_ATR_R", 1.0)
-                if abs(profit_points) >= (dist_atr_r * atr_val):
-                    action = "BUY" if first_pos.type == mt5.ORDER_TYPE_BUY else "SELL"
-                    self._add_signal(action, symbol, context, "DCA")
+                if abs(profit_points) >= (dca_cfg.get("DISTANCE_ATR_R", 1.0) * atr_val):
+                    self._add_signal("BUY" if first_pos.type == mt5.ORDER_TYPE_BUY else "SELL", symbol, context, "DCA")
                     time.sleep(0.5)
                     continue
 
-            # LOGIC PCA
+            # PCA
             if pca_cfg.get("ENABLED", False) and profit_points > 0 and len(pos_list) < pca_cfg.get("MAX_STEPS", 2):
-                dist_atr_r = pca_cfg.get("DISTANCE_ATR_R", 1.5)
-                is_safe = False
-                if first_pos.type == mt5.ORDER_TYPE_BUY and first_pos.sl > first_pos.price_open: is_safe = True
-                if first_pos.type == mt5.ORDER_TYPE_SELL and (first_pos.sl > 0 and first_pos.sl < first_pos.price_open): is_safe = True
-
-                if is_safe and profit_points >= (dist_atr_r * atr_val):
-                    action = "BUY" if first_pos.type == mt5.ORDER_TYPE_BUY else "SELL"
-                    self._add_signal(action, symbol, context, "PCA")
+                is_safe = (first_pos.type == mt5.ORDER_TYPE_BUY and first_pos.sl > first_pos.price_open) or \
+                          (first_pos.type == mt5.ORDER_TYPE_SELL and (first_pos.sl > 0 and first_pos.sl < first_pos.price_open))
+                if is_safe and profit_points >= (pca_cfg.get("DISTANCE_ATR_R", 1.5) * atr_val):
+                    self._add_signal("BUY" if first_pos.type == mt5.ORDER_TYPE_BUY else "SELL", symbol, context, "PCA")
                     time.sleep(0.5)
 
 if __name__ == "__main__":
     daemon = StandaloneBotDaemon()
     try:
-        if daemon.connector._is_connected:
-            daemon.run()
+        if daemon.connector._is_connected: daemon.run()
     except KeyboardInterrupt:
         logger.info("Đang tắt tiến trình Daemon...")

@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 # FILE: config.py
-# V3.1: UNIFIED CONFIG - SINGLE SOURCE OF TRUTH (KAISER EDITION)
+# V4.0: UNIFIED CONFIG - SINGLE SOURCE OF TRUTH (KAISER EDITION)
 
 import os
+import MetaTrader5 as mt5
 
 # ==============================================================================
 # 1. HỆ THỐNG & KẾT NỐI
@@ -95,7 +96,7 @@ trail_atr_buffer = 0.2
 be_atr_buffer = 0.8             
 
 # ==============================================================================
-# 7. BỘ NÃO PHÂN TÍCH (SANDBOX V3.0 DEFAULTS - SINGLE SOURCE OF TRUTH)
+# 7. BỘ NÃO PHÂN TÍCH (SANDBOX V4.0 DEFAULTS - ĐÃ CẬP NHẬT G0 & TRIGGER MODE)
 # ==============================================================================
 trend_timeframe = "1h"              
 entry_timeframe = "15m"             
@@ -107,30 +108,41 @@ DAEMON_LOOP_DELAY = 15
 # Toán lý Math SL
 sl_atr_multiplier = 0.2             
 
-# Cấu hình Mặc định cho 16+ Signals. (Khớp 100% tham số thuật toán)
+# --- CẤU HÌNH V4.0 MỚI BỔ SUNG ---
+MASTER_STRATEGY = "QUANT" 
+MASTER_EVAL_MODE = "VETO" 
+MIN_MATCHING_VOTES = 3
+
+G0_TIMEFRAME = mt5.TIMEFRAME_D1
+G1_TIMEFRAME = mt5.TIMEFRAME_H1
+G2_TIMEFRAME = mt5.TIMEFRAME_M15
+G3_TIMEFRAME = mt5.TIMEFRAME_M15
+
+# Cấu hình Mặc định cho 16+ Signals (Đã tích hợp G0 và Trigger Mode)
 SANDBOX_CONFIG = {
     "voting_rules": {
-        "max_opposite": 0,
-        "max_none": 1,
-        "master_rule": "FIX"
+        "G0": {"max_opposite": 0, "max_none": 0, "master_rule": "PASS"},
+        "G1": {"max_opposite": 0, "max_none": 0, "master_rule": "FIX"},
+        "G2": {"max_opposite": 0, "max_none": 1, "master_rule": "FIX"},
+        "G3": {"max_opposite": 0, "max_none": 1, "master_rule": "IGNORE"}
     },
     "indicators": {
-        "swing_point": {"active": True, "group": "G1", "active_modes": ["ANY"], "params": {}}, # Đã xóa period thừa
-        "atr": {"active": True, "group": "G1", "active_modes": ["ANY"], "params": {"period": 14, "multiplier": 1.5}},
-        "adx": {"active": True, "group": "G1", "active_modes": ["TREND", "BREAKOUT"], "params": {"period": 14, "strong": 23}}, # Đã xóa weak thừa
-        "ema": {"active": True, "group": "G1", "active_modes": ["ANY"], "params": {"period": 50}},
-        "pivot_points": {"active": False, "group": "G3", "active_modes": ["ANY"], "params": {}},
-        "ema_cross": {"active": False, "group": "G2", "active_modes": ["TREND", "BREAKOUT"], "params": {"fast": 9, "slow": 21}},
-        "volume": {"active": True, "group": "G2", "active_modes": ["BREAKOUT"], "params": {"period": 20, "multiplier": 1.1}},
-        "supertrend": {"active": True, "group": "G2", "active_modes": ["TREND"], "params": {"period": 10, "multiplier": 3.0}},
-        "psar": {"active": False, "group": "G2", "active_modes": ["TREND"], "params": {"step": 0.02, "max_step": 0.2}}, # Bổ sung step, max_step
-        "bollinger_bands": {"active": False, "group": "G2", "active_modes": ["RANGE"], "params": {"period": 20, "std_dev": 2.0}},
-        "fibonacci": {"active": False, "group": "G2", "active_modes": ["RANGE", "EXHAUSTION"], "params": {"tolerance": 0.001}}, # Bổ sung tolerance
-        "rsi": {"active": False, "group": "G2", "active_modes": ["RANGE"], "params": {"period": 14, "upper": 70, "lower": 30}},
-        "stochastic": {"active": False, "group": "G2", "active_modes": ["RANGE"], "params": {"k": 14, "d": 3, "smooth": 3, "upper": 80, "lower": 20}},
-        "macd": {"active": False, "group": "G2", "active_modes": ["EXHAUSTION"], "params": {"fast": 12, "slow": 26, "signal": 9}},
-        "multi_candle": {"active": True, "group": "G3", "active_modes": ["EXHAUSTION"], "params": {}},
-        "candle": {"active": False, "group": "G3", "active_modes": ["ANY"], "params": {}}
+        "swing_point": {"active": True, "group": "G1", "active_modes": ["ANY"], "params": {}, "trigger_mode": "REALTIME_TICK"},
+        "atr": {"active": True, "group": "G1", "active_modes": ["ANY"], "params": {"period": 14, "multiplier": 1.5}, "trigger_mode": "REALTIME_TICK"},
+        "adx": {"active": True, "group": "G1", "active_modes": ["TREND", "BREAKOUT"], "params": {"period": 14, "strong": 23}, "trigger_mode": "STRICT_CLOSE"},
+        "ema": {"active": True, "group": "G1", "active_modes": ["ANY"], "params": {"period": 50}, "trigger_mode": "REALTIME_TICK"},
+        "pivot_points": {"active": False, "group": "G3", "active_modes": ["ANY"], "params": {}, "trigger_mode": "REALTIME_TICK"},
+        "ema_cross": {"active": False, "group": "G2", "active_modes": ["TREND", "BREAKOUT"], "params": {"fast": 9, "slow": 21}, "trigger_mode": "STRICT_CLOSE"},
+        "volume": {"active": True, "group": "G2", "active_modes": ["BREAKOUT"], "params": {"period": 20, "multiplier": 1.1}, "trigger_mode": "STRICT_CLOSE"},
+        "supertrend": {"active": True, "group": "G2", "active_modes": ["TREND"], "params": {"period": 10, "multiplier": 3.0}, "trigger_mode": "REALTIME_TICK"},
+        "psar": {"active": False, "group": "G2", "active_modes": ["TREND"], "params": {"step": 0.02, "max_step": 0.2}, "trigger_mode": "REALTIME_TICK"},
+        "bollinger_bands": {"active": False, "group": "G2", "active_modes": ["RANGE"], "params": {"period": 20, "std_dev": 2.0}, "trigger_mode": "REALTIME_TICK"},
+        "fibonacci": {"active": False, "group": "G2", "active_modes": ["RANGE", "EXHAUSTION"], "params": {"tolerance": 0.001}, "trigger_mode": "REALTIME_TICK"},
+        "rsi": {"active": False, "group": "G2", "active_modes": ["RANGE"], "params": {"period": 14, "upper": 70, "lower": 30}, "trigger_mode": "STRICT_CLOSE"},
+        "stochastic": {"active": False, "group": "G2", "active_modes": ["RANGE"], "params": {"k": 14, "d": 3, "smooth": 3, "upper": 80, "lower": 20}, "trigger_mode": "STRICT_CLOSE"},
+        "macd": {"active": False, "group": "G2", "active_modes": ["EXHAUSTION"], "params": {"fast": 12, "slow": 26, "signal": 9}, "trigger_mode": "STRICT_CLOSE"},
+        "multi_candle": {"active": True, "group": "G3", "active_modes": ["EXHAUSTION"], "params": {}, "trigger_mode": "STRICT_CLOSE"},
+        "candle": {"active": False, "group": "G3", "active_modes": ["ANY"], "params": {}, "trigger_mode": "STRICT_CLOSE"}
     }
 }
 
