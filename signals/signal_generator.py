@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # FILE: signals/signal_generator.py
-# V4.2: MULTI-GROUP, DYNAMIC MACRO & TREND COMPASS (KAISER EDITION)
+# V4.2.1: MULTI-GROUP, DYNAMIC MACRO & TREND COMPASS (KAISER EDITION)
 
 import logging
 import json
@@ -30,7 +30,7 @@ class SignalGenerator:
     def __init__(self):
         self.brain_path = "data/brain_settings.json"
         
-        # [FIX]: Đồng bộ toàn bộ Key về chữ thường khớp với cấu hình JSON từ UI
+        # Đồng bộ toàn bộ Key về chữ thường khớp với cấu hình JSON từ UI
         self.indicator_map = {
             "rsi": rsi_signal, "macd": macd_signal, "bollinger_bands": bollinger_bands_signal,
             "ema": ema_signal, "ema_cross": ema_cross_signal, "stochastic": stochastic_signal,
@@ -94,7 +94,7 @@ class SignalGenerator:
                 buy_votes = sum(1 for v in trend_votes if v == 1)
                 sell_votes = sum(1 for v in trend_votes if v == -1)
                 
-                # [SMART FIX]: Giới hạn min_votes theo tổng số indicator được bật để chống kẹt NONE
+                # Giới hạn min_votes theo tổng số indicator được bật để chống kẹt NONE
                 actual_min = min(min_votes, len(trend_votes))
                 
                 if buy_votes >= actual_min and buy_votes > sell_votes: group_trends[target_grp] = "UP"
@@ -104,12 +104,11 @@ class SignalGenerator:
 
     def _detect_market_mode(self, dfs, context, inds_config=None, voting_rules=None):
         """
-        V4.2: Cảm biến Vĩ mô Động - 2 Bước (Không Hardcode ADX)
+        V4.2: Cảm biến Vĩ mô Động - 2 Bước
         Bước 1: Tính Base Mode (TREND/RANGE)
         Bước 2: Các Indicator bắt Breakout/Exhaustion chà đạp lên kết quả
         """
         if not isinstance(dfs, dict):
-            # Fallback backward-compatible
             return "ANY", "NONE", 0
                 
         if not inds_config or not voting_rules: 
@@ -282,6 +281,7 @@ class SignalGenerator:
 
         # 4. Đẩy vào Phễu Vote
         return self._evaluate_pipeline_v4(dfs, context, current_mode, voting_rules, active_inds_by_group)
+
     # =========================================================================
     # HÀM CŨ (GIỮ LẠI ĐỂ BACKWARD-COMPATIBLE KHÔNG CRASH)
     # =========================================================================

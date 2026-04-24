@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # FILE: bot_daemon.py
-# V4.2: DECOUPLED THREADS & DYNAMIC TREND COMPASS (KAISER EDITION)
+# V4.2.1: DECOUPLED THREADS & DYNAMIC TREND COMPASS (FIXED UI SYNC) (KAISER EDITION)
 
 import time
 import json
@@ -86,7 +86,7 @@ class StandaloneBotDaemon:
 
     def run(self):
         self.running = True
-        logger.info("Bot Daemon V4.2 (Decoupled Threads & Dynamic Trend) đã khởi động.")
+        logger.info("Bot Daemon V4.2.1 (Decoupled Threads & Dynamic Trend) đã khởi động.")
         last_signal_scan = 0
         
         while self.running:
@@ -117,11 +117,6 @@ class StandaloneBotDaemon:
 
     def _scan_signals(self, symbols, bot_active):
         signal_debug_state = {}
-        
-        # --- [V4.2] Lấy cấu hình Brain để quét Cảm biến Vĩ mô & Trend ---
-        brain = signal_generator._get_brain_settings()
-        inds_config = brain.get("indicators", {})
-        voting_rules = brain.get("voting_rules", {})
 
         for sym in symbols:
             if not self.running: break
@@ -131,25 +126,18 @@ class StandaloneBotDaemon:
                 signal_debug_state[sym] = "Đang tải dữ liệu MT5..."
                 continue
 
-            # --- [V4.2] Lấy Trend Động (Dẹp bỏ EMA50 Hardcode) ---
-            real_trend = signal_generator._detect_dynamic_trend(dfs, context, inds_config)
+            # [FIX CORE]: Luôn chạy hàm generate_signal_v4 để tính toán và lưu Trend, Mode vào biến context
+            # Đảm bảo UI luôn nhận được cấu trúc thị trường mới nhất ngay cả khi Bot đang tắt (Manual Mode)
+            signal = signal_generator.generate_signal_v4(dfs, context)
 
-            # --- [V4.2] Lấy Mode và Nguồn Mode (G0/G1) ---
-            current_mode, mode_src, macro_dir = signal_generator._detect_market_mode(dfs, context, inds_config, voting_rules)
-
-            # --- [V4.2] Gói toàn bộ vào Heartbeat gửi lên UI ---
+            # --- [V4.2.1] Gói toàn bộ context (đã được generate_signal_v4 bơm data) vào Heartbeat ---
             self.heartbeat_contexts[sym] = context.copy()
             self.heartbeat_contexts[sym].update({
-                "trend": real_trend,
-                "market_mode": current_mode,
-                "mode_source": mode_src,
-                "macro_direction": macro_dir,
                 "timestamp": time.time()
             })
 
+            # Logic ra quyết định vào lệnh chỉ chạy nếu Bot Active
             if bot_active:
-                # generate_signal_v4 đã xử lý phân xử vote ở bên trong
-                signal = signal_generator.generate_signal_v4(dfs, context)
                 if signal == 1:
                     self._add_signal("BUY", sym, context, "ENTRY")
                     signal_debug_state[sym] = "✅ ĐÃ BÓP CÒ BUY"

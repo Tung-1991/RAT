@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 # FILE: main.py
-# V6.9: REFACTORED CORE - MULTI-COIN DICTIONARY SYNC (KAISER EDITION)
-# V6.9.1: HOTFIX UI DCA/PCA & TREEVIEW FORMATTING
-# V6.9.2: TÍCH HỢP STRATEGY SANDBOX V3.0 (HOT-RELOAD READY)
+# V6.9.3: REFACTORED CORE - UI CONTEXT SYNC HOTFIX (KAISER EDITION)
 
 import customtkinter as ctk
 import tkinter as tk
@@ -62,7 +60,7 @@ main_logger.addFilter(Suppress10025Filter())
 class BotUI(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("RiceAutoTrading - Master Control V6.9 (Kaiser Edition)")
+        self.title("RiceAutoTrading - Master Control V6.9.3 (Kaiser Edition)")
         self.geometry("1650x950")
         
         self.var_auto_trade = tk.BooleanVar(value=False)
@@ -124,7 +122,6 @@ class BotUI(ctk.CTk):
         self.thread = threading.Thread(target=self.bg_update_loop, daemon=True)
         self.thread.start()
         
-        # [ĐÃ FIX] Đảm bảo SignalListener nhận đủ 6 tham số
         self.signal_listener = SignalListener(
             trade_manager=self.trade_mgr,
             get_auto_trade_cb=lambda: self.var_auto_trade.get(),
@@ -135,7 +132,7 @@ class BotUI(ctk.CTk):
         )
         self.signal_listener.start()
         
-        self.log_message("Hệ thống V6.9.2 (Đã tích hợp Sandbox V3.0) sẵn sàng.")
+        self.log_message("Hệ thống V6.9.3 (Đã tích hợp Sandbox V3.0 & Fix UI Sync) sẵn sàng.")
 
     def start_daemon_process(self):
         try:
@@ -158,15 +155,28 @@ class BotUI(ctk.CTk):
 
     def _save_brain_live_config(self):
         os.makedirs("data", exist_ok=True)
-        settings = {}
+        
+        # 1. Đọc dữ liệu JSON hiện tại (để giữ lại cấu hình Sandbox)
+        existing_data = {}
+        try:
+            if os.path.exists(BRAIN_SETTINGS_FILE):
+                with open(BRAIN_SETTINGS_FILE, "r", encoding="utf-8") as f:
+                    existing_data = json.load(f)
+        except: pass
+
+        # 2. Merge dữ liệu từ config hiện tại (của Main UI)
         for k in dir(config):
             if not k.startswith('__') and k != "COIN_LIST":
                 val = getattr(config, k)
                 if isinstance(val, (int, float, str, bool, list, dict)):
-                    settings[k] = val
+                    # [FIX]: CẤM ghi đè các cụm Key thuộc thẩm quyền của Sandbox
+                    if k not in ["indicators", "voting_rules", "risk_tsl", "dca_config", "pca_config"]:
+                        existing_data[k] = val
+        
+        # 3. Ghi lại vào file
         try:
             with open(BRAIN_SETTINGS_FILE, "w", encoding="utf-8") as f:
-                json.dump(settings, f, indent=4)
+                json.dump(existing_data, f, indent=4)
         except Exception as e:
             self.log_message(f"Lỗi đồng bộ cấu hình (Hot-Reload): {e}", error=True)
 
@@ -175,7 +185,6 @@ class BotUI(ctk.CTk):
         self.brain_wakeup_time = heartbeat.get("wakeup_time", 0)
         self.brain_active_symbols = heartbeat.get("active_symbols", [])
             
-        # [ĐÃ FIX] Sửa thành "contexts" để khớp với Bot Daemon Multi-Coin
         contexts = heartbeat.get("contexts", {}) 
         if contexts:
             self.latest_market_context = contexts
@@ -243,11 +252,9 @@ class BotUI(ctk.CTk):
 
     # [V3.0] Hàm gọi Strategy Sandbox
     def open_strategy_sandbox(self):
-        """Mở cửa sổ cấu hình chiến thuật Lego V3.0 (Kaiser Edition)"""
         sandbox_window = BotStrategyUI(self)
         
         def on_sandbox_close():
-            # Lưu cấu hình để Trigger Hot-Reload bên Bot Daemon
             self._save_brain_live_config()
             self.log_message("📡 [V3.0] Đã đóng Sandbox. Daemon sẽ tự động nạp cấu hình mới (Hot-Reload).", error=False)
             sandbox_window.destroy()
@@ -330,7 +337,7 @@ class BotUI(ctk.CTk):
             sl = sym_ctx.get(f"swing_low_{selected_tf}", "--")
             atr = sym_ctx.get(f"atr_{selected_tf}", "--")
             
-            # [FIX]: Ép UI chỉ đọc Trend của Group đang được chọn ở ComboBox
+            # Ép UI chỉ đọc Trend của Group đang được chọn ở ComboBox
             tr = sym_ctx.get(f"trend_{selected_tf}", "NONE")
             
             mode = sym_ctx.get("market_mode", "ANY")
@@ -344,7 +351,6 @@ class BotUI(ctk.CTk):
             )
             
             # 4. Đổ dữ liệu vào DÒNG 2: Thông số (Cái Label lbl_market_context)
-            # Lấy màu theo Trend hiện tại
             if tr == "UP":
                 ctx_color = COL_GREEN
             elif tr == "DOWN":
@@ -363,6 +369,10 @@ class BotUI(ctk.CTk):
                     text=f"H: {sh_str} | L: {sl_str} | ATR: {atr_str}",
                     text_color=ctx_color
                 )
+        else:
+            # [FIX CORE UI]: Làm sạch nhãn nếu không có dữ liệu (Ví dụ đổi sang đồng Coin không có trong Watchlist)
+            self.lbl_market_mode.configure(text=f"Mode: -- | Trend: --", text_color="gray")
+            self.lbl_market_context.configure(text="H: -- | L: -- | ATR: --", text_color="gray")
 
         d = self.seg_direction.get()
         self.var_direction.set(d)
@@ -621,7 +631,7 @@ class BotUI(ctk.CTk):
         elif "PnL: $-" in msg or error or "ERR" in msg or "FAIL" in msg:
             tag = "ERROR"
         elif "Đóng lệnh" in msg:
-            tag = "INFO"  # Lệnh hòa vốn ($0.00) thì màu xám
+            tag = "INFO"  
         elif "BUY" in msg:
             tag = "SUCCESS"
         elif "SELL" in msg:

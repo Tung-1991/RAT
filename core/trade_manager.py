@@ -385,7 +385,6 @@ class TradeManager:
                         break 
 
         if "SWING" in active_modes and context:
-            # Lấy cản để Trailing SL dựa theo chính Base SL Ngài chọn (Ví dụ: Trailing theo cản G1)
             trail_group = brain.get("risk_tsl", {}).get("base_sl", "G2")
             sh = context.get(f"swing_high_{trail_group}")
             sl = context.get(f"swing_low_{trail_group}")
@@ -393,8 +392,31 @@ class TradeManager:
 
             if sh is not None and sl is not None and atr:
                 trail_buf = getattr(config, "trail_atr_buffer", 0.2)
-                swing_sl = sl - (trail_buf * atr) if is_buy else sh + (trail_buf * atr)
+                tsl_mode = tsl_cfg.get("TSL_LOGIC_MODE", "STATIC")
                 
+                # Xác định có Trend hay không dựa vào market_mode (Thay cho ADX cũ)
+                is_trending = context.get("market_mode", "TREND") in ["TREND", "BREAKOUT"]
+                
+                swing_sl = 0.0
+                
+                if is_buy: # LỆNH LONG
+                    if tsl_mode == "STATIC":
+                        swing_sl = sl - (trail_buf * atr) # Bám đáy (Xa)
+                    elif tsl_mode == "AGGRESSIVE":
+                        swing_sl = sh - (trail_buf * atr) # Bám đỉnh (Sát)
+                    elif tsl_mode == "DYNAMIC":
+                        if is_trending: swing_sl = sl - (trail_buf * atr)
+                        else:           swing_sl = sh - (trail_buf * atr)
+                
+                else: # LỆNH SHORT
+                    if tsl_mode == "STATIC":
+                        swing_sl = sh + (trail_buf * atr) # Bám đỉnh (Xa)
+                    elif tsl_mode == "AGGRESSIVE":
+                        swing_sl = sl + (trail_buf * atr) # Bám đáy (Sát)
+                    elif tsl_mode == "DYNAMIC":
+                        if is_trending: swing_sl = sh + (trail_buf * atr)
+                        else:           swing_sl = sl + (trail_buf * atr)
+
                 candidates.append((swing_sl, f"SWING ➔ {swing_sl:.2f}"))
                 milestones.append((0, f"SWING Đợi ➔ {swing_sl:.2f}"))
 

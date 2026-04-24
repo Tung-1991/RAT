@@ -122,7 +122,10 @@ class BotStrategyUI(ctk.CTkToplevel):
         inds_data = self.brain_data.get("indicators", {})
         
         for ind_name, cfg in inds_data.items():
-            ctk.CTkLabel(scroll_frame, text=ind_name.upper(), font=("Roboto", 12, "bold"), text_color="#90CAF9").grid(row=row, column=0, padx=5, pady=5, sticky="w")
+            # [FIX UX]: Biến Tên chỉ báo thành Nút bấm (Row Toggle)
+            btn_name = ctk.CTkButton(scroll_frame, text=ind_name.upper(), font=("Roboto", 12, "bold"), text_color="#90CAF9",
+                                     fg_color="transparent", hover_color="#333333", anchor="w", width=80)
+            btn_name.grid(row=row, column=0, padx=5, pady=5, sticky="w")
             
             # Kích hoạt
             active_var = ctk.BooleanVar(value=cfg.get("active", False))
@@ -143,7 +146,16 @@ class BotStrategyUI(ctk.CTkToplevel):
             is_trend_var = ctk.BooleanVar(value=cfg.get("is_trend", False))
             ctk.CTkCheckBox(scroll_frame, text="Trend", variable=is_trend_var, width=50, text_color="#FFD700").grid(row=row, column=3, padx=5, pady=5, sticky="w")
             
-            # Vai trò Macro (Thay thế ADX Hardcode)
+            # Gắn lệnh Toggle cho Nút Tên Chỉ Báo (Bắt trạng thái để lật công tắc)
+            def toggle_row_state(a_var=active_var, g_vars=grp_vars, t_var=is_trend_var):
+                target_state = not a_var.get()
+                a_var.set(target_state)
+                for var in g_vars.values(): var.set(target_state)
+                t_var.set(target_state)
+                
+            btn_name.configure(command=toggle_row_state)
+
+            # Vai trò Macro
             macro_role_var = ctk.StringVar(value=cfg.get("macro_role", "NONE"))
             ctk.CTkComboBox(scroll_frame, values=["NONE", "BASE", "BREAKOUT", "EXHAUSTION"], variable=macro_role_var, width=110).grid(row=row, column=4, padx=5, pady=5, sticky="w")
 
