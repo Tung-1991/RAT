@@ -12,7 +12,9 @@ def get_signal_vector(df: pd.DataFrame, params: dict, context: dict = None) -> i
         return 0
         
     current_atr = df[col_atr].iloc[-1]
-    h1_atr = context.get("atr", 0.0)
+    
+    # [FIX]: Cập nhật key theo DataEngine V4.2 (Ưu tiên lấy ATR của G1 làm mốc nền)
+    h1_atr = context.get("atr_G1", context.get("atr_trend", 0.0))
     
     if h1_atr == 0.0:
         return 0

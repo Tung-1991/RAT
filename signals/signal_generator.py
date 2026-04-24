@@ -30,13 +30,14 @@ class SignalGenerator:
     def __init__(self):
         self.brain_path = "data/brain_settings.json"
         
+        # [FIX]: Đồng bộ toàn bộ Key về chữ thường khớp với cấu hình JSON từ UI
         self.indicator_map = {
-            "RSI": rsi_signal, "MACD": macd_signal, "BollingerBands": bollinger_bands_signal,
-            "EMA": ema_signal, "EMACross": ema_cross_signal, "Stochastic": stochastic_signal,
-            "ATR": atr_signal, "ADX": adx_signal, "SuperTrend": supertrend_signal,
-            "ParabolicSAR": psar_signal, "Volume": volume_signal, "MultiCandle": multi_candle_signal,
-            "CandlePattern": candle_pattern_signal, "SwingPoint": swing_point_signal,
-            "Fibonacci": fibonacci_signal, "PivotPoints": pivot_points_signal
+            "rsi": rsi_signal, "macd": macd_signal, "bollinger_bands": bollinger_bands_signal,
+            "ema": ema_signal, "ema_cross": ema_cross_signal, "stochastic": stochastic_signal,
+            "atr": atr_signal, "adx": adx_signal, "supertrend": supertrend_signal,
+            "psar": psar_signal, "volume": volume_signal, "multi_candle": multi_candle_signal,
+            "candle": candle_pattern_signal, "swing_point": swing_point_signal,
+            "fibonacci": fibonacci_signal, "pivot_points": pivot_points_signal
         }
 
     def _get_brain_settings(self):
@@ -57,36 +58,49 @@ class SignalGenerator:
             "indicators": getattr(config, "SANDBOX_CONFIG", {}).get("indicators", {})
         }
 
-    def _detect_dynamic_trend(self, dfs, context, inds_config):
+    def _detect_dynamic_trend(self, dfs, context, inds_config, eval_mode="VETO", min_votes=3):
         """
-        V4.2: La Bàn Xu Hướng Động (Dynamic Trend Compass)
-        Gom tất cả Indicator được tick "Is Trend" lại vote. Đồng thuận tuyệt đối (VETO).
+        V4.2.2: Trend Cục Bộ - Tách biệt độc lập theo từng Group
+        Trả về dict: {"G0": "UP", "G1": "NONE", "G2": "DOWN", "G3": "NONE"}
         """
-        if not inds_config: return "NONE"
-        
-        trend_votes = []
-        for ind_name, cfg in inds_config.items():
-            if cfg.get("active") and cfg.get("is_trend", False):
-                # Quét các group của Indicator này
-                groups = cfg.get("groups", [cfg.get("group", "G2")])
-                for grp in groups:
-                    df_eval = dfs.get(grp)
-                    if df_eval is not None and not df_eval.empty:
-                        # Vote độc lập cho riêng Indicator này trong khung đó
-                        dummy_rules = {"max_opposite": 0, "max_none": 0}
-                        vote = self._evaluate_group(grp, {ind_name: cfg}, df_eval, context, "ANY", dummy_rules)
-                        trend_votes.append(vote)
-        
-        if not trend_votes:
-            return "NONE"
+        if not inds_config: return {g: "NONE" for g in ["G0", "G1", "G2", "G3"]}
+
+        group_trends = {"G0": "NONE", "G1": "NONE", "G2": "NONE", "G3": "NONE"}
+
+        for target_grp in ["G0", "G1", "G2", "G3"]:
+            trend_votes = []
+            for ind_name, cfg in inds_config.items():
+                if cfg.get("active") and cfg.get("is_trend", False):
+                    groups = cfg.get("groups", [cfg.get("group", "G2")])
+                    
+                    # CHỈ lấy phiếu bầu của Indicator nếu nó thuộc Group đang xét
+                    if target_grp in groups: 
+                        df_eval = dfs.get(target_grp)
+                        if df_eval is not None and not df_eval.empty:
+                            dummy_rules = {"max_opposite": 0, "max_none": 0}
+                            vote = self._evaluate_group(target_grp, {ind_name: cfg}, df_eval, context, "ANY", dummy_rules)
+                            if vote != 0:
+                                trend_votes.append(vote)
+
+            if not trend_votes:
+                continue # Giữ là NONE
+
+            # Phân xử riêng cho Group này
+            if eval_mode == "VETO":
+                if all(v == 1 for v in trend_votes): group_trends[target_grp] = "UP"
+                elif all(v == -1 for v in trend_votes): group_trends[target_grp] = "DOWN"
             
-        # VETO Tuyệt đối: Phải 100% đồng thuận mới ra Trend, nếu không là NONE
-        if all(v == 1 for v in trend_votes):
-            return "UP"
-        elif all(v == -1 for v in trend_votes):
-            return "DOWN"
-        else:
-            return "NONE"
+            elif eval_mode == "VOTING":
+                buy_votes = sum(1 for v in trend_votes if v == 1)
+                sell_votes = sum(1 for v in trend_votes if v == -1)
+                
+                # [SMART FIX]: Giới hạn min_votes theo tổng số indicator được bật để chống kẹt NONE
+                actual_min = min(min_votes, len(trend_votes))
+                
+                if buy_votes >= actual_min and buy_votes > sell_votes: group_trends[target_grp] = "UP"
+                elif sell_votes >= actual_min and sell_votes > buy_votes: group_trends[target_grp] = "DOWN"
+
+        return group_trends
 
     def _detect_market_mode(self, dfs, context, inds_config=None, voting_rules=None):
         """
@@ -236,9 +250,17 @@ class SignalGenerator:
         voting_rules = settings.get("voting_rules", {})
         inds_config = settings.get("indicators", {})
         
-        # 1. Tính Dynamic Trend Compass
-        real_trend = self._detect_dynamic_trend(dfs, context, inds_config)
-        context["real_trend"] = real_trend # Gắn vào Context để đẩy lên Panel
+        eval_mode = getattr(config, "MASTER_EVAL_MODE", settings.get("MASTER_EVAL_MODE", "VETO"))
+        min_votes = getattr(config, "MIN_MATCHING_VOTES", settings.get("MIN_MATCHING_VOTES", 3))
+        
+        # 1. Tính Dynamic Trend Compass Cục Bộ
+        group_trends = self._detect_dynamic_trend(dfs, context, inds_config, eval_mode, min_votes)
+        
+        # Đóng gói Trend từng khung vào Context để Bot UI Dashboard đọc được
+        for g, t in group_trends.items():
+            context[f"trend_{g}"] = t
+            
+        context["real_trend"] = group_trends.get("G0", "NONE") # Giữ fallback 
         
         # 2. Tính Market Mode V4.2
         current_mode, mode_src, macro_dir = self._detect_market_mode(dfs, context, inds_config, voting_rules)
@@ -247,21 +269,19 @@ class SignalGenerator:
         context["mode_source"] = mode_src
         context["macro_direction"] = macro_dir
 
-        # 3. Phân bổ Indicator vào các Group (Hỗ trợ Multi-Group mảng)
+        # 3. Phân bổ Indicator vào các Group
         active_inds_by_group = {"G0": {}, "G1": {}, "G2": {}, "G3": {}}
         for name, cfg in inds_config.items():
             if cfg.get("active", False):
                 modes = cfg.get("active_modes", ["ANY"])
                 if "ANY" in modes or current_mode in modes:
-                    # Hỗ trợ cả mảng 'groups' mới và chuỗi 'group' cũ
                     groups = cfg.get("groups", [cfg.get("group", "G2")])
                     for grp in groups:
                         if grp in active_inds_by_group:
                             active_inds_by_group[grp][name] = cfg
 
-        # 4. Đẩy vào Phễu Vote VETO/VOTING
+        # 4. Đẩy vào Phễu Vote
         return self._evaluate_pipeline_v4(dfs, context, current_mode, voting_rules, active_inds_by_group)
-
     # =========================================================================
     # HÀM CŨ (GIỮ LẠI ĐỂ BACKWARD-COMPATIBLE KHÔNG CRASH)
     # =========================================================================

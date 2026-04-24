@@ -103,6 +103,17 @@ class DataEngine:
                 max_step = float(inds_config["psar"].get("params", {}).get("max_step", 0.2))
                 df.ta.psar(af0=step, af=step, max_af=max_step, append=True)
 
+            # Pivot Points (Standard Floor) - [FIX] Bổ sung tính toán bị thiếu
+            if inds_config.get("pivot_points", {}).get("active"):
+                # Dịch số liệu (shift 1) để lấy High/Low/Close của nến liền trước tính Cản cho nến hiện tại
+                prev_h = df['high'].shift(1)
+                prev_l = df['low'].shift(1)
+                prev_c = df['close'].shift(1)
+                
+                df['PP'] = (prev_h + prev_l + prev_c) / 3
+                df['R1'] = (2 * df['PP']) - prev_l
+                df['S1'] = (2 * df['PP']) - prev_h
+
             # ATR (Dùng làm filter)
             if inds_config.get("atr", {}).get("active"):
                 p = int(inds_config["atr"].get("params", {}).get("period", 14))

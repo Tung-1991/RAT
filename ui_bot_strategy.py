@@ -378,14 +378,17 @@ class BotStrategyUI(ctk.CTkToplevel):
             with open(BRAIN_SETTINGS_PATH, "w", encoding="utf-8") as f:
                 json.dump(output_data, f, indent=4)
 
+            # Đồng bộ ngay vào config Runtime của UI
+            config.MASTER_EVAL_MODE = output_data["MASTER_EVAL_MODE"]
+            config.MIN_MATCHING_VOTES = output_data["MIN_MATCHING_VOTES"]
             config.BOT_RISK_PERCENT = output_data["risk_tsl"]["base_risk"]
             config.TSL_LOGIC_MODE = output_data["risk_tsl"]["tsl_mode"]
-
-            messagebox.showinfo("Thành công", "Đã lưu Brain Settings.\nBot Daemon sẽ tự động Hot-Reload theo Pipeline V4.2!")
+            
+            # Tự động đóng cửa sổ mượt mà không hiện popup phiền phức
             self.destroy()
         except Exception as e:
-            messagebox.showerror("Lỗi", f"Không thể lưu cấu hình:\n{e}")
-
+            # Chỉ hiện lỗi nếu thực sự ghi file thất bại
+            messagebox.showerror("Lỗi hệ thống", f"Lỗi ghi file cấu hình:\n{e}")
     def load_template(self):
         file_path = filedialog.askopenfilename(initialdir=TEMPLATE_DIR, title="Chọn Template", filetypes=[("JSON files", "*.json")])
         if file_path:

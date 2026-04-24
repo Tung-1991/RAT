@@ -5,8 +5,9 @@ def get_signal_vector(df: pd.DataFrame, params: dict, context: dict = None) -> i
     if not context:
         return 0
         
-    sh = context.get("swing_high", 0.0)
-    sl = context.get("swing_low", 0.0)
+    # [FIX]: Lấy mốc Swing của G1 (hoặc G2) để đo Fibo, thay vì key cũ đã bị xóa
+    sh = context.get("swing_high_G1", context.get("swing_high_trend", 0.0))
+    sl = context.get("swing_low_G1", context.get("swing_low_trend", 0.0))
     
     if sh == 0.0 or sl == 0.0:
         return 0

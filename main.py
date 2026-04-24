@@ -330,10 +330,13 @@ class BotUI(ctk.CTk):
             sl = sym_ctx.get(f"swing_low_{selected_tf}", "--")
             atr = sym_ctx.get(f"atr_{selected_tf}", "--")
             
-            tr = sym_ctx.get("trend", "--")
+            # [FIX]: Ép UI chỉ đọc Trend của Group đang được chọn ở ComboBox
+            tr = sym_ctx.get(f"trend_{selected_tf}", "NONE")
+            
             mode = sym_ctx.get("market_mode", "ANY")
             mode_src = sym_ctx.get("mode_source", "NONE")
-            # 3. Đổ dữ liệu vào DÒNG 1: Chiến thuật (Cái Label mới lbl_market_mode)
+            
+            # 3. Đổ dữ liệu vào DÒNG 1
             m_color = COL_GREEN if tr == "UP" else (COL_RED if tr == "DOWN" else "#78909C")
             self.lbl_market_mode.configure(
                 text=f"Mode: {mode} (by {mode_src}) | Trend: {tr}",
