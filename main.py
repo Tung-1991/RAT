@@ -322,29 +322,37 @@ class BotUI(ctk.CTk):
         sym_ctx = self.latest_market_context.get(sym, {})
         
         if sym_ctx:
-            # Đọc Dropdown Selector để lấy đúng thông số TF muốn xem
+            # 1. Đọc khung thời gian Ngài đang chọn xem trên Dashboard
             selected_tf = getattr(self, "var_dashboard_tf", tk.StringVar(value="G1")).get()
             
-            if selected_tf in ["G1", "G0"]: # Nhóm Trend vĩ mô
-                sh = sym_ctx.get("swing_high_trend", sym_ctx.get("swing_high", "--"))
-                sl = sym_ctx.get("swing_low_trend", sym_ctx.get("swing_low", "--"))
-                atr = sym_ctx.get("atr_trend", sym_ctx.get("atr", "--"))
-            else: # G2, G3 (Nhóm Entry bóp cò)
-                sh = sym_ctx.get("swing_high_entry", sym_ctx.get("swing_high", "--"))
-                sl = sym_ctx.get("swing_low_entry", sym_ctx.get("swing_low", "--"))
-                atr = sym_ctx.get("atr_entry", sym_ctx.get("atr", "--"))
-                
-            tr = sym_ctx.get("trend", "--")
+            # 2. Lấy dữ liệu kỹ thuật theo khung đó
+            sh = sym_ctx.get(f"swing_high_{selected_tf}", "--")
+            sl = sym_ctx.get(f"swing_low_{selected_tf}", "--")
+            atr = sym_ctx.get(f"atr_{selected_tf}", "--")
             
+            tr = sym_ctx.get("trend", "--")
+            mode = sym_ctx.get("market_mode", "ANY")
+            mode_src = sym_ctx.get("market_mode_src", "G0") # Nguồn đo vĩ mô
+
+            # 3. Đổ dữ liệu vào DÒNG 1: Chiến thuật (Cái Label mới lbl_market_mode)
+            m_color = COL_GREEN if tr == "UP" else (COL_RED if tr == "DOWN" else "#78909C")
+            self.lbl_market_mode.configure(
+                text=f"Mode: {mode} (by {mode_src}) | Trend: {tr}",
+                text_color=m_color
+            )
+            
+            # 4. Đổ dữ liệu vào DÒNG 2: Thông số (Cái Label lbl_market_context)
             if atr == 0.0 or atr == "--":
-                self.lbl_market_context.configure(text="Syncing MT5 Data...", text_color="#FFA500")
+                self.lbl_market_context.configure(text="Syncing Data...", text_color="#FFA500")
             else:
-                sh_str = f"{sh:.2f}" if isinstance(sh, (int, float)) and sh > 0 else "--"
-                sl_str = f"{sl:.2f}" if isinstance(sl, (int, float)) and sl > 0 else "--"
-                atr_str = f"{atr:.2f}" if isinstance(atr, (int, float)) and atr > 0 else "--"
+                sh_str = f"{sh:.2f}" if isinstance(sh, (int, float)) else "--"
+                sl_str = f"{sl:.2f}" if isinstance(sl, (int, float)) else "--"
+                atr_str = f"{atr:.2f}" if isinstance(atr, (int, float)) else "--"
                 
-                m_color = COL_GREEN if tr == "UP" else (COL_RED if tr == "DOWN" else "#78909C")
-                self.lbl_market_context.configure(text=f"Tr: {tr} | H: {sh_str} | L: {sl_str} | ATR: {atr_str}", text_color=m_color)
+                self.lbl_market_context.configure(
+                    text=f"H: {sh_str} | L: {sl_str} | ATR: {atr_str}",
+                    text_color="#78909C"
+                )
 
         d = self.seg_direction.get()
         self.var_direction.set(d)

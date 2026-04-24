@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # FILE: core/trade_manager.py
-# V4.0: UNIFIED TRADE MANAGER - MULTI-TF CONTEXT READY (KAISER EDITION)
+# V4.1: UNIFIED TRADE MANAGER - DEAL HISTORY & DYNAMIC SL (KAISER EDITION)
 
 import logging
 import json
@@ -8,10 +8,11 @@ import os
 import time
 import math
 import threading
+from datetime import datetime, timedelta
 import MetaTrader5 as mt5
 import config
 from core.data_engine import data_engine
-from core.storage_manager import load_state, save_state
+from core.storage_manager import load_state, save_state, append_trade_log
 
 class TradeManager:
     def __init__(self, connector, checklist_manager, log_callback=None):
@@ -69,28 +70,20 @@ class TradeManager:
         if not tick or not sym_info: return "ERR_NO_TICK"
         
         current_price = tick.ask if direction == "BUY" else tick.bid
+        brain = self._get_brain_settings()
+        risk_tsl = brain.get("risk_tsl", {})
 
-        # TÍNH TOÁN SMART SL AN TOÀN (V4.0 Multi-TF Context Support)
-        buffer_atr = context.get("atr_entry", context.get("atr", 0.0005))
-        swing_l = context.get("swing_low_entry", context.get("swing_low", current_price))
-        swing_h = context.get("swing_high_entry", context.get("swing_high", current_price))
-        swing_l_trend = context.get("swing_low_trend", swing_l)
-        swing_h_trend = context.get("swing_high_trend", swing_h)
-
-        sl_mode = getattr(config, "ENTRY_SL_MODE", "Swing M15 + ATR")
+        # TÍNH TOÁN SMART SL TỪ CẤU HÌNH BRAIN
+        sl_group = risk_tsl.get("base_sl", "G2") # Lấy G0, G1, G2 hoặc G3
         
-        try:
-            if sl_mode == "Swing M15 + ATR":
-                sl_price = swing_l - buffer_atr if direction == "BUY" else swing_h + buffer_atr
-            elif sl_mode == "Swing H1 + ATR":
-                sl_price = swing_l_trend - (buffer_atr * 1.5) if direction == "BUY" else swing_h_trend + (buffer_atr * 1.5)
-            else:
-                sl_price = current_price - (buffer_atr * 2) if direction == "BUY" else current_price + (buffer_atr * 2)
-        except:
-            sl_price = current_price - (buffer_atr * 2) if direction == "BUY" else current_price + (buffer_atr * 2)
+        # Đọc thẳng vào data của G tương ứng
+        buffer_atr = context.get(f"atr_{sl_group}", 0.0005)
+        swing_l = context.get(f"swing_low_{sl_group}", current_price)
+        swing_h = context.get(f"swing_high_{sl_group}", current_price)
 
+        sl_price = swing_l - buffer_atr if direction == "BUY" else swing_h + buffer_atr
         sl_distance = abs(current_price - sl_price)
-        if sl_distance <= 0: sl_distance = buffer_atr * 2 
+        if sl_distance <= 0: sl_distance = buffer_atr * 2
 
         parent_pos = None
         bot_magic = getattr(config, "BOT_MAGIC_NUMBER", 9999)
@@ -99,14 +92,12 @@ class TradeManager:
             if positions:
                 parent_pos = sorted(positions, key=lambda x: x.time)[0] 
 
-        # TÍNH VOLUME TỪ BRAIN SETTINGS (SINGLE SOURCE OF TRUTH)
-        brain = self._get_brain_settings()
+        # TÍNH VOLUME TỪ BRAIN SETTINGS
         if parent_pos and signal_class in ["DCA", "PCA"]:
             cfg_key = "dca_config" if signal_class == "DCA" else "pca_config"
             mult = brain.get(cfg_key, getattr(config, f"{signal_class}_CONFIG", {})).get("STEP_MULTIPLIER", 1.5)
             raw_lot = parent_pos.volume * mult
         else:
-            risk_tsl = brain.get("risk_tsl", {})
             base_risk = risk_tsl.get("base_risk", getattr(config, "BOT_RISK_PERCENT", 0.3))
             mode_multiplier = risk_tsl.get("mode_multipliers", {}).get(market_mode, 1.0)
             final_risk_percent = base_risk * mode_multiplier
@@ -132,7 +123,7 @@ class TradeManager:
         if result and result.retcode == 10009:
             ticket_id = result.order
             
-            bot_tactic = brain.get("risk_tsl", {}).get("bot_tsl", getattr(config, "BOT_DEFAULT_TSL", "BE+STEP_R+SWING"))
+            bot_tactic = risk_tsl.get("bot_tsl", getattr(config, "BOT_DEFAULT_TSL", "BE+STEP_R+SWING"))
             self.update_trade_tactic(ticket_id, bot_tactic)
             self.state["initial_r_dist"][str(ticket_id)] = sl_distance
 
@@ -208,7 +199,6 @@ class TradeManager:
 
         if sl_distance <= 0: return "ERR_CALC_SL_ZERO"
 
-        # Đọc Risk từ Brain nếu có thay đổi từ Sandbox
         brain = self._get_brain_settings()
         risk_pct = brain.get("risk_tsl", {}).get("base_risk", params.get("RISK_PERCENT", 0.3))
 
@@ -255,8 +245,28 @@ class TradeManager:
             # XỬ LÝ ĐÓNG LỆNH & CHỐT RỔ BẢO VỆ MẸ-CON
             closed_tickets = [t for t in tracked_tickets if t not in current_tickets]
             if closed_tickets:
+                time_from = datetime.now() - timedelta(days=3)
+                time_to = datetime.now() + timedelta(days=1)
+
                 for ticket in closed_tickets:
                     s_ticket = str(ticket)
+                    
+                    # QUÉT LỊCH SỬ DEALS ĐỂ LẤY PNL THỰC TẾ
+                    deals = mt5.history_deals_get(time_from, time_to, position=ticket)
+                    if deals:
+                        deal_out = [d for d in deals if d.entry == mt5.DEAL_ENTRY_OUT]
+                        if deal_out:
+                            d_out = deal_out[0]
+                            real_pnl = d_out.profit + d_out.commission + d_out.swap
+                            
+                            self.state["pnl_today"] += real_pnl
+                            self.state["trades_today_count"] += 1
+                            if real_pnl < 0: self.state["daily_loss_count"] += 1
+                            
+                            append_trade_log(ticket, d_out.symbol, "CLOSED", d_out.volume, real_pnl, "SL/TP/Manual")
+                            self.log(f"Đã đóng lệnh #{ticket} | PnL: ${real_pnl:.2f}")
+
+                    # Xóa Tracking
                     if ticket in self.state["active_trades"]: self.state["active_trades"].remove(ticket)
                     if s_ticket in self.state.get("trade_tactics", {}): del self.state["trade_tactics"][s_ticket]
                     if s_ticket in self.state.get("initial_r_dist", {}): del self.state["initial_r_dist"][s_ticket]
@@ -276,6 +286,7 @@ class TradeManager:
                         if parent_t in self.state.get("parent_baskets", {}) and s_ticket in self.state["parent_baskets"][parent_t]:
                             self.state["parent_baskets"][parent_t].remove(s_ticket)
                         del self.state["child_to_parent"][s_ticket]
+                
                 save_state(self.state)
 
             # XỬ LÝ TSL CHÍNH XÁC TỪNG LỆNH
@@ -319,13 +330,12 @@ class TradeManager:
         curr_dist = current_price - pos.price_open if is_buy else pos.price_open - current_price
         curr_r = curr_dist / one_r_dist
         
-        candidates = []  # Các hành động ĐÃ THỎA MÃN có thể dời SL
-        milestones = []  # Các hành động ĐANG ĐỢI (để preview trên bảng)
+        candidates = [] 
+        milestones = [] 
         
         brain = self._get_brain_settings()
         tsl_cfg = brain.get("tsl_config", getattr(config, "TSL_CONFIG", {}))
 
-        # 1. BREAK-EVEN (BE)
         if "BE" in active_modes:
             trig_r = tsl_cfg.get("BE_OFFSET_RR", 0.8)
             base = pos.price_open
@@ -337,7 +347,6 @@ class TradeManager:
             else: 
                 milestones.append((abs(curr_r - trig_r), f"BE Đợi {trig_p:.2f} ➔ {be_sl:.2f}"))
 
-        # 2. STEP R
         if "STEP_R" in active_modes:
             sz, rt = tsl_cfg.get("STEP_R_SIZE", 1.0), tsl_cfg.get("STEP_R_RATIO", 0.8)
             steps = max(0, math.floor(curr_r / sz))
@@ -351,7 +360,6 @@ class TradeManager:
             next_sl = pos.price_open + (next_step * sz * one_r_dist * rt) if is_buy else pos.price_open - (next_step * sz * one_r_dist * rt)
             milestones.append((abs(curr_r - next_step*sz), f"Step {next_step} Đợi {next_trig_p:.2f} ➔ {next_sl:.2f}"))
 
-        # 3. PNL (Lock lợi nhuận theo %)
         if "PNL" in active_modes:
             acc = self.connector.get_account_info()
             if acc:
@@ -369,26 +377,22 @@ class TradeManager:
                         candidates.append((pnl_sl, f"PNL {lvl[1]}%"))
                     else:
                         milestones.append((abs(pnl_pct - lvl[0]), f"PnL {lvl[0]}% Đợi {trig_p:.2f} ➔ {pnl_sl:.2f}"))
-                        break # Chỉ preview Level tiếp theo
+                        break 
 
-        # 4. SWING
         if "SWING" in active_modes and context:
-            # Hỗ trợ lấy dữ liệu đa khung từ Context V4
-            sh = context.get("swing_high", context.get("swing_high_entry"))
-            sl = context.get("swing_low", context.get("swing_low_entry"))
-            atr = context.get("atr", context.get("atr_entry", 0))
+            # Lấy cản để Trailing SL dựa theo chính Base SL Ngài chọn (Ví dụ: Trailing theo cản G1)
+            trail_group = brain.get("risk_tsl", {}).get("base_sl", "G2")
+            sh = context.get(f"swing_high_{trail_group}")
+            sl = context.get(f"swing_low_{trail_group}")
+            atr = context.get(f"atr_{trail_group}", 0)
 
             if sh is not None and sl is not None and atr:
                 trail_buf = getattr(config, "trail_atr_buffer", 0.2)
                 swing_sl = sl - (trail_buf * atr) if is_buy else sh + (trail_buf * atr)
                 
-                # Báo cho hệ thống biết mức Swing SL
                 candidates.append((swing_sl, f"SWING ➔ {swing_sl:.2f}"))
-                
-                # Ép hiển thị ra cột Trạng thái trên bảng nếu chưa Hit
                 milestones.append((0, f"SWING Đợi ➔ {swing_sl:.2f}"))
 
-        # ÁP DỤNG SL AN TOÀN NHẤT (Chọn giá trị bảo vệ tốt nhất trong số các Candidates)
         valid_moves = []
         min_stop_dist = getattr(sym_info, 'trade_stops_level', 0) * point
         for price, rule in candidates:
@@ -401,14 +405,12 @@ class TradeManager:
                 if (current_sl == 0 or price < current_sl - (point/2)) and price >= current_price + min_stop_dist: 
                     valid_moves.append((price, rule))
 
-        # Nếu có bước dịch SL hợp lệ
         if valid_moves:
             target_sl, action_rule = max(valid_moves, key=lambda x: x[0]) if is_buy else min(valid_moves, key=lambda x: x[0])
             if abs(target_sl - current_sl) > (point / 2):
                 self.connector.modify_position(pos.ticket, target_sl, pos.tp)
                 return f"{action_rule} Đã kéo ➔ {target_sl:.2f}"
 
-        # Nếu chưa đạt, hiển thị Milestone gần nhất (Preview)
         if milestones:
             return sorted(milestones, key=lambda x: x[0])[0][1]
             

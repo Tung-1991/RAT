@@ -139,16 +139,35 @@ def setup_left_panel(app, parent):
     make_inp(f_input, "TP (Price)", app.var_manual_tp, 1)
     make_inp(f_input, "SL (Price)", app.var_manual_sl, 2)
 
-    # 3.5 MULTI-TF CONTEXT PREVIEW
-    f_context = ctk.CTkFrame(parent, fg_color="transparent")
+    # 3.5 MULTI-TF CONTEXT PREVIEW (V4.2 - DUAL LINE)
+    f_context = ctk.CTkFrame(parent, fg_color="#1E1E1E", corner_radius=6) 
     f_context.pack(fill="x", padx=5, pady=(5, 5))
     
     app.var_dashboard_tf = tk.StringVar(value="G1")
-    app.cbo_dashboard_tf = ctk.CTkOptionMenu(f_context, values=["G0", "G1", "G2", "G3"], variable=app.var_dashboard_tf, width=60, font=("Roboto", 11, "bold"))
-    app.cbo_dashboard_tf.pack(side="left", padx=(5, 10))
+    app.cbo_dashboard_tf = ctk.CTkOptionMenu(f_context, values=["G0", "G1", "G2", "G3"], variable=app.var_dashboard_tf, width=55, font=("Roboto", 11, "bold"))
+    app.cbo_dashboard_tf.pack(side="left", padx=5, pady=10)
     
-    app.lbl_market_context = ctk.CTkLabel(f_context, text="Trend: -- | SHigh: -- | SLow: -- | ATR: --", font=("Roboto", 13, "bold"), text_color="#78909C")
-    app.lbl_market_context.pack(side="left", fill="x")
+    # Frame con để chứa 2 dòng chữ
+    f_labels = ctk.CTkFrame(f_context, fg_color="transparent")
+    f_labels.pack(side="left", fill="both", expand=True, padx=5)
+
+    # Dòng 1: Chiến thuật (Mode & Trend)
+    app.lbl_market_mode = ctk.CTkLabel(f_labels, text="Mode: -- | Trend: --", font=("Roboto", 13, "bold"), text_color="#29B6F6", anchor="w")
+    app.lbl_market_mode.pack(fill="x")
+
+    # Dòng 2: Thông số kỹ thuật (Swing & ATR)
+    app.lbl_market_context = ctk.CTkLabel(f_labels, text="H: -- | L: -- | ATR: --", font=("Consolas", 12), text_color="#78909C", anchor="w")
+    app.lbl_market_context.pack(fill="x")
+    
+    # Ép Font size xuống 12, thêm expand=True và anchor="w" để text đẩy tràn sang phải mà không bị lẹm đuôi
+    app.lbl_market_context = ctk.CTkLabel(
+        f_context, 
+        text="Đang đồng bộ La Bàn Vĩ Mô...", 
+        font=("Roboto", 12, "bold"), 
+        text_color="#78909C", 
+        justify="left"
+    )
+    app.lbl_market_context.pack(side="left", fill="x", expand=True, anchor="w", padx=(0, 5))
 
     # 4. LIVE DASHBOARD
     f_dashboard = ctk.CTkFrame(parent, fg_color="#252526", corner_radius=8, border_width=1, border_color="#333")

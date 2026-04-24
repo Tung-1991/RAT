@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # FILE: config.py
-# V4.0: UNIFIED CONFIG - SINGLE SOURCE OF TRUTH (KAISER EDITION)
+# V4.1: UNIFIED CONFIG - DYNAMIC MACRO & BOT SL (KAISER EDITION)
 
 import os
 import MetaTrader5 as mt5
@@ -15,7 +15,6 @@ COIN_LIST = [
 DEFAULT_SYMBOL = "ETHUSD"           
 BOT_ACTIVE_SYMBOLS = ["ETHUSD"]     
 
-# TÁCH BIỆT LUỒNG LỆNH (V3.0 ARCHITECTURE)
 MANUAL_MAGIC_NUMBER = 8888                 
 BOT_MAGIC_NUMBER = 9999
 
@@ -42,7 +41,6 @@ COMMISSION_RATES = {
     "EURUSD": 7.0, "GBPUSD": 7.0, "USDJPY": 7.0, "USDCHF": 7.0, "AUDUSD": 7.0, "USDCAD": 7.0
 }
 
-# GIỚI HẠN CHUNG
 MAX_DAILY_LOSS_PERCENT = 2.5        
 LOSS_COUNT_MODE = "TOTAL"           
 MAX_LOSING_STREAK = 3               
@@ -73,6 +71,7 @@ PRESETS = {
 BOT_RISK_PERCENT = 0.30             
 BOT_TP_RR_RATIO = 1.5               
 BOT_DEFAULT_TSL = "BE+STEP_R+SWING" 
+BOT_BASE_SL = "entry"               
 BOT_DAILY_TRADE_LIMIT = 10          
 BOT_BYPASS_CHECKLIST = False
 
@@ -96,7 +95,7 @@ trail_atr_buffer = 0.2
 be_atr_buffer = 0.8             
 
 # ==============================================================================
-# 7. BỘ NÃO PHÂN TÍCH (SANDBOX V4.0 DEFAULTS - ĐÃ CẬP NHẬT G0 & TRIGGER MODE)
+# 7. BỘ NÃO PHÂN TÍCH (SANDBOX V4.1 DEFAULTS)
 # ==============================================================================
 trend_timeframe = "1h"              
 entry_timeframe = "15m"             
@@ -105,10 +104,8 @@ COOLDOWN_MINUTES = 1
 AUTO_TRADE_ENABLED = False          
 DAEMON_LOOP_DELAY = 15
 
-# Toán lý Math SL
 sl_atr_multiplier = 0.2             
 
-# --- CẤU HÌNH V4.0 MỚI BỔ SUNG ---
 MASTER_STRATEGY = "QUANT" 
 MASTER_EVAL_MODE = "VETO" 
 MIN_MATCHING_VOTES = 3
@@ -118,7 +115,6 @@ G1_TIMEFRAME = mt5.TIMEFRAME_H1
 G2_TIMEFRAME = mt5.TIMEFRAME_M15
 G3_TIMEFRAME = mt5.TIMEFRAME_M15
 
-# Cấu hình Mặc định cho 16+ Signals (Đã tích hợp G0 và Trigger Mode)
 SANDBOX_CONFIG = {
     "voting_rules": {
         "G0": {"max_opposite": 0, "max_none": 0, "master_rule": "PASS"},
@@ -127,10 +123,10 @@ SANDBOX_CONFIG = {
         "G3": {"max_opposite": 0, "max_none": 1, "master_rule": "IGNORE"}
     },
     "indicators": {
+        "adx": {"active": True, "group": "G0", "active_modes": ["ANY"], "params": {"period": 14, "strong": 23}, "trigger_mode": "STRICT_CLOSE"},
+        "ema": {"active": True, "group": "G0", "active_modes": ["ANY"], "params": {"period": 50}, "trigger_mode": "REALTIME_TICK"},
         "swing_point": {"active": True, "group": "G1", "active_modes": ["ANY"], "params": {}, "trigger_mode": "REALTIME_TICK"},
         "atr": {"active": True, "group": "G1", "active_modes": ["ANY"], "params": {"period": 14, "multiplier": 1.5}, "trigger_mode": "REALTIME_TICK"},
-        "adx": {"active": True, "group": "G1", "active_modes": ["TREND", "BREAKOUT"], "params": {"period": 14, "strong": 23}, "trigger_mode": "STRICT_CLOSE"},
-        "ema": {"active": True, "group": "G1", "active_modes": ["ANY"], "params": {"period": 50}, "trigger_mode": "REALTIME_TICK"},
         "pivot_points": {"active": False, "group": "G3", "active_modes": ["ANY"], "params": {}, "trigger_mode": "REALTIME_TICK"},
         "ema_cross": {"active": False, "group": "G2", "active_modes": ["TREND", "BREAKOUT"], "params": {"fast": 9, "slow": 21}, "trigger_mode": "STRICT_CLOSE"},
         "volume": {"active": True, "group": "G2", "active_modes": ["BREAKOUT"], "params": {"period": 20, "multiplier": 1.1}, "trigger_mode": "STRICT_CLOSE"},

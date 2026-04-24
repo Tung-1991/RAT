@@ -131,8 +131,9 @@ class DataEngine:
             current_close = float(df['close'].iloc[-1])
             return current_close * 1.001, current_close * 0.999 
 
+
     def fetch_data_v4(self, symbol):
-        """Kéo độc lập 4 chuỗi dữ liệu cho G0, G1, G2, G3"""
+        """Kéo độc lập 4 chuỗi dữ liệu cho G0, G1, G2, G3 và tính Cản/ATR cho tất cả"""
         settings = self._get_brain_settings()
         
         tfs = {
@@ -143,32 +144,35 @@ class DataEngine:
         }
         
         num_bars = settings.get("NUM_H1_BARS", 100)
-        
         dfs = {grp: self._fetch_bars(symbol, tf, num_bars) for grp, tf in tfs.items()}
         
         if any(df.empty for df in dfs.values()):
             return None, None
 
-        df_entry = dfs["G2"]
-        df_trend = dfs["G1"]
-        current_price = float(df_entry['close'].iloc[-1])
+        current_price = float(dfs["G2"]['close'].iloc[-1])
         
-        swing_h_entry, swing_l_entry = self._calc_swings(df_entry, lookback=15)
-        swing_h_trend, swing_l_trend = self._calc_swings(df_trend, lookback=15)
-        wave_up_dist = swing_h_trend - swing_l_trend
-
         context = {
             "symbol": symbol,
-            "current_price": current_price,
-            "atr_entry": self._calc_atr(df_entry, period=14),
-            "atr_trend": self._calc_atr(df_trend, period=14),
-            "swing_high_entry": float(swing_h_entry),
-            "swing_low_entry": float(swing_l_entry),
-            "swing_high_trend": float(swing_h_trend),
-            "swing_low_trend": float(swing_l_trend),
-            "fibo_618_support": float(swing_h_trend - (wave_up_dist * 0.618)),
-            "fibo_618_resistance": float(swing_l_trend + (wave_up_dist * 0.618))
+            "current_price": current_price
         }
+
+        # Quét và tính Swing/ATR cho toàn bộ G0, G1, G2, G3
+        for grp in ["G0", "G1", "G2", "G3"]:
+            df_grp = dfs[grp]
+            sh, sl = self._calc_swings(df_grp, lookback=15)
+            atr = self._calc_atr(df_grp, period=14)
+            
+            context[f"swing_high_{grp}"] = float(sh)
+            context[f"swing_low_{grp}"] = float(sl)
+            context[f"atr_{grp}"] = float(atr)
+
+        # Fallback cho hệ thống cũ khỏi crash
+        context["atr_entry"] = context["atr_G2"]
+        context["atr_trend"] = context["atr_G1"]
+        context["swing_high_entry"] = context["swing_high_G2"]
+        context["swing_low_entry"] = context["swing_low_G2"]
+        context["swing_high_trend"] = context["swing_high_G1"]
+        context["swing_low_trend"] = context["swing_low_G1"]
 
         return dfs, context
 

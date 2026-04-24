@@ -117,6 +117,12 @@ class StandaloneBotDaemon:
 
     def _scan_signals(self, symbols, bot_active):
         signal_debug_state = {}
+        
+        # --- [V4.1] Lấy cấu hình Brain để quét Cảm biến Vĩ mô ---
+        brain = signal_generator._get_brain_settings()
+        inds_config = brain.get("indicators", {})
+        voting_rules = brain.get("voting_rules", {})
+
         for sym in symbols:
             if not self.running: break
             
@@ -133,9 +139,16 @@ class StandaloneBotDaemon:
             except:
                 real_trend = "NONE"
 
+            # --- [V4.1] Lấy Mode và Nguồn Mode (G0/G1) ---
+            current_mode, mode_src, macro_dir = signal_generator._detect_market_mode(dfs, context, inds_config, voting_rules)
+
+            # --- [V4.1] Gói toàn bộ vào Heartbeat gửi lên UI ---
             self.heartbeat_contexts[sym] = context.copy()
             self.heartbeat_contexts[sym].update({
                 "trend": real_trend,
+                "market_mode": current_mode,
+                "mode_source": mode_src,
+                "macro_direction": macro_dir,
                 "timestamp": time.time()
             })
 

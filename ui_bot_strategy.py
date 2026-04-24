@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # FILE: ui_bot_strategy.py
-# V4.0: UNIFIED BOT STRATEGY UI - 4-TIER PIPELINE (KAISER EDITION)
+# V4.1: UNIFIED BOT STRATEGY UI - DYNAMIC SL & TACTIC SELECTOR (KAISER EDITION)
 
 import customtkinter as ctk
 import json
@@ -15,7 +15,7 @@ TEMPLATE_DIR = "data/templates"
 class BotStrategyUI(ctk.CTkToplevel):
     def __init__(self, master=None):
         super().__init__(master)
-        self.title("🧠 V4.0 Bot Strategy Sandbox (4-Tier Pipeline)")
+        self.title("🧠 V4.1 Bot Strategy Sandbox (Dynamic Risk & Pipeline)")
         self.geometry("1100x800")
         self.attributes("-topmost", True)
         self.focus_force()
@@ -46,7 +46,9 @@ class BotStrategyUI(ctk.CTkToplevel):
             },
             "risk_tsl": {
                 "base_risk": getattr(config, "BOT_RISK_PERCENT", 0.3),
+                "base_sl": "entry", # Thêm thuộc tính chọn nguồn cắm SL (entry/trend)
                 "tsl_mode": getattr(config, "TSL_LOGIC_MODE", "STATIC"),
+                "bot_tsl": getattr(config, "BOT_DEFAULT_TSL", "BE+STEP_R+SWING"), # Thêm thuộc tính Tactic
                 "mode_multipliers": {"TREND": 1.0, "RANGE": 0.5, "BREAKOUT": 1.5, "EXHAUSTION": 1.0, "ANY": 1.0}
             },
             "indicators": getattr(config, "SANDBOX_CONFIG", {}).get("indicators", {}),
@@ -210,12 +212,41 @@ class BotStrategyUI(ctk.CTkToplevel):
     def _build_risk_tab(self):
         risk_data = self.brain_data.get("risk_tsl", {})
         
+        # --- DÒNG 1: QUẢN LÝ VỐN ---
         f_base = ctk.CTkFrame(self.tab_risk, fg_color="transparent")
         f_base.pack(fill="x", padx=20, pady=(15, 5))
         ctk.CTkLabel(f_base, text="BOT BASE RISK (% Cắt lỗ/Lệnh):", font=("Roboto", 13, "bold"), text_color="#E040FB").pack(side="left")
         self.var_base_risk = ctk.StringVar(value=str(risk_data.get("base_risk", 0.3)))
         ctk.CTkEntry(f_base, textvariable=self.var_base_risk, width=80, justify="center").pack(side="left", padx=15)
+        
+        # --- NGUỒN CẮM SL (Bản V4.2 - Chuẩn G0-G3) ---
+        f_base_sl = ctk.CTkFrame(self.tab_risk, fg_color="transparent")
+        f_base_sl.pack(fill="x", padx=20, pady=5)
+        ctk.CTkLabel(f_base_sl, text="NGUỒN CẮM SL:", font=("Roboto", 13, "bold"), text_color="#FF3D00").pack(side="left")
+        
+        # Tự động sửa "entry" cũ thành "G2" để hiển thị cho đúng
+        cur_sl = risk_data.get("base_sl", "G2")
+        if cur_sl == "entry": cur_sl = "G2"
+        self.var_base_sl = ctk.StringVar(value=cur_sl)
+        ctk.CTkComboBox(f_base_sl, values=["G0", "G1", "G2", "G3"], variable=self.var_base_sl, width=100).pack(side="left", padx=15)
 
+        # --- BOT TSL TACTICS (Bản V4.2 - NÚT BẤM TOGGLE) ---
+        ctk.CTkLabel(self.tab_risk, text="BOT TSL TACTICS:", font=("Roboto", 13, "bold"), text_color="#00C853").pack(anchor="w", padx=20, pady=(10, 0))
+        f_tactic_btns = ctk.CTkFrame(self.tab_risk, fg_color="transparent")
+        f_tactic_btns.pack(fill="x", padx=20, pady=5)
+        
+        self.bot_tactic_vars = {}
+        current_tactic_str = risk_data.get("bot_tsl", "BE+STEP_R+SWING")
+        
+        # Tạo bộ nút bấm cho Ngài chọn, đéo cần gõ tay nữa
+        for t in ["BE", "PNL", "STEP_R", "SWING"]:
+            is_active = (t in current_tactic_str)
+            var = ctk.BooleanVar(value=is_active)
+            ctk.CTkCheckBox(f_tactic_btns, text=t, variable=var, font=("Roboto", 12, "bold"), width=80).pack(side="left", padx=10)
+            self.bot_tactic_vars[t] = var
+
+
+        # --- DÒNG 4: TSL LOGIC MODE ---
         f_tsl = ctk.CTkFrame(self.tab_risk, fg_color="transparent")
         f_tsl.pack(fill="x", padx=20, pady=5)
         ctk.CTkLabel(f_tsl, text="TSL LOGIC MODE (Bám đuôi):", font=("Roboto", 13, "bold"), text_color="#29B6F6").pack(side="left")
@@ -225,6 +256,7 @@ class BotStrategyUI(ctk.CTkToplevel):
         ctk.CTkFrame(self.tab_risk, height=2, fg_color="#333").pack(fill="x", padx=20, pady=15)
         ctk.CTkLabel(self.tab_risk, text="DYNAMIC RISK MULTIPLIERS (Hệ số rủi ro theo Market Mode)", font=("Roboto", 13, "bold"), text_color="#FFB300").pack(anchor="w", padx=20, pady=5)
 
+        # --- DÒNG 5: HỆ SỐ RISK ---
         f_mult = ctk.CTkFrame(self.tab_risk, fg_color="#2b2b2b", corner_radius=8)
         f_mult.pack(fill="x", padx=20)
         
@@ -290,9 +322,14 @@ class BotStrategyUI(ctk.CTkToplevel):
                 "master_rule": self.vote_widgets[grp]["master_rule"].get()
             }
             
+        selected_tactics = [k for k, v in self.bot_tactic_vars.items() if v.get()]
+        bot_tsl_str = "+".join(selected_tactics) if selected_tactics else "OFF"
+
         new_risk_tsl = {
             "base_risk": float(self.var_base_risk.get() or 0.3),
+            "base_sl": self.var_base_sl.get(),
             "tsl_mode": self.var_tsl_mode.get(),
+            "bot_tsl": bot_tsl_str,
             "mode_multipliers": {mode: float(var.get() or 1.0) for mode, var in self.mult_vars.items()}
         }
 
@@ -323,7 +360,7 @@ class BotStrategyUI(ctk.CTkToplevel):
             config.BOT_RISK_PERCENT = output_data["risk_tsl"]["base_risk"]
             config.TSL_LOGIC_MODE = output_data["risk_tsl"]["tsl_mode"]
 
-            messagebox.showinfo("Thành công", "Đã lưu Brain Settings.\nBot Daemon sẽ tự động Hot-Reload theo Pipeline V4.0!")
+            messagebox.showinfo("Thành công", "Đã lưu Brain Settings.\nBot Daemon sẽ tự động Hot-Reload theo Pipeline V4.1!")
             self.destroy()
         except Exception as e:
             messagebox.showerror("Lỗi", f"Không thể lưu cấu hình:\n{e}")
