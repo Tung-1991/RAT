@@ -139,21 +139,30 @@ def setup_left_panel(app, parent):
     make_inp(f_input, "TP (Price)", app.var_manual_tp, 1)
     make_inp(f_input, "SL (Price)", app.var_manual_sl, 2)
 
-    # 3.5 MULTI-TF CONTEXT PREVIEW (V4.2 - DUAL LINE)
+    # --- PHẦN ĐÃ FIX: MULTI-TF CONTEXT PREVIEW (V4.2) ---
     f_context = ctk.CTkFrame(parent, fg_color="#1E1E1E", corner_radius=6) 
     f_context.pack(fill="x", padx=5, pady=(5, 5))
     
     app.var_dashboard_tf = tk.StringVar(value="G1")
-    app.cbo_dashboard_tf = ctk.CTkOptionMenu(f_context, values=["G0", "G1", "G2", "G3"], variable=app.var_dashboard_tf, width=55, font=("Roboto", 11, "bold"))
+    app.cbo_dashboard_tf = ctk.CTkOptionMenu(f_context, values=["G0", "G1", "G2", "G3"], 
+                                            variable=app.var_dashboard_tf, width=55, 
+                                            font=("Roboto", 11, "bold"))
     app.cbo_dashboard_tf.pack(side="left", padx=5, pady=10)
     
-    # Frame con để chứa 2 dòng chữ
+    # Frame chứa 2 dòng thông tin để không bị đè nhau
     f_labels = ctk.CTkFrame(f_context, fg_color="transparent")
     f_labels.pack(side="left", fill="both", expand=True, padx=5)
 
-    # Dòng 1: Chiến thuật (Mode & Trend)
-    app.lbl_market_mode = ctk.CTkLabel(f_labels, text="Mode: -- | Trend: --", font=("Roboto", 13, "bold"), text_color="#29B6F6", anchor="w")
+    # Dòng 1: Chế độ & Xu hướng (Dùng lbl_market_mode)
+    app.lbl_market_mode = ctk.CTkLabel(f_labels, text="Mode: -- | Trend: --", 
+                                      font=("Roboto", 13, "bold"), text_color="#29B6F6", anchor="w")
     app.lbl_market_mode.pack(fill="x")
+
+    # Dòng 2: Thông số kỹ thuật H/L/ATR (Dùng lbl_market_context duy nhất)
+    # [FIX] Đã loại bỏ Label trùng tên gây vỡ giao diện
+    app.lbl_market_context = ctk.CTkLabel(f_labels, text="H: -- | L: -- | ATR: --", 
+                                         font=("Consolas", 12), text_color="#78909C", anchor="w")
+    app.lbl_market_context.pack(fill="x")
 
     # Dòng 2: Thông số kỹ thuật (Swing & ATR)
     app.lbl_market_context = ctk.CTkLabel(f_labels, text="H: -- | L: -- | ATR: --", font=("Consolas", 12), text_color="#78909C", anchor="w")
