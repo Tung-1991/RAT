@@ -301,8 +301,8 @@ def open_edit_popup(app, ticket):
 
 def show_history_popup(app):
     top = ctk.CTkToplevel(app); top.title("Lịch sử Giao dịch"); top.geometry("850x500")
-    # top.transient(app) # Bỏ comment nếu muốn cửa sổ này luôn dính vào cửa sổ mẹ
-    
+    top.attributes("-topmost", True)  # Ép luôn nổi trên cùng
+    top.focus_force()                 # Tự động bắt trỏ chuột khi mở
     cols = ("Time", "Ticket", "Symbol", "Type", "Vol", "PnL ($)", "Reason")
     tr = ttk.Treeview(top, columns=cols, show="headings"); tr.pack(fill="both", expand=True)
     

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # FILE: signals/signal_generator.py
-# V4.1: 4-TIER PIPELINE, DYNAMIC MACRO MODE SENSOR (KAISER EDITION)
+# V4.2: MULTI-GROUP, DYNAMIC MACRO & TREND COMPASS (KAISER EDITION)
 
 import logging
 import json
@@ -57,65 +57,89 @@ class SignalGenerator:
             "indicators": getattr(config, "SANDBOX_CONFIG", {}).get("indicators", {})
         }
 
+    def _detect_dynamic_trend(self, dfs, context, inds_config):
+        """
+        V4.2: La Bàn Xu Hướng Động (Dynamic Trend Compass)
+        Gom tất cả Indicator được tick "Is Trend" lại vote. Đồng thuận tuyệt đối (VETO).
+        """
+        if not inds_config: return "NONE"
+        
+        trend_votes = []
+        for ind_name, cfg in inds_config.items():
+            if cfg.get("active") and cfg.get("is_trend", False):
+                # Quét các group của Indicator này
+                groups = cfg.get("groups", [cfg.get("group", "G2")])
+                for grp in groups:
+                    df_eval = dfs.get(grp)
+                    if df_eval is not None and not df_eval.empty:
+                        # Vote độc lập cho riêng Indicator này trong khung đó
+                        dummy_rules = {"max_opposite": 0, "max_none": 0}
+                        vote = self._evaluate_group(grp, {ind_name: cfg}, df_eval, context, "ANY", dummy_rules)
+                        trend_votes.append(vote)
+        
+        if not trend_votes:
+            return "NONE"
+            
+        # VETO Tuyệt đối: Phải 100% đồng thuận mới ra Trend, nếu không là NONE
+        if all(v == 1 for v in trend_votes):
+            return "UP"
+        elif all(v == -1 for v in trend_votes):
+            return "DOWN"
+        else:
+            return "NONE"
+
     def _detect_market_mode(self, dfs, context, inds_config=None, voting_rules=None):
         """
-        V4.1: Cảm biến Vĩ mô Động (Dynamic Macro Sensor)
-        - Hỗ trợ ngược (Backward Compatible): Nếu truyền DF cũ, dùng ADX cứng.
-        - Bản mới: Tự động gom các Indicator của G0 (hoặc G1) để Vote ra Trend/Mode.
+        V4.2: Cảm biến Vĩ mô Động - 2 Bước (Không Hardcode ADX)
+        Bước 1: Tính Base Mode (TREND/RANGE)
+        Bước 2: Các Indicator bắt Breakout/Exhaustion chà đạp lên kết quả
         """
-        # Nếu chạy bản cũ (truyền vào DataFrame thay vì Dict)
         if not isinstance(dfs, dict):
-            df = dfs
-            try:
-                adx_val = df[f"ADX_{14}"].iloc[-1] if f"ADX_{14}" in df.columns else 0
-                if adx_val > 25:
-                    return "BREAKOUT" if adx_val > 40 else "TREND"
-                else:
-                    return "RANGE"
-            except:
-                return "ANY"
+            # Fallback backward-compatible
+            return "ANY", "NONE", 0
                 
-        # --- LOGIC V4.1 DYNAMIC MACRO MODE ---
         if not inds_config or not voting_rules: 
             return "ANY", "NONE", 0
 
-        # 1. Quét tìm các Indicator được gán cho G0 (Ưu tiên 1)
-        g0_inds = {k: v for k, v in inds_config.items() if v.get("active") and v.get("group") == "G0"}
-        
+        # 1. Tìm nhóm Macro (Ưu tiên các Indicator ở G0, nếu không thì G1)
+        g0_inds = {k: v for k, v in inds_config.items() if v.get("active") and "G0" in v.get("groups", [v.get("group", "G2")])}
         source_grp = "G0"
         macro_inds = g0_inds
         
-        # 2. Cơ chế Fallback: Nếu G0 trống, lấy G1 làm la bàn vĩ mô
         if not macro_inds:
             source_grp = "G1"
-            macro_inds = {k: v for k, v in inds_config.items() if v.get("active") and v.get("group") == "G1"}
+            macro_inds = {k: v for k, v in inds_config.items() if v.get("active") and "G1" in v.get("groups", [v.get("group", "G2")])}
             
         df_eval = dfs.get(source_grp)
         if df_eval is None or df_eval.empty or not macro_inds:
             return "ANY", "NONE", 0
             
-        # 3. Lấy luật phân xử (Rules) của nhóm đó
         rules = voting_rules.get(source_grp, {"max_opposite": 0, "max_none": 0})
         
-        # 4. Chạy Vote để xem Trend Vĩ Mô đang là gì
-        direction = self._evaluate_group(source_grp, macro_inds, df_eval, context, "ANY", rules)
-        
-        # 5. Xác định Mode (1/-1 là TREND, 0 là RANGE - Sideway giằng co)
-        mode = "TREND" if direction != 0 else "RANGE"
-        
-        # Phân tách Breakout (Tùy chọn: Nếu người dùng có nhét ADX vào nhóm Macro và trị số > 40)
-        try:
-            adx_cfg = macro_inds.get("adx")
-            if adx_cfg:
-                p = adx_cfg.get("params", {}).get("period", 14)
-                if f"ADX_{p}" in df_eval.columns:
-                    adx_val = df_eval[f"ADX_{p}"].iloc[-1]
-                    if adx_val > 40:
-                        mode = "BREAKOUT"
-        except:
-            pass
+        # 2. Phân loại theo Vai trò Macro (Macro Role)
+        base_inds = {k: v for k, v in macro_inds.items() if v.get("macro_role", "NONE") == "BASE"}
+        brk_inds = {k: v for k, v in macro_inds.items() if v.get("macro_role", "NONE") == "BREAKOUT"}
+        exh_inds = {k: v for k, v in macro_inds.items() if v.get("macro_role", "NONE") == "EXHAUSTION"}
+
+        # BƯỚC 1: ĐỊNH HÌNH BASE MODE (TREND HAY RANGE)
+        base_dir = 0
+        if base_inds:
+            base_dir = self._evaluate_group(source_grp, base_inds, df_eval, context, "ANY", rules)
             
-        return mode, source_grp, direction
+        mode = "TREND" if base_dir != 0 else "RANGE"
+
+        # BƯỚC 2: GHI ĐÈ ĐỘT BIẾN (BREAKOUT / EXHAUSTION)
+        if brk_inds:
+            brk_dir = self._evaluate_group(source_grp, brk_inds, df_eval, context, "ANY", rules)
+            if brk_dir != 0:
+                mode = "BREAKOUT"
+                
+        if exh_inds and mode != "BREAKOUT": # Ưu tiên Breakout hơn nếu có xung đột, hoặc để song song
+            exh_dir = self._evaluate_group(source_grp, exh_inds, df_eval, context, "ANY", rules)
+            if exh_dir != 0:
+                mode = "EXHAUSTION"
+            
+        return mode, source_grp, base_dir
 
     def _evaluate_group(self, group_name, group_indicators, df, context, current_mode, rules):
         if not group_indicators or df is None or df.empty: return 0
@@ -163,15 +187,11 @@ class SignalGenerator:
             return main_direction
         return 0
 
-    # =========================================================================
-    # PIPELINE V4.0: ÁNH XẠ MULTI-TF + EARLY-EXIT + VETO/VOTING
-    # =========================================================================
     def _evaluate_pipeline_v4(self, dfs, context, current_mode, voting_rules, active_inds):
         eval_mode = getattr(config, "MASTER_EVAL_MODE", "VETO")
         min_votes = getattr(config, "MIN_MATCHING_VOTES", 3)
         votes = {}
 
-        # Duyệt tuần tự từ trên xuống để tối ưu CPU (Early-Exit)
         for grp in ["G0", "G1", "G2", "G3"]:
             rule = voting_rules.get(grp, {}).get("master_rule", "IGNORE")
             if rule == "IGNORE": continue
@@ -184,7 +204,6 @@ class SignalGenerator:
             status = self._evaluate_group(grp, active_inds[grp], df_grp, context, current_mode, voting_rules.get(grp, {}))
             votes[grp] = status
 
-            # CHẶN LẬP TỨC nếu chế độ là VETO
             if eval_mode == "VETO":
                 if rule == "FIX" and status == 0:
                     return 0 
@@ -193,7 +212,6 @@ class SignalGenerator:
                 if len(set(active_votes)) > 1:
                     return 0 
 
-        # Xử lý tổng hợp kết quả
         if eval_mode == "VETO":
             active_votes = [v for v in votes.values() if v != 0]
             if not active_votes: return 0
@@ -218,32 +236,38 @@ class SignalGenerator:
         voting_rules = settings.get("voting_rules", {})
         inds_config = settings.get("indicators", {})
         
-        # V4.1 Dynamic Macro Detection
+        # 1. Tính Dynamic Trend Compass
+        real_trend = self._detect_dynamic_trend(dfs, context, inds_config)
+        context["real_trend"] = real_trend # Gắn vào Context để đẩy lên Panel
+        
+        # 2. Tính Market Mode V4.2
         current_mode, mode_src, macro_dir = self._detect_market_mode(dfs, context, inds_config, voting_rules)
         
-        # Lưu lại để truyền ra ngoài Daemon & Giao diện UI
         context["market_mode"] = current_mode
         context["mode_source"] = mode_src
         context["macro_direction"] = macro_dir
 
+        # 3. Phân bổ Indicator vào các Group (Hỗ trợ Multi-Group mảng)
         active_inds_by_group = {"G0": {}, "G1": {}, "G2": {}, "G3": {}}
         for name, cfg in inds_config.items():
             if cfg.get("active", False):
                 modes = cfg.get("active_modes", ["ANY"])
                 if "ANY" in modes or current_mode in modes:
-                    grp = cfg.get("group", "G2")
-                    if grp in active_inds_by_group:
-                        active_inds_by_group[grp][name] = cfg
+                    # Hỗ trợ cả mảng 'groups' mới và chuỗi 'group' cũ
+                    groups = cfg.get("groups", [cfg.get("group", "G2")])
+                    for grp in groups:
+                        if grp in active_inds_by_group:
+                            active_inds_by_group[grp][name] = cfg
 
+        # 4. Đẩy vào Phễu Vote VETO/VOTING
         return self._evaluate_pipeline_v4(dfs, context, current_mode, voting_rules, active_inds_by_group)
 
     # =========================================================================
-    # HÀM CŨ (GIỮ NGUYÊN ĐỂ KHÔNG CRASH DAEMON CŨ CHƯA KỊP CẬP NHẬT)
+    # HÀM CŨ (GIỮ LẠI ĐỂ BACKWARD-COMPATIBLE KHÔNG CRASH)
     # =========================================================================
     def _evaluate_master_rules(self, g1_status, g2_status, g3_status, voting_rules):
         groups_status = {"G1": g1_status, "G2": g2_status, "G3": g3_status}
         final_direction = 0
-        
         potential_directions = []
         for grp in ["G1", "G2", "G3"]:
             rule = voting_rules.get(grp, {}).get("master_rule", "FIX")
@@ -253,13 +277,11 @@ class SignalGenerator:
                 
         if not potential_directions: return 0
         if len(set(potential_directions)) > 1: return 0
-        
         final_direction = potential_directions[0]
         
         for grp in ["G1", "G2", "G3"]:
             rule = voting_rules.get(grp, {}).get("master_rule", "FIX")
             status = groups_status[grp]
-            
             if rule == "FIX" and status != final_direction: return 0
             elif rule == "PASS" and status != 0 and status != final_direction: return 0
 
@@ -270,7 +292,7 @@ class SignalGenerator:
         voting_rules = settings.get("voting_rules", {})
         inds_config = settings.get("indicators", {})
         
-        current_mode = self._detect_market_mode(df_trend, context)
+        current_mode, _, _ = self._detect_market_mode(df_trend, context)
 
         active_inds_by_group = {"G1": {}, "G2": {}, "G3": {}}
         for name, cfg in inds_config.items():

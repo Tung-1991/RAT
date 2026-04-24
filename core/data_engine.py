@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # FILE: core/data_engine.py
-# V4.1: MULTI-TIMEFRAME DATA ENGINE & TA-LIB FIX (KAISER EDITION)
+# V4.2.1: DYNAMIC TA OPTIMIZATION & MULTI-TIMEFRAME (KAISER EDITION)
 
 import MetaTrader5 as mt5
 import pandas as pd
@@ -9,7 +9,7 @@ import json
 import os
 import logging
 import config
-import pandas_ta as ta  # BỔ SUNG: Tính toán nhúng Indicator
+import pandas_ta as ta 
 
 logger = logging.getLogger("DataEngine")
 
@@ -38,50 +38,99 @@ class DataEngine:
             "trend_timeframe": getattr(config, "trend_timeframe", "1h"),
             "entry_timeframe": getattr(config, "entry_timeframe", "15m"),
             "NUM_H1_BARS": getattr(config, "NUM_H1_BARS", 100),
-            "NUM_M15_BARS": getattr(config, "NUM_M15_BARS", 100)
+            "NUM_M15_BARS": getattr(config, "NUM_M15_BARS", 100),
+            "indicators": getattr(config, "SANDBOX_CONFIG", {}).get("indicators", {})
         }
 
     # =========================================================================
-    # [FIX LỖI 2] HÀM SINH CỘT INDICATOR TỰ ĐỘNG BẰNG PANDAS-TA
+    # [TỐI ƯU CPU] CHỈ TÍNH TOÁN CÁC INDICATOR ĐƯỢC BẬT (ON)
     # =========================================================================
-    def _apply_ta(self, df):
+    def _apply_ta(self, df, inds_config):
         if df is None or df.empty: 
             return df
         try:
-            # 1. Indicator Cơ bản
-            df.ta.adx(length=14, append=True)
-            df.ta.ema(length=9, append=True)
-            df.ta.ema(length=21, append=True)
-            df.ta.ema(length=50, append=True)
-            df.ta.rsi(length=14, append=True)
-            df.ta.macd(fast=12, slow=26, signal=9, append=True)
-            df.ta.bbands(length=20, std=2.0, append=True)
-            df.ta.supertrend(length=10, multiplier=3.0, append=True)
-            df.ta.stoch(k=14, d=3, smooth_k=3, append=True)
-            df.ta.psar(af0=0.02, af=0.02, max_af=0.2, append=True)
+            # ADX
+            if inds_config.get("adx", {}).get("active"):
+                p = int(inds_config["adx"].get("params", {}).get("period", 14))
+                df.ta.adx(length=p, append=True)
             
-            # 2. Logic Nến Nhật thủ công (Chống spam TA-Lib)
-            O, H, L, C = df['open'], df['high'], df['low'], df['close']
-            body = (C - O).abs()
-            upper_shadow = H - df[['open', 'close']].max(axis=1)
-            lower_shadow = df[['open', 'close']].min(axis=1) - L
+            # EMA Cơ bản
+            if inds_config.get("ema", {}).get("active"):
+                p = int(inds_config["ema"].get("params", {}).get("period", 50))
+                df.ta.ema(length=p, append=True)
             
-            df["CDL_ENGULFING"] = np.where((C > O) & (C.shift(1) < O.shift(1)) & (C > O.shift(1)) & (O < C.shift(1)), 100,
-                                  np.where((C < O) & (C.shift(1) > O.shift(1)) & (C < O.shift(1)) & (O > C.shift(1)), -100, 0))
-            df["CDL_HAMMER"] = np.where((lower_shadow > 2 * body) & (upper_shadow < 0.2 * body) & (C > O), 100, 0)
-            df["CDL_SHOOTINGSTAR"] = np.where((upper_shadow > 2 * body) & (lower_shadow < 0.2 * body) & (C < O), -100, 0)
-            df["CDL_MORNINGSTAR"] = np.where((C.shift(2) < O.shift(2)) & (body.shift(1) < body.shift(2)*0.3) & (C > O) & (C > O.shift(2) + body.shift(2)/2), 100, 0)
-            df["CDL_EVENINGSTAR"] = np.where((C.shift(2) > O.shift(2)) & (body.shift(1) < body.shift(2)*0.3) & (C < O) & (C < O.shift(2) - body.shift(2)/2), -100, 0)
+            # EMA Cross (Cần 2 đường EMA)
+            if inds_config.get("ema_cross", {}).get("active"):
+                f = int(inds_config["ema_cross"].get("params", {}).get("fast", 9))
+                s = int(inds_config["ema_cross"].get("params", {}).get("slow", 21))
+                df.ta.ema(length=f, append=True)
+                df.ta.ema(length=s, append=True)
             
+            # RSI
+            if inds_config.get("rsi", {}).get("active"):
+                p = int(inds_config["rsi"].get("params", {}).get("period", 14))
+                df.ta.rsi(length=p, append=True)
+            
+            # MACD
+            if inds_config.get("macd", {}).get("active"):
+                f = int(inds_config["macd"].get("params", {}).get("fast", 12))
+                s = int(inds_config["macd"].get("params", {}).get("slow", 26))
+                sig = int(inds_config["macd"].get("params", {}).get("signal", 9))
+                df.ta.macd(fast=f, slow=s, signal=sig, append=True)
+            
+            # Bollinger Bands
+            if inds_config.get("bollinger_bands", {}).get("active"):
+                p = int(inds_config["bollinger_bands"].get("params", {}).get("period", 20))
+                std = float(inds_config["bollinger_bands"].get("params", {}).get("std_dev", 2.0))
+                df.ta.bbands(length=p, std=std, append=True)
+            
+            # Supertrend
+            if inds_config.get("supertrend", {}).get("active"):
+                p = int(inds_config["supertrend"].get("params", {}).get("period", 10))
+                m = float(inds_config["supertrend"].get("params", {}).get("multiplier", 3.0))
+                df.ta.supertrend(length=p, multiplier=m, append=True)
+            
+            # Stochastic
+            if inds_config.get("stochastic", {}).get("active"):
+                k = int(inds_config["stochastic"].get("params", {}).get("k", 14))
+                d = int(inds_config["stochastic"].get("params", {}).get("d", 3))
+                sm = int(inds_config["stochastic"].get("params", {}).get("smooth", 3))
+                df.ta.stoch(k=k, d=d, smooth_k=sm, append=True)
+            
+            # Parabolic SAR
+            if inds_config.get("psar", {}).get("active"):
+                step = float(inds_config["psar"].get("params", {}).get("step", 0.02))
+                max_step = float(inds_config["psar"].get("params", {}).get("max_step", 0.2))
+                df.ta.psar(af0=step, af=step, max_af=max_step, append=True)
+
+            # ATR (Dùng làm filter)
+            if inds_config.get("atr", {}).get("active"):
+                p = int(inds_config["atr"].get("params", {}).get("period", 14))
+                df.ta.atr(length=p, append=True)
+            
+            # Nến Nhật (Candle Pattern & Multi Candle)
+            is_candle_active = inds_config.get("candle", {}).get("active")
+            is_mc_active = inds_config.get("multi_candle", {}).get("active")
+            
+            if is_candle_active or is_mc_active:
+                O, H, L, C = df['open'], df['high'], df['low'], df['close']
+                body = (C - O).abs()
+                upper_shadow = H - df[['open', 'close']].max(axis=1)
+                lower_shadow = df[['open', 'close']].min(axis=1) - L
+                
+                df["CDL_ENGULFING"] = np.where((C > O) & (C.shift(1) < O.shift(1)) & (C > O.shift(1)) & (O < C.shift(1)), 100,
+                                      np.where((C < O) & (C.shift(1) > O.shift(1)) & (C < O.shift(1)) & (O > C.shift(1)), -100, 0))
+                df["CDL_HAMMER"] = np.where((lower_shadow > 2 * body) & (upper_shadow < 0.2 * body) & (C > O), 100, 0)
+                df["CDL_SHOOTINGSTAR"] = np.where((upper_shadow > 2 * body) & (lower_shadow < 0.2 * body) & (C < O), -100, 0)
+                df["CDL_MORNINGSTAR"] = np.where((C.shift(2) < O.shift(2)) & (body.shift(1) < body.shift(2)*0.3) & (C > O) & (C > O.shift(2) + body.shift(2)/2), 100, 0)
+                df["CDL_EVENINGSTAR"] = np.where((C.shift(2) > O.shift(2)) & (body.shift(1) < body.shift(2)*0.3) & (C < O) & (C < O.shift(2) - body.shift(2)/2), -100, 0)
+                
         except Exception as e:
             logger.error(f"Lỗi tính toán thư viện pandas-ta: {e}")
             
         return df
 
-    def _fetch_bars(self, symbol, timeframe_val, num_bars):
-        # =========================================================================
-        # [FIX LỖI 1] ÉP KIỂU THÔNG MINH CHO ĐA KHUNG (XỬ LÝ CẢ INT LẪN STR)
-        # =========================================================================
+    def _fetch_bars(self, symbol, timeframe_val, num_bars, inds_config):
         if isinstance(timeframe_val, int):
             tf = timeframe_val
         else:
@@ -95,8 +144,8 @@ class DataEngine:
         df = pd.DataFrame(rates)
         df['time'] = pd.to_datetime(df['time'], unit='s')
         
-        # Áp dụng tính toán toàn bộ Indicator trước khi trả Data về cho SignalGenerator
-        df = self._apply_ta(df)
+        # Chỉ tính những Indicator đang bật
+        df = self._apply_ta(df, inds_config)
         
         return df
 
@@ -131,10 +180,10 @@ class DataEngine:
             current_close = float(df['close'].iloc[-1])
             return current_close * 1.001, current_close * 0.999 
 
-
     def fetch_data_v4(self, symbol):
         """Kéo độc lập 4 chuỗi dữ liệu cho G0, G1, G2, G3 và tính Cản/ATR cho tất cả"""
         settings = self._get_brain_settings()
+        inds_config = settings.get("indicators", {})
         
         tfs = {
             "G0": settings.get("G0_TIMEFRAME", getattr(config, "G0_TIMEFRAME", "1d")),
@@ -144,7 +193,9 @@ class DataEngine:
         }
         
         num_bars = settings.get("NUM_H1_BARS", 100)
-        dfs = {grp: self._fetch_bars(symbol, tf, num_bars) for grp, tf in tfs.items()}
+        
+        # Truyền cấu hình Indicator vào để lọc
+        dfs = {grp: self._fetch_bars(symbol, tf, num_bars, inds_config) for grp, tf in tfs.items()}
         
         if any(df.empty for df in dfs.values()):
             return None, None
@@ -156,7 +207,6 @@ class DataEngine:
             "current_price": current_price
         }
 
-        # Quét và tính Swing/ATR cho toàn bộ G0, G1, G2, G3
         for grp in ["G0", "G1", "G2", "G3"]:
             df_grp = dfs[grp]
             sh, sl = self._calc_swings(df_grp, lookback=15)
@@ -166,7 +216,6 @@ class DataEngine:
             context[f"swing_low_{grp}"] = float(sl)
             context[f"atr_{grp}"] = float(atr)
 
-        # Fallback cho hệ thống cũ khỏi crash
         context["atr_entry"] = context["atr_G2"]
         context["atr_trend"] = context["atr_G1"]
         context["swing_high_entry"] = context["swing_high_G2"]
@@ -179,13 +228,15 @@ class DataEngine:
     def fetch_and_prepare(self, symbol):
         """HÀM CŨ: Phục vụ chạy Bot Daemon bản cũ tránh crash"""
         settings = self._get_brain_settings()
+        inds_config = settings.get("indicators", {})
+        
         tf_entry = settings.get("entry_timeframe", "15m")
         tf_trend = settings.get("trend_timeframe", "1h")
         num_entry = settings.get("NUM_M15_BARS", 100)
         num_trend = settings.get("NUM_H1_BARS", 100)
 
-        df_entry = self._fetch_bars(symbol, tf_entry, num_entry)
-        df_trend = self._fetch_bars(symbol, tf_trend, num_trend)
+        df_entry = self._fetch_bars(symbol, tf_entry, num_entry, inds_config)
+        df_trend = self._fetch_bars(symbol, tf_trend, num_trend, inds_config)
 
         if df_entry.empty or df_trend.empty:
             return None, None, None

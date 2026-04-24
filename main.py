@@ -615,7 +615,7 @@ class BotUI(ctk.CTk):
         
         if "PnL: +$" in msg or "SUCCESS" in msg or "Húp" in msg:
             tag = "SUCCESS"
-        elif "PnL: -$" in msg or error or "ERR" in msg or "FAIL" in msg:
+        elif "PnL: $-" in msg or error or "ERR" in msg or "FAIL" in msg:
             tag = "ERROR"
         elif "Đóng lệnh" in msg:
             tag = "INFO"  # Lệnh hòa vốn ($0.00) thì màu xám

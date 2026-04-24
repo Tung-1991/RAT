@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # FILE: ui_bot_strategy.py
-# V4.1: UNIFIED BOT STRATEGY UI - DYNAMIC SL & TACTIC SELECTOR (KAISER EDITION)
+# V4.2: UNIFIED BOT STRATEGY UI - DYNAMIC MACRO & MULTI-GROUP (KAISER EDITION)
 
 import customtkinter as ctk
 import json
@@ -15,8 +15,8 @@ TEMPLATE_DIR = "data/templates"
 class BotStrategyUI(ctk.CTkToplevel):
     def __init__(self, master=None):
         super().__init__(master)
-        self.title("🧠 V4.1 Bot Strategy Sandbox (Dynamic Risk & Pipeline)")
-        self.geometry("1100x800")
+        self.title("🧠 V4.2 Bot Strategy Sandbox (Dynamic Trend & Multi-Group)")
+        self.geometry("1150x800")
         self.attributes("-topmost", True)
         self.focus_force()
 
@@ -46,9 +46,9 @@ class BotStrategyUI(ctk.CTkToplevel):
             },
             "risk_tsl": {
                 "base_risk": getattr(config, "BOT_RISK_PERCENT", 0.3),
-                "base_sl": "entry", # Thêm thuộc tính chọn nguồn cắm SL (entry/trend)
+                "base_sl": "G2", 
                 "tsl_mode": getattr(config, "TSL_LOGIC_MODE", "STATIC"),
-                "bot_tsl": getattr(config, "BOT_DEFAULT_TSL", "BE+STEP_R+SWING"), # Thêm thuộc tính Tactic
+                "bot_tsl": getattr(config, "BOT_DEFAULT_TSL", "BE+STEP_R+SWING"), 
                 "mode_multipliers": {"TREND": 1.0, "RANGE": 0.5, "BREAKOUT": 1.5, "EXHAUSTION": 1.0, "ANY": 1.0}
             },
             "indicators": getattr(config, "SANDBOX_CONFIG", {}).get("indicators", {}),
@@ -73,8 +73,12 @@ class BotStrategyUI(ctk.CTkToplevel):
                         
                     if "indicators" in saved_data:
                         for k, v in saved_data["indicators"].items():
-                            if k in base_data["indicators"]:
-                                base_data["indicators"][k].update(v)
+                            if k not in base_data["indicators"]:
+                                base_data["indicators"][k] = {}
+                            base_data["indicators"][k].update(v)
+                            # Tương thích ngược: Đổi 'group' cũ thành 'groups' mảng
+                            if "group" in v and "groups" not in v:
+                                base_data["indicators"][k]["groups"] = [v["group"]]
                                 
                     if "dca_config" in saved_data: base_data["dca_config"].update(saved_data["dca_config"])
                     if "pca_config" in saved_data: base_data["pca_config"].update(saved_data["pca_config"])
@@ -109,36 +113,59 @@ class BotStrategyUI(ctk.CTkToplevel):
         scroll_frame = ctk.CTkScrollableFrame(self.tab_inds)
         scroll_frame.pack(fill="both", expand=True, padx=5, pady=5)
 
-        headers = ["Chỉ báo", "Kích hoạt", "Nhóm", "Chế độ (Mode)", "Trigger Mode", "Thông số"]
+        # Cập nhật Header theo Rule V4.2 mới
+        headers = ["Chỉ báo", "ON", "Nhóm (Đa chọn)", "Tính Trend", "Vai trò Macro", "Chạy khi (Mode)", "Trigger Mode", "Thông số"]
         for col, h in enumerate(headers):
-            ctk.CTkLabel(scroll_frame, text=h, font=("Roboto", 13, "bold")).grid(row=0, column=col, padx=15, pady=5, sticky="w")
+            ctk.CTkLabel(scroll_frame, text=h, font=("Roboto", 12, "bold")).grid(row=0, column=col, padx=5, pady=5, sticky="w")
 
         row = 1
         inds_data = self.brain_data.get("indicators", {})
         
         for ind_name, cfg in inds_data.items():
-            ctk.CTkLabel(scroll_frame, text=ind_name.upper(), font=("Roboto", 12, "bold"), text_color="#90CAF9").grid(row=row, column=0, padx=15, pady=5, sticky="w")
+            ctk.CTkLabel(scroll_frame, text=ind_name.upper(), font=("Roboto", 12, "bold"), text_color="#90CAF9").grid(row=row, column=0, padx=5, pady=5, sticky="w")
             
+            # Kích hoạt
             active_var = ctk.BooleanVar(value=cfg.get("active", False))
-            ctk.CTkCheckBox(scroll_frame, text="ON", variable=active_var, width=50).grid(row=row, column=1, padx=15, pady=5, sticky="w")
+            ctk.CTkCheckBox(scroll_frame, text="", variable=active_var, width=30).grid(row=row, column=1, padx=5, pady=5, sticky="w")
             
-            group_var = ctk.StringVar(value=cfg.get("group", "G2"))
-            ctk.CTkComboBox(scroll_frame, values=["G0", "G1", "G2", "G3"], variable=group_var, width=70).grid(row=row, column=2, padx=15, pady=5, sticky="w")
+            # Multi-Group Checkboxes (G0-G3)
+            f_groups = ctk.CTkFrame(scroll_frame, fg_color="transparent")
+            f_groups.grid(row=row, column=2, padx=5, pady=5, sticky="w")
             
+            grp_vars = {}
+            saved_groups = cfg.get("groups", [cfg.get("group", "G2")]) 
+            for g in ["G0", "G1", "G2", "G3"]:
+                g_var = ctk.BooleanVar(value=(g in saved_groups))
+                ctk.CTkCheckBox(f_groups, text=g, variable=g_var, width=40, font=("Roboto", 11)).pack(side="left", padx=2)
+                grp_vars[g] = g_var
+                
+            # Tính Trend (La bàn xu hướng)
+            is_trend_var = ctk.BooleanVar(value=cfg.get("is_trend", False))
+            ctk.CTkCheckBox(scroll_frame, text="Trend", variable=is_trend_var, width=50, text_color="#FFD700").grid(row=row, column=3, padx=5, pady=5, sticky="w")
+            
+            # Vai trò Macro (Thay thế ADX Hardcode)
+            macro_role_var = ctk.StringVar(value=cfg.get("macro_role", "NONE"))
+            ctk.CTkComboBox(scroll_frame, values=["NONE", "BASE", "BREAKOUT", "EXHAUSTION"], variable=macro_role_var, width=110).grid(row=row, column=4, padx=5, pady=5, sticky="w")
+
+            # Mode hoạt động
             modes_list = cfg.get("active_modes", ["ANY"])
             mode_var = ctk.StringVar(value=modes_list[0] if modes_list else "ANY")
-            ctk.CTkComboBox(scroll_frame, values=["ANY", "TREND", "RANGE", "BREAKOUT", "EXHAUSTION"], variable=mode_var, width=110).grid(row=row, column=3, padx=15, pady=5, sticky="w")
+            ctk.CTkComboBox(scroll_frame, values=["ANY", "TREND", "RANGE", "BREAKOUT", "EXHAUSTION"], variable=mode_var, width=100).grid(row=row, column=5, padx=5, pady=5, sticky="w")
 
+            # Trigger Mode
             trigger_mode_var = ctk.StringVar(value=cfg.get("trigger_mode", "STRICT_CLOSE"))
-            ctk.CTkComboBox(scroll_frame, values=["STRICT_CLOSE", "REALTIME_TICK"], variable=trigger_mode_var, width=130).grid(row=row, column=4, padx=15, pady=5, sticky="w")
+            ctk.CTkComboBox(scroll_frame, values=["STRICT_CLOSE", "REALTIME_TICK"], variable=trigger_mode_var, width=120).grid(row=row, column=6, padx=5, pady=5, sticky="w")
 
-            btn_cfg = ctk.CTkButton(scroll_frame, text="⚙️ Cài đặt", width=80, fg_color="#424242", hover_color="#616161",
+            # Nút Cài đặt Thông số
+            btn_cfg = ctk.CTkButton(scroll_frame, text="⚙️ Cài đặt", width=70, fg_color="#424242", hover_color="#616161",
                                     command=lambda n=ind_name: self.open_ind_setting(n))
-            btn_cfg.grid(row=row, column=5, padx=15, pady=5)
+            btn_cfg.grid(row=row, column=7, padx=5, pady=5)
 
             self.ind_widgets[ind_name] = {
                 "active_var": active_var,
-                "group_var": group_var,
+                "grp_vars": grp_vars,
+                "is_trend_var": is_trend_var,
+                "macro_role_var": macro_role_var,
                 "mode_var": mode_var,
                 "trigger_mode_var": trigger_mode_var,
                 "params": cfg.get("params", {}) 
@@ -154,7 +181,6 @@ class BotStrategyUI(ctk.CTkToplevel):
         top_frame = ctk.CTkFrame(self.tab_rules, fg_color="transparent")
         top_frame.pack(fill="x", padx=10, pady=5)
 
-        # 1. Master Mode Setting
         ctk.CTkLabel(top_frame, text="Chế độ phân xử (Master Mode):", font=("Roboto", 12, "bold")).grid(row=0, column=0, padx=5, pady=5, sticky="w")
         self.master_eval_var = ctk.StringVar(value=self.brain_data.get("MASTER_EVAL_MODE", "VETO"))
         ctk.CTkComboBox(top_frame, values=["VETO", "VOTING"], variable=self.master_eval_var, width=100).grid(row=0, column=1, padx=5, pady=5)
@@ -163,7 +189,6 @@ class BotStrategyUI(ctk.CTkToplevel):
         self.min_votes_var = ctk.StringVar(value=str(self.brain_data.get("MIN_MATCHING_VOTES", 3)))
         ctk.CTkEntry(top_frame, textvariable=self.min_votes_var, width=60, justify="center").grid(row=0, column=3, padx=5, pady=5)
 
-        # 2. Timeframe Settings
         tf_frame = ctk.CTkFrame(self.tab_rules, fg_color="#1E1E1E", corner_radius=8)
         tf_frame.pack(fill="x", padx=10, pady=10)
         
@@ -176,7 +201,6 @@ class BotStrategyUI(ctk.CTkToplevel):
             ctk.CTkComboBox(tf_frame, values=tfs_options, variable=tf_var, width=70).grid(row=1, column=idx*2+1, padx=5, pady=10)
             self.tf_vars[grp] = tf_var
 
-        # 3. Voting Rules for G0-G3
         scroll_rules = ctk.CTkScrollableFrame(self.tab_rules)
         scroll_rules.pack(fill="both", expand=True, padx=10, pady=5)
 
@@ -212,25 +236,21 @@ class BotStrategyUI(ctk.CTkToplevel):
     def _build_risk_tab(self):
         risk_data = self.brain_data.get("risk_tsl", {})
         
-        # --- DÒNG 1: QUẢN LÝ VỐN ---
         f_base = ctk.CTkFrame(self.tab_risk, fg_color="transparent")
         f_base.pack(fill="x", padx=20, pady=(15, 5))
         ctk.CTkLabel(f_base, text="BOT BASE RISK (% Cắt lỗ/Lệnh):", font=("Roboto", 13, "bold"), text_color="#E040FB").pack(side="left")
         self.var_base_risk = ctk.StringVar(value=str(risk_data.get("base_risk", 0.3)))
         ctk.CTkEntry(f_base, textvariable=self.var_base_risk, width=80, justify="center").pack(side="left", padx=15)
         
-        # --- NGUỒN CẮM SL (Bản V4.2 - Chuẩn G0-G3) ---
         f_base_sl = ctk.CTkFrame(self.tab_risk, fg_color="transparent")
         f_base_sl.pack(fill="x", padx=20, pady=5)
         ctk.CTkLabel(f_base_sl, text="NGUỒN CẮM SL:", font=("Roboto", 13, "bold"), text_color="#FF3D00").pack(side="left")
         
-        # Tự động sửa "entry" cũ thành "G2" để hiển thị cho đúng
         cur_sl = risk_data.get("base_sl", "G2")
         if cur_sl == "entry": cur_sl = "G2"
         self.var_base_sl = ctk.StringVar(value=cur_sl)
         ctk.CTkComboBox(f_base_sl, values=["G0", "G1", "G2", "G3"], variable=self.var_base_sl, width=100).pack(side="left", padx=15)
 
-        # --- BOT TSL TACTICS (Bản V4.2 - NÚT BẤM TOGGLE) ---
         ctk.CTkLabel(self.tab_risk, text="BOT TSL TACTICS:", font=("Roboto", 13, "bold"), text_color="#00C853").pack(anchor="w", padx=20, pady=(10, 0))
         f_tactic_btns = ctk.CTkFrame(self.tab_risk, fg_color="transparent")
         f_tactic_btns.pack(fill="x", padx=20, pady=5)
@@ -238,15 +258,12 @@ class BotStrategyUI(ctk.CTkToplevel):
         self.bot_tactic_vars = {}
         current_tactic_str = risk_data.get("bot_tsl", "BE+STEP_R+SWING")
         
-        # Tạo bộ nút bấm cho Ngài chọn, đéo cần gõ tay nữa
         for t in ["BE", "PNL", "STEP_R", "SWING"]:
             is_active = (t in current_tactic_str)
             var = ctk.BooleanVar(value=is_active)
             ctk.CTkCheckBox(f_tactic_btns, text=t, variable=var, font=("Roboto", 12, "bold"), width=80).pack(side="left", padx=10)
             self.bot_tactic_vars[t] = var
 
-
-        # --- DÒNG 4: TSL LOGIC MODE ---
         f_tsl = ctk.CTkFrame(self.tab_risk, fg_color="transparent")
         f_tsl.pack(fill="x", padx=20, pady=5)
         ctk.CTkLabel(f_tsl, text="TSL LOGIC MODE (Bám đuôi):", font=("Roboto", 13, "bold"), text_color="#29B6F6").pack(side="left")
@@ -256,7 +273,6 @@ class BotStrategyUI(ctk.CTkToplevel):
         ctk.CTkFrame(self.tab_risk, height=2, fg_color="#333").pack(fill="x", padx=20, pady=15)
         ctk.CTkLabel(self.tab_risk, text="DYNAMIC RISK MULTIPLIERS (Hệ số rủi ro theo Market Mode)", font=("Roboto", 13, "bold"), text_color="#FFB300").pack(anchor="w", padx=20, pady=5)
 
-        # --- DÒNG 5: HỆ SỐ RISK ---
         f_mult = ctk.CTkFrame(self.tab_risk, fg_color="#2b2b2b", corner_radius=8)
         f_mult.pack(fill="x", padx=20)
         
@@ -306,9 +322,14 @@ class BotStrategyUI(ctk.CTkToplevel):
         new_inds = {}
         for ind_name, widgets in self.ind_widgets.items():
             mode_val = widgets["mode_var"].get()
+            # Trích xuất mảng các Group được chọn
+            selected_groups = [g for g, var in widgets["grp_vars"].items() if var.get()]
+            
             new_inds[ind_name] = {
                 "active": widgets["active_var"].get(),
-                "group": widgets["group_var"].get(),
+                "groups": selected_groups, 
+                "is_trend": widgets["is_trend_var"].get(),
+                "macro_role": widgets["macro_role_var"].get(),
                 "active_modes": [mode_val] if mode_val != "ANY" else ["ANY"], 
                 "trigger_mode": widgets["trigger_mode_var"].get(),
                 "params": widgets["params"]
@@ -360,7 +381,7 @@ class BotStrategyUI(ctk.CTkToplevel):
             config.BOT_RISK_PERCENT = output_data["risk_tsl"]["base_risk"]
             config.TSL_LOGIC_MODE = output_data["risk_tsl"]["tsl_mode"]
 
-            messagebox.showinfo("Thành công", "Đã lưu Brain Settings.\nBot Daemon sẽ tự động Hot-Reload theo Pipeline V4.1!")
+            messagebox.showinfo("Thành công", "Đã lưu Brain Settings.\nBot Daemon sẽ tự động Hot-Reload theo Pipeline V4.2!")
             self.destroy()
         except Exception as e:
             messagebox.showerror("Lỗi", f"Không thể lưu cấu hình:\n{e}")

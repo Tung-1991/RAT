@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # FILE: config.py
-# V4.1: UNIFIED CONFIG - DYNAMIC MACRO & BOT SL (KAISER EDITION)
+# V4.2: UNIFIED CONFIG - LEGO MASTER & MULTI-GROUP (KAISER EDITION)
 
 import os
 import MetaTrader5 as mt5
@@ -71,7 +71,7 @@ PRESETS = {
 BOT_RISK_PERCENT = 0.30             
 BOT_TP_RR_RATIO = 1.5               
 BOT_DEFAULT_TSL = "BE+STEP_R+SWING" 
-BOT_BASE_SL = "entry"               
+BOT_BASE_SL = "G2"               # Đã cập nhật từ 'entry' sang 'G2'
 BOT_DAILY_TRADE_LIMIT = 10          
 BOT_BYPASS_CHECKLIST = False
 
@@ -95,25 +95,23 @@ trail_atr_buffer = 0.2
 be_atr_buffer = 0.8             
 
 # ==============================================================================
-# 7. BỘ NÃO PHÂN TÍCH (SANDBOX V4.1 DEFAULTS)
+# 7. BỘ NÃO PHÂN TÍCH V4.2 (LEGO MASTER DEFAULTS)
 # ==============================================================================
-trend_timeframe = "1h"              
-entry_timeframe = "15m"             
-NUM_H1_BARS, NUM_M15_BARS = 70, 70  
+NUM_H1_BARS, NUM_M15_BARS = 100, 100  
 COOLDOWN_MINUTES = 1                
 AUTO_TRADE_ENABLED = False          
 DAEMON_LOOP_DELAY = 15
-
 sl_atr_multiplier = 0.2             
 
 MASTER_STRATEGY = "QUANT" 
 MASTER_EVAL_MODE = "VETO" 
 MIN_MATCHING_VOTES = 3
 
-G0_TIMEFRAME = mt5.TIMEFRAME_D1
-G1_TIMEFRAME = mt5.TIMEFRAME_H1
-G2_TIMEFRAME = mt5.TIMEFRAME_M15
-G3_TIMEFRAME = mt5.TIMEFRAME_M15
+# Chuyển đổi hằng số MT5 sang String để DataEngine tự Map
+G0_TIMEFRAME = "1d"
+G1_TIMEFRAME = "1h"
+G2_TIMEFRAME = "15m"
+G3_TIMEFRAME = "15m"
 
 SANDBOX_CONFIG = {
     "voting_rules": {
@@ -123,27 +121,76 @@ SANDBOX_CONFIG = {
         "G3": {"max_opposite": 0, "max_none": 1, "master_rule": "IGNORE"}
     },
     "indicators": {
-        "adx": {"active": True, "group": "G0", "active_modes": ["ANY"], "params": {"period": 14, "strong": 23}, "trigger_mode": "STRICT_CLOSE"},
-        "ema": {"active": True, "group": "G0", "active_modes": ["ANY"], "params": {"period": 50}, "trigger_mode": "REALTIME_TICK"},
-        "swing_point": {"active": True, "group": "G1", "active_modes": ["ANY"], "params": {}, "trigger_mode": "REALTIME_TICK"},
-        "atr": {"active": True, "group": "G1", "active_modes": ["ANY"], "params": {"period": 14, "multiplier": 1.5}, "trigger_mode": "REALTIME_TICK"},
-        "pivot_points": {"active": False, "group": "G3", "active_modes": ["ANY"], "params": {}, "trigger_mode": "REALTIME_TICK"},
-        "ema_cross": {"active": False, "group": "G2", "active_modes": ["TREND", "BREAKOUT"], "params": {"fast": 9, "slow": 21}, "trigger_mode": "STRICT_CLOSE"},
-        "volume": {"active": True, "group": "G2", "active_modes": ["BREAKOUT"], "params": {"period": 20, "multiplier": 1.1}, "trigger_mode": "STRICT_CLOSE"},
-        "supertrend": {"active": True, "group": "G2", "active_modes": ["TREND"], "params": {"period": 10, "multiplier": 3.0}, "trigger_mode": "REALTIME_TICK"},
-        "psar": {"active": False, "group": "G2", "active_modes": ["TREND"], "params": {"step": 0.02, "max_step": 0.2}, "trigger_mode": "REALTIME_TICK"},
-        "bollinger_bands": {"active": False, "group": "G2", "active_modes": ["RANGE"], "params": {"period": 20, "std_dev": 2.0}, "trigger_mode": "REALTIME_TICK"},
-        "fibonacci": {"active": False, "group": "G2", "active_modes": ["RANGE", "EXHAUSTION"], "params": {"tolerance": 0.001}, "trigger_mode": "REALTIME_TICK"},
-        "rsi": {"active": False, "group": "G2", "active_modes": ["RANGE"], "params": {"period": 14, "upper": 70, "lower": 30}, "trigger_mode": "STRICT_CLOSE"},
-        "stochastic": {"active": False, "group": "G2", "active_modes": ["RANGE"], "params": {"k": 14, "d": 3, "smooth": 3, "upper": 80, "lower": 20}, "trigger_mode": "STRICT_CLOSE"},
-        "macd": {"active": False, "group": "G2", "active_modes": ["EXHAUSTION"], "params": {"fast": 12, "slow": 26, "signal": 9}, "trigger_mode": "STRICT_CLOSE"},
-        "multi_candle": {"active": True, "group": "G3", "active_modes": ["EXHAUSTION"], "params": {}, "trigger_mode": "STRICT_CLOSE"},
-        "candle": {"active": False, "group": "G3", "active_modes": ["ANY"], "params": {}, "trigger_mode": "STRICT_CLOSE"}
+        # Bổ sung groups: [], is_trend, macro_role cho toàn bộ Indicator
+        "adx": {
+            "active": True, "groups": ["G0"], "is_trend": False, "macro_role": "BREAKOUT", 
+            "active_modes": ["ANY"], "params": {"period": 14, "strong": 23}, "trigger_mode": "STRICT_CLOSE"
+        },
+        "ema": {
+            "active": True, "groups": ["G0"], "is_trend": True, "macro_role": "BASE", 
+            "active_modes": ["ANY"], "params": {"period": 50}, "trigger_mode": "REALTIME_TICK"
+        },
+        "swing_point": {
+            "active": True, "groups": ["G1"], "is_trend": False, "macro_role": "NONE", 
+            "active_modes": ["ANY"], "params": {"lookback": 50, "strength": 2, "atr_buffer": 0.5}, "trigger_mode": "REALTIME_TICK"
+        },
+        "atr": {
+            "active": True, "groups": ["G1"], "is_trend": False, "macro_role": "NONE", 
+            "active_modes": ["ANY"], "params": {"period": 14, "multiplier": 1.5}, "trigger_mode": "REALTIME_TICK"
+        },
+        "pivot_points": {
+            "active": False, "groups": ["G3"], "is_trend": False, "macro_role": "NONE", 
+            "active_modes": ["ANY"], "params": {}, "trigger_mode": "REALTIME_TICK"
+        },
+        "ema_cross": {
+            "active": False, "groups": ["G2"], "is_trend": False, "macro_role": "NONE", 
+            "active_modes": ["TREND"], "params": {"fast": 9, "slow": 21}, "trigger_mode": "STRICT_CLOSE"
+        },
+        "volume": {
+            "active": True, "groups": ["G2"], "is_trend": False, "macro_role": "BREAKOUT", 
+            "active_modes": ["BREAKOUT"], "params": {"period": 20, "multiplier": 1.1}, "trigger_mode": "STRICT_CLOSE"
+        },
+        "supertrend": {
+            "active": True, "groups": ["G2"], "is_trend": True, "macro_role": "NONE", 
+            "active_modes": ["TREND"], "params": {"period": 10, "multiplier": 3.0}, "trigger_mode": "REALTIME_TICK"
+        },
+        "psar": {
+            "active": False, "groups": ["G2"], "is_trend": False, "macro_role": "NONE", 
+            "active_modes": ["TREND"], "params": {"step": 0.02, "max_step": 0.2}, "trigger_mode": "REALTIME_TICK"
+        },
+        "bollinger_bands": {
+            "active": False, "groups": ["G2"], "is_trend": False, "macro_role": "NONE", 
+            "active_modes": ["RANGE"], "params": {"period": 20, "std_dev": 2.0}, "trigger_mode": "REALTIME_TICK"
+        },
+        "fibonacci": {
+            "active": False, "groups": ["G2"], "is_trend": False, "macro_role": "NONE", 
+            "active_modes": ["RANGE"], "params": {"tolerance": 0.001}, "trigger_mode": "REALTIME_TICK"
+        },
+        "rsi": {
+            "active": False, "groups": ["G2"], "is_trend": False, "macro_role": "NONE", 
+            "active_modes": ["RANGE"], "params": {"period": 14, "upper": 70, "lower": 30}, "trigger_mode": "STRICT_CLOSE"
+        },
+        "stochastic": {
+            "active": False, "groups": ["G2"], "is_trend": False, "macro_role": "NONE", 
+            "active_modes": ["RANGE"], "params": {"k": 14, "d": 3, "smooth": 3, "upper": 80, "lower": 20}, "trigger_mode": "STRICT_CLOSE"
+        },
+        "macd": {
+            "active": False, "groups": ["G2"], "is_trend": False, "macro_role": "NONE", 
+            "active_modes": ["EXHAUSTION"], "params": {"fast": 12, "slow": 26, "signal": 9}, "trigger_mode": "STRICT_CLOSE"
+        },
+        "multi_candle": {
+            "active": True, "groups": ["G3"], "is_trend": False, "macro_role": "NONE", 
+            "active_modes": ["EXHAUSTION"], "params": {"num_candles": 3, "min_total_pips": 50}, "trigger_mode": "STRICT_CLOSE"
+        },
+        "candle": {
+            "active": False, "groups": ["G3"], "is_trend": False, "macro_role": "NONE", 
+            "active_modes": ["ANY"], "params": {"min_body_size": 1.2, "check_volume": True}, "trigger_mode": "STRICT_CLOSE"
+        }
     }
 }
 
 # ==============================================================================
-# 8. TÍNH NĂNG NHỒI LỆNH (AUTO DCA/PCA - PARENT/CHILD BASKET)
+# 8. TÍNH NĂNG NHỒI LỆNH (AUTO DCA/PCA)
 # ==============================================================================
 DCA_CONFIG = {
     "ENABLED": False,               
@@ -155,5 +202,5 @@ PCA_CONFIG = {
     "ENABLED": False,               
     "MAX_STEPS": 2,                 
     "STEP_MULTIPLIER": 0.5,         
-    "CONFIRM_ADX": 23               
+    "DISTANCE_ATR_R": 1.5           
 }
