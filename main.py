@@ -344,9 +344,7 @@ class BotUI(ctk.CTk):
                 atr_str = f"{atr:.2f}" if isinstance(atr, (int, float)) and atr > 0 else "--"
                 
                 m_color = COL_GREEN if tr == "UP" else (COL_RED if tr == "DOWN" else "#78909C")
-                self.lbl_market_context.configure(text=f"Trend: {tr} | SHigh: {sh_str} | SLow: {sl_str} | ATR: {atr_str}", text_color=m_color)
-        else:
-            self.lbl_market_context.configure(text="Syncing MT5 Data...", text_color="#FFA500")
+                self.lbl_market_context.configure(text=f"Tr: {tr} | H: {sh_str} | L: {sl_str} | ATR: {atr_str}", text_color=m_color)
 
         d = self.seg_direction.get()
         self.var_direction.set(d)

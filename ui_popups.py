@@ -70,12 +70,11 @@ def open_bot_setting_popup(app):
     ctk.CTkLabel(f_safety, text="Cooldown (Phút):").grid(row=2, column=2, sticky="w", padx=10, pady=8)
     e_cooldown = ctk.CTkEntry(f_safety, width=70, justify="center"); e_cooldown.insert(0, str(getattr(config, "COOLDOWN_MINUTES", 1))); e_cooldown.grid(row=2, column=3, sticky="w", padx=10, pady=8)
 
-    ctk.CTkLabel(f_safety, text="Số nến H1 (Quét):").grid(row=3, column=0, sticky="w", padx=10, pady=8)
+    ctk.CTkLabel(f_safety, text="Nến Trend (G0/G1):").grid(row=3, column=0, sticky="w", padx=10, pady=8)
     e_num_h1 = ctk.CTkEntry(f_safety, width=70, justify="center"); e_num_h1.insert(0, str(getattr(config, "NUM_H1_BARS", 70))); e_num_h1.grid(row=3, column=1, sticky="w", padx=10, pady=8)
 
-    ctk.CTkLabel(f_safety, text="Số nến M15 (Quét):").grid(row=3, column=2, sticky="w", padx=10, pady=8)
+    ctk.CTkLabel(f_safety, text="Nến Entry (G2/G3):").grid(row=3, column=2, sticky="w", padx=10, pady=8)
     e_num_m15 = ctk.CTkEntry(f_safety, width=70, justify="center"); e_num_m15.insert(0, str(getattr(config, "NUM_M15_BARS", 70))); e_num_m15.grid(row=3, column=3, sticky="w", padx=10, pady=8)
-
     ctk.CTkFrame(tab_core, height=2, fg_color="#333").pack(fill="x", padx=30, pady=10)
 
     # Watchlist

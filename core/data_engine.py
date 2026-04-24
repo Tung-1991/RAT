@@ -48,10 +48,8 @@ class DataEngine:
         if df is None or df.empty: 
             return df
         try:
-            # 1. Bắt buộc tính ADX để phục vụ Market Mode Filter
+            # 1. Indicator Cơ bản
             df.ta.adx(length=14, append=True)
-            
-            # 2. Tính các chỉ báo mặc định cho G0, G1, G2, G3
             df.ta.ema(length=9, append=True)
             df.ta.ema(length=21, append=True)
             df.ta.ema(length=50, append=True)
@@ -62,10 +60,18 @@ class DataEngine:
             df.ta.stoch(k=14, d=3, smooth_k=3, append=True)
             df.ta.psar(af0=0.02, af=0.02, max_af=0.2, append=True)
             
-            # 3. Tính toán các mô hình nến Nhật (Multi-Candle)
-            try:
-                df.ta.cdl_pattern(name=["engulfing", "hammer", "shootingstar", "morningstar", "eveningstar"], append=True)
-            except: pass
+            # 2. Logic Nến Nhật thủ công (Chống spam TA-Lib)
+            O, H, L, C = df['open'], df['high'], df['low'], df['close']
+            body = (C - O).abs()
+            upper_shadow = H - df[['open', 'close']].max(axis=1)
+            lower_shadow = df[['open', 'close']].min(axis=1) - L
+            
+            df["CDL_ENGULFING"] = np.where((C > O) & (C.shift(1) < O.shift(1)) & (C > O.shift(1)) & (O < C.shift(1)), 100,
+                                  np.where((C < O) & (C.shift(1) > O.shift(1)) & (C < O.shift(1)) & (O > C.shift(1)), -100, 0))
+            df["CDL_HAMMER"] = np.where((lower_shadow > 2 * body) & (upper_shadow < 0.2 * body) & (C > O), 100, 0)
+            df["CDL_SHOOTINGSTAR"] = np.where((upper_shadow > 2 * body) & (lower_shadow < 0.2 * body) & (C < O), -100, 0)
+            df["CDL_MORNINGSTAR"] = np.where((C.shift(2) < O.shift(2)) & (body.shift(1) < body.shift(2)*0.3) & (C > O) & (C > O.shift(2) + body.shift(2)/2), 100, 0)
+            df["CDL_EVENINGSTAR"] = np.where((C.shift(2) > O.shift(2)) & (body.shift(1) < body.shift(2)*0.3) & (C < O) & (C < O.shift(2) - body.shift(2)/2), -100, 0)
             
         except Exception as e:
             logger.error(f"Lỗi tính toán thư viện pandas-ta: {e}")
