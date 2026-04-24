@@ -251,7 +251,7 @@ class TradeManager:
                 for ticket in closed_tickets:
                     s_ticket = str(ticket)
                     
-                    # QUÉT LỊCH SỬ DEALS ĐỂ LẤY PNL THỰC TẾ
+                # QUÉT LỊCH SỬ DEALS ĐỂ LẤY PNL THỰC TẾ
                     deals = mt5.history_deals_get(time_from, time_to, position=ticket)
                     if deals:
                         deal_out = [d for d in deals if d.entry == mt5.DEAL_ENTRY_OUT]
@@ -263,9 +263,14 @@ class TradeManager:
                             self.state["trades_today_count"] += 1
                             if real_pnl < 0: self.state["daily_loss_count"] += 1
                             
-                            append_trade_log(ticket, d_out.symbol, "CLOSED", d_out.volume, real_pnl, "SL/TP/Manual")
-                            self.log(f"Đã đóng lệnh #{ticket} | PnL: ${real_pnl:.2f}")
-
+                            # Xác định chiều lệnh gốc (Đóng bằng Deal SELL -> Lệnh gốc là BUY)
+                            pos_type_str = "BUY" if d_out.type == mt5.DEAL_TYPE_SELL else "SELL"
+                            pnl_sign = "+" if real_pnl >= 0 else ""
+                            
+                            # Lưu vào History và bắn Log chuẩn xác ra UI
+                            append_trade_log(ticket, d_out.symbol, pos_type_str, d_out.volume, real_pnl, "Closed")
+                            self.log(f"[DỌN DẸP] Đóng lệnh {pos_type_str} {d_out.symbol} #{ticket} | Vol: {d_out.volume:.2f} | PnL: {pnl_sign}${real_pnl:.2f}")
+                    
                     # Xóa Tracking
                     if ticket in self.state["active_trades"]: self.state["active_trades"].remove(ticket)
                     if s_ticket in self.state.get("trade_tactics", {}): del self.state["trade_tactics"][s_ticket]

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # FILE: ui_panels.py
-# V8.4: STATIC UI PANELS - MULTI-TF DASHBOARD SELECTOR (KAISER EDITION)
+# V8.4.1: UPDATED UI PANELS - OPTIMIZED TOP HEADER & CONTEXT PREVIEW (KAISER EDITION)
 
 import customtkinter as ctk
 import tkinter as tk
@@ -27,24 +27,28 @@ COL_BOT_TAG = "#E040FB"
 def setup_left_panel(app, parent):
     """Xây dựng toàn bộ thanh điều khiển bên trái"""
     
-    # 1. TOP HEADER (Equity & Info)
+    # 1. TOP HEADER (Equity & Info) - TỐI ƯU KHÔNG GIAN CỘT (V8.4.1 FIX)
     f_top = ctk.CTkFrame(parent, fg_color="#1a1a1a", corner_radius=8)
-    f_top.pack(fill="x", pady=(5, 10), padx=5)
-    
+    f_top.pack(fill="x", pady=(5, 5), padx=5)
+    f_top.columnconfigure(0, weight=1)
+    f_top.columnconfigure(1, weight=1)
+
+    # Cột trái: Equity & Today PnL
     app.lbl_equity = ctk.CTkLabel(f_top, text="$----", font=FONT_EQUITY, text_color=COL_GREEN)
-    app.lbl_equity.pack(pady=(15, 0))
-    
+    app.lbl_equity.grid(row=0, column=0, sticky="w", padx=10, pady=(5, 0))
+
     f_pnl = ctk.CTkFrame(f_top, fg_color="transparent")
-    f_pnl.pack(pady=(0, 5))
+    f_pnl.grid(row=1, column=0, sticky="w", padx=5, pady=(0, 5))
     app.lbl_stats = ctk.CTkLabel(f_pnl, text="Today: $0.00", font=FONT_PNL, text_color="white")
     app.lbl_stats.pack(side="left", padx=5)
     ctk.CTkButton(f_pnl, text="⟳", width=30, height=20, fg_color="#333", hover_color="#444", command=app.reset_daily_stats).pack(side="left", padx=5)
 
+    # Cột phải: ID/Server & Brain Status
     app.lbl_acc_info = ctk.CTkLabel(f_top, text="ID: --- | Server: ---", font=("Roboto", 10), text_color="gray")
-    app.lbl_acc_info.pack(pady=(0, 5))
-    
+    app.lbl_acc_info.grid(row=0, column=1, sticky="e", padx=10, pady=(10, 0))
+
     app.lbl_brain_status = ctk.CTkLabel(f_top, text="🧠 BRAIN: CHỜ KẾT NỐI...", font=("Roboto", 11, "bold"), text_color="#FF8F00")
-    app.lbl_brain_status.pack(pady=(0, 10))
+    app.lbl_brain_status.grid(row=1, column=1, sticky="e", padx=10, pady=(0, 10))
 
     # 2. SETTINGS PANEL (Coin, Mode, Tactic)
     f_set = ctk.CTkFrame(parent, fg_color="transparent")
@@ -139,44 +143,30 @@ def setup_left_panel(app, parent):
     make_inp(f_input, "TP (Price)", app.var_manual_tp, 1)
     make_inp(f_input, "SL (Price)", app.var_manual_sl, 2)
 
-    # --- PHẦN ĐÃ FIX: MULTI-TF CONTEXT PREVIEW (V4.2) ---
+    # --- PHẦN ĐÃ FIX: MULTI-TF CONTEXT PREVIEW (V8.4.1) ---
     f_context = ctk.CTkFrame(parent, fg_color="#1E1E1E", corner_radius=6) 
     f_context.pack(fill="x", padx=5, pady=(5, 5))
     
-    app.var_dashboard_tf = tk.StringVar(value="G1")
-    app.cbo_dashboard_tf = ctk.CTkOptionMenu(f_context, values=["G0", "G1", "G2", "G3"], 
-                                            variable=app.var_dashboard_tf, width=55, 
-                                            font=("Roboto", 11, "bold"))
-    app.cbo_dashboard_tf.pack(side="left", padx=5, pady=10)
-    
-    # Frame chứa 2 dòng thông tin để không bị đè nhau
-    f_labels = ctk.CTkFrame(f_context, fg_color="transparent")
-    f_labels.pack(side="left", fill="both", expand=True, padx=5)
-
-    # Dòng 1: Chế độ & Xu hướng (Dùng lbl_market_mode)
-    app.lbl_market_mode = ctk.CTkLabel(f_labels, text="Mode: -- | Trend: --", 
+    # Dòng 1: Chế độ (Mode) & Xu hướng (Trend)
+    app.lbl_market_mode = ctk.CTkLabel(f_context, text="Mode: -- | Trend: --", 
                                       font=("Roboto", 13, "bold"), text_color="#29B6F6", anchor="w")
-    app.lbl_market_mode.pack(fill="x")
+    app.lbl_market_mode.pack(fill="x", padx=10, pady=(5, 0))
 
-    # Dòng 2: Thông số kỹ thuật H/L/ATR (Dùng lbl_market_context duy nhất)
-    # [FIX] Đã loại bỏ Label trùng tên gây vỡ giao diện
-    app.lbl_market_context = ctk.CTkLabel(f_labels, text="H: -- | L: -- | ATR: --", 
-                                         font=("Consolas", 12), text_color="#78909C", anchor="w")
-    app.lbl_market_context.pack(fill="x")
+    # Dòng 2: Khung chứa Dropdown chọn G và Thông số H/L/ATR
+    f_context_bottom = ctk.CTkFrame(f_context, fg_color="transparent")
+    f_context_bottom.pack(fill="x", padx=5, pady=(2, 5))
 
-    # Dòng 2: Thông số kỹ thuật (Swing & ATR)
-    app.lbl_market_context = ctk.CTkLabel(f_labels, text="H: -- | L: -- | ATR: --", font=("Consolas", 12), text_color="#78909C", anchor="w")
-    app.lbl_market_context.pack(fill="x")
-    
-    # Ép Font size xuống 12, thêm expand=True và anchor="w" để text đẩy tràn sang phải mà không bị lẹm đuôi
-    app.lbl_market_context = ctk.CTkLabel(
-        f_context, 
-        text="Đang đồng bộ La Bàn Vĩ Mô...", 
-        font=("Roboto", 12, "bold"), 
-        text_color="#78909C", 
-        justify="left"
-    )
-    app.lbl_market_context.pack(side="left", fill="x", expand=True, anchor="w", padx=(0, 5))
+    app.var_dashboard_tf = tk.StringVar(value="G1")
+    app.cbo_dashboard_tf = ctk.CTkOptionMenu(f_context_bottom, values=["G0", "G1", "G2", "G3"], 
+                                            variable=app.var_dashboard_tf, width=60, height=24,
+                                            font=("Roboto", 11, "bold"))
+    app.cbo_dashboard_tf.pack(side="left", padx=5)
+
+    # Label DUY NHẤT để hiển thị Swing/ATR (Xóa các bản trùng lặp cũ)
+# Label DUY NHẤT để hiển thị Swing/ATR
+    app.lbl_market_context = ctk.CTkLabel(f_context_bottom, text="H: -- | L: -- | ATR: --", 
+                                         font=("Consolas", 14, "bold"), text_color="#78909C", anchor="w")
+    app.lbl_market_context.pack(side="left", fill="x", expand=True, padx=5)
 
     # 4. LIVE DASHBOARD
     f_dashboard = ctk.CTkFrame(parent, fg_color="#252526", corner_radius=8, border_width=1, border_color="#333")

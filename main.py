@@ -311,11 +311,11 @@ class BotUI(ctk.CTk):
         if "SLEEPING" in self.brain_status:
             rem = int(self.brain_wakeup_time - time.time())
             if rem > 0:
-                self.lbl_brain_status.configure(text=f"🧠 BRAIN: SLEEPING ({rem}s) [Quét {sym_count} Coins]", text_color="#2196F3")
+                self.lbl_brain_status.configure(text=f"🧠 BRAIN: SLEEP ({rem}s) [{sym_count} Sym]", text_color="#2196F3")
             else:
-                self.lbl_brain_status.configure(text=f"🧠 BRAIN: SYNCING... [Quét {sym_count} Coins]", text_color=COL_WARN)
+                self.lbl_brain_status.configure(text=f"🧠 BRAIN: SYNC... [{sym_count} Sym]", text_color=COL_WARN)
         elif self.brain_status in ["HEALTHY", "MONITORING"]:
-            self.lbl_brain_status.configure(text=f"🧠 BRAIN: ONLINE [Quét {sym_count} Coins]", text_color=COL_GREEN)
+            self.lbl_brain_status.configure(text=f"🧠 BRAIN: ONLINE [{sym_count} Sym]", text_color=COL_GREEN)
         else:
             self.lbl_brain_status.configure(text=f"🧠 BRAIN: {self.brain_status}", text_color=COL_RED)
 
@@ -332,8 +332,7 @@ class BotUI(ctk.CTk):
             
             tr = sym_ctx.get("trend", "--")
             mode = sym_ctx.get("market_mode", "ANY")
-            mode_src = sym_ctx.get("market_mode_src", "G0") # Nguồn đo vĩ mô
-
+            mode_src = sym_ctx.get("mode_source", "NONE")
             # 3. Đổ dữ liệu vào DÒNG 1: Chiến thuật (Cái Label mới lbl_market_mode)
             m_color = COL_GREEN if tr == "UP" else (COL_RED if tr == "DOWN" else "#78909C")
             self.lbl_market_mode.configure(
@@ -342,6 +341,14 @@ class BotUI(ctk.CTk):
             )
             
             # 4. Đổ dữ liệu vào DÒNG 2: Thông số (Cái Label lbl_market_context)
+            # Lấy màu theo Trend hiện tại
+            if tr == "UP":
+                ctx_color = COL_GREEN
+            elif tr == "DOWN":
+                ctx_color = COL_RED
+            else:
+                ctx_color = "white"
+
             if atr == 0.0 or atr == "--":
                 self.lbl_market_context.configure(text="Syncing Data...", text_color="#FFA500")
             else:
@@ -351,7 +358,7 @@ class BotUI(ctk.CTk):
                 
                 self.lbl_market_context.configure(
                     text=f"H: {sh_str} | L: {sl_str} | ATR: {atr_str}",
-                    text_color="#78909C"
+                    text_color=ctx_color
                 )
 
         d = self.seg_direction.get()
@@ -605,8 +612,20 @@ class BotUI(ctk.CTk):
 
         ts = time.strftime("%H:%M:%S")
         txt = f"[{ts}] {msg}\n"
-        tag = "SUCCESS" if "PnL: +" in msg or "SUCCESS" in msg or "Húp" in msg else \
-        ("ERROR" if "PnL: -" in msg or error or "ERR" in msg or "FAIL" in msg else "INFO")
+        
+        if "PnL: +$" in msg or "SUCCESS" in msg or "Húp" in msg:
+            tag = "SUCCESS"
+        elif "PnL: -$" in msg or error or "ERR" in msg or "FAIL" in msg:
+            tag = "ERROR"
+        elif "Đóng lệnh" in msg:
+            tag = "INFO"  # Lệnh hòa vốn ($0.00) thì màu xám
+        elif "BUY" in msg:
+            tag = "SUCCESS"
+        elif "SELL" in msg:
+            tag = "ERROR"
+        else:
+            tag = "INFO"
+
         self.after(0, lambda: self._write_log(txt, tag))
 
     def _write_log(self, txt, tag):

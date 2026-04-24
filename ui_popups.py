@@ -6,6 +6,8 @@ import customtkinter as ctk
 import tkinter as tk
 from tkinter import ttk, messagebox
 import config
+import csv
+import os
 
 # --- BẢNG MÀU & FONT CHUẨN ---
 FONT_BOLD = ("Roboto", 13, "bold")
@@ -298,9 +300,26 @@ def open_edit_popup(app, ticket):
     ctk.CTkButton(top, text="CẬP NHẬT LỆNH", height=45, fg_color="#2e7d32", font=FONT_BOLD, command=save_e).pack(pady=20, fill="x", padx=40)
 
 def show_history_popup(app):
-    top = ctk.CTkToplevel(app); top.title("History"); top.geometry("750x500")
-    top.transient(app)
-    cols = ("Time", "Symbol", "Type", "Profit", "Reason")
+    top = ctk.CTkToplevel(app); top.title("Lịch sử Giao dịch"); top.geometry("850x500")
+    # top.transient(app) # Bỏ comment nếu muốn cửa sổ này luôn dính vào cửa sổ mẹ
+    
+    cols = ("Time", "Ticket", "Symbol", "Type", "Vol", "PnL ($)", "Reason")
     tr = ttk.Treeview(top, columns=cols, show="headings"); tr.pack(fill="both", expand=True)
-    for c in cols: tr.heading(c, text=c)
-    for h in app.trade_mgr.state.get("daily_history", []): tr.insert("", "end", values=(h['time'], h['symbol'], h['type'], f"${h['profit']:.2f}", h.get('reason','')))
+    
+    widths = [160, 100, 100, 80, 80, 100, 150]
+    for c, w in zip(cols, widths): 
+        tr.heading(c, text=c)
+        tr.column(c, width=w, anchor="center")
+        
+    csv_path = "data/trade_history_master.csv"
+    if os.path.exists(csv_path):
+        try:
+            with open(csv_path, mode='r', encoding='utf-8') as f:
+                reader = csv.reader(f)
+                next(reader, None) # Bỏ qua dòng tiêu đề
+                records = list(reader)
+                # Đọc ngược từ dưới lên để lệnh mới nhất nằm trên cùng
+                for row in reversed(records):
+                    if len(row) >= 7: tr.insert("", "end", values=row)
+        except Exception as e:
+            pass
