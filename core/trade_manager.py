@@ -252,7 +252,7 @@ class TradeManager:
                     s_ticket = str(ticket)
                     
                 # QUÉT LỊCH SỬ DEALS ĐỂ LẤY PNL THỰC TẾ
-                    deals = mt5.history_deals_get(time_from, time_to, position=ticket)
+                    deals = mt5.history_deals_get(position=ticket)
                     if deals:
                         deal_out = [d for d in deals if d.entry == mt5.DEAL_ENTRY_OUT]
                         if deal_out:
