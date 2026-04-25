@@ -57,7 +57,8 @@ def load_state() -> Dict[str, Any]:
         "initial_r_dist": {},
         "parent_baskets": {},       
         "child_to_parent": {},       
-        "last_child_bar_time": {}
+        "last_child_bar_time": {},
+        "bot_last_entry_times": {}
     }
     
     os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
@@ -76,6 +77,7 @@ def load_state() -> Dict[str, Any]:
             if "parent_baskets" not in state: state["parent_baskets"] = {} 
             if "child_to_parent" not in state: state["child_to_parent"] = {}
             if "last_child_bar_time" not in state: state["last_child_bar_time"] = {} 
+            if "bot_last_entry_times" not in state: state["bot_last_entry_times"] = {}
             if "daily_loss_count" not in state: state["daily_loss_count"] = 0    
 
             current_date = get_today_str()

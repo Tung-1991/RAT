@@ -142,7 +142,9 @@ class BotUI(ctk.CTk):
             get_preset_cb=lambda: self.cbo_preset.get(),
             get_tsl_mode_cb=self.get_current_tactic_string,
             ui_heartbeat_cb=self.update_brain_heartbeat,
-            log_cb=self.log_message,
+            log_cb=lambda msg, error=False: self.log_message(
+                msg, error=error, target="bot"
+            ),
         )
         self.signal_listener.start()
 
@@ -153,9 +155,9 @@ class BotUI(ctk.CTk):
     def start_daemon_process(self):
         try:
             self.daemon_process = subprocess.Popen([sys.executable, "bot_daemon.py"])
-            self.log_message("🚀 Đã kích hoạt Bot Daemon ngầm.")
+            self.log_message("🚀 Đã kích hoạt Bot Daemon ngầm.", target="bot")
         except Exception as e:
-            self.log_message(f"❌ Lỗi kích hoạt Daemon: {e}", error=True)
+            self.log_message(f"❌ Lỗi kích hoạt Daemon: {e}", error=True, target="bot")
 
     def on_closing(self):
         self.running = False
@@ -221,11 +223,14 @@ class BotUI(ctk.CTk):
 
         if self.var_auto_trade.get():
             self.ind_auto_light.configure(fg_color=COL_GREEN)
-            self.log_message("🟢 AUTO-TRADE DAEMON ĐÃ BẬT. Bot sẽ tự động bắn lệnh.")
+            self.log_message(
+                "🟢 AUTO-TRADE DAEMON ĐÃ BẬT. Bot sẽ tự động bắn lệnh.", target="bot"
+            )
         else:
             self.ind_auto_light.configure(fg_color=COL_RED)
             self.log_message(
-                "🔴 AUTO-TRADE DAEMON ĐÃ TẮT. Chuyển về chế độ bắn tay (Manual)."
+                "🔴 AUTO-TRADE DAEMON ĐÃ TẮT. Chuyển về chế độ bắn tay (Manual).",
+                target="bot",
             )
 
     def get_current_tactic_string(self):
@@ -888,7 +893,7 @@ class BotUI(ctk.CTk):
 
         threading.Thread(target=run_trade_thread).start()
 
-    def log_message(self, msg, error=False):
+    def log_message(self, msg, error=False, target="manual"):
         if "Retcode: 10025" in msg:
             return
 
@@ -908,14 +913,15 @@ class BotUI(ctk.CTk):
         else:
             tag = "INFO"
 
-        self.after(0, lambda: self._write_log(txt, tag))
+        self.after(0, lambda: self._write_log(txt, tag, target))
 
-    def _write_log(self, txt, tag):
-        if self.txt_log.winfo_exists():
-            self.txt_log.configure(state="normal")
-            self.txt_log.insert("end", txt, tag)
-            self.txt_log.see("end")
-            self.txt_log.configure(state="disabled")
+    def _write_log(self, txt, tag, target="manual"):
+        widget = self.txt_log_bot if target == "bot" else self.txt_log_manual
+        if widget.winfo_exists():
+            widget.configure(state="normal")
+            widget.insert("end", txt, tag)
+            widget.see("end")
+            widget.configure(state="disabled")
 
     def reset_daily_stats(self):
         if messagebox.askyesno("Xác nhận", "Reset thống kê ngày?"):
