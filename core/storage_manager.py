@@ -100,6 +100,14 @@ def load_state() -> Dict[str, Any]:
                 state["daily_history"] = [] 
                 state["starting_balance"] = 0.0 
                 
+                # [FIX] Reset các biến phân tách rạch ròi
+                state["bot_pnl_today"] = 0.0
+                state["bot_trades_today"] = 0
+                state["bot_daily_loss_count"] = 0
+                state["manual_pnl_today"] = 0.0
+                state["manual_trades_today"] = 0
+                state["manual_daily_loss_count"] = 0
+                
         return state
     except:
         return default_state

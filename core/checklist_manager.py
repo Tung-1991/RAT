@@ -301,7 +301,11 @@ class ChecklistManager:
                 all_passed = False
 
             # [NEW] Kiểm tra Cooldown (Thời gian nghỉ giữa 2 lệnh ENTRY của cùng 1 coin)
-            cooldown_min = float(safeguard_cfg.get("COOLDOWN_MINUTES", 1.0))
+            try:
+                cooldown_min = float(safeguard_cfg.get("COOLDOWN_MINUTES", 1.0))
+            except (ValueError, TypeError):
+                cooldown_min = 1.0
+                
             last_entry = state.get("bot_last_entry_times", {}).get(symbol, 0)
             elapsed_sec = time.time() - last_entry
 
