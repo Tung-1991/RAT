@@ -74,6 +74,8 @@ BOT_DEFAULT_TSL = "BE+STEP_R+SWING"
 BOT_BASE_SL = "G2"               # Đã cập nhật từ 'entry' sang 'G2'
 BOT_DAILY_TRADE_LIMIT = 10          
 BOT_BYPASS_CHECKLIST = False
+FORCE_ANY_MODE = False        # True: Bỏ qua check Vĩ mô G0/G1, ép Market Mode = ANY
+STRICT_RISK_CALC = False      # True: Trừ hao chi phí Spread/Commission thẳng vào Lot Size
 
 # ==============================================================================
 # 5. LOGIC TRAILING STOP CƠ BẢN (BE & STEP & PNL)

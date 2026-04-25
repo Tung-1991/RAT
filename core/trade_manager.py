@@ -50,8 +50,8 @@ class TradeManager:
                 pass 
         return self.brain_settings
 
-    # ====================================================================================
-    # 1. HÀM THỰC THI LỆNH CHO BOT (HỖ TRỢ ENTRY, DCA, PCA)
+# ====================================================================================
+    # 1. HÀM THỰC THI LỆNH CHO BOT (HỖ TRỢ ENTRY, DCA, PCA, DYNAMIC SL & STRICT RISK)
     # ====================================================================================
     def execute_bot_trade(self, direction, symbol, context, market_mode="ANY", signal_class="ENTRY"):
         config.SYMBOL = symbol 
@@ -72,11 +72,19 @@ class TradeManager:
         current_price = tick.ask if direction == "BUY" else tick.bid
         brain = self._get_brain_settings()
         risk_tsl = brain.get("risk_tsl", {})
+        order_type = mt5.ORDER_TYPE_BUY if direction == "BUY" else mt5.ORDER_TYPE_SELL
 
         # TÍNH TOÁN SMART SL TỪ CẤU HÌNH BRAIN
-        sl_group = risk_tsl.get("base_sl", "G2") # Lấy G0, G1, G2 hoặc G3
+        sl_group = risk_tsl.get("base_sl", "G2") # Lấy G0, G1, G2, G3 hoặc DYNAMIC
         
-        # Đọc thẳng vào data của G tương ứng
+        # [NEW V4.3] DYNAMIC BASE SL LOGIC
+        if sl_group == "DYNAMIC":
+            if market_mode in ["TREND", "BREAKOUT"]:
+                sl_group = "G1" # Thị trường có xu hướng -> Lấy khung lớn để SL xa, gồng lời
+            else:
+                sl_group = "G2" # Sideway / Any -> Lấy khung nhỏ để SL ngắn, RR tốt
+                
+        # Đọc thẳng vào data của Group tương ứng
         buffer_atr = context.get(f"atr_{sl_group}", 0.0005)
         swing_l = context.get(f"swing_low_{sl_group}", current_price)
         swing_h = context.get(f"swing_high_{sl_group}", current_price)
@@ -92,20 +100,35 @@ class TradeManager:
             if positions:
                 parent_pos = sorted(positions, key=lambda x: x.time)[0] 
 
+        # [NEW V4.3] TÍNH STRICT FEE TRƯỚC KHI TÍNH LOT
+        strict_fee_per_lot = 0.0
+        if risk_tsl.get("strict_risk", False):
+            # Tính Commission
+            acc_type = getattr(config, "DEFAULT_ACCOUNT_TYPE", "STANDARD")
+            if acc_type in ["PRO", "STANDARD"]: comm_rate = 0.0
+            else: comm_rate = getattr(config, "COMMISSION_RATES", {}).get(symbol, getattr(config, "ACCOUNT_TYPES_CONFIG", {}).get(acc_type, {}).get("COMMISSION_PER_LOT", 7.0))
+            # Tính Spread
+            spread_cost = sym_info.spread * sym_info.point * sym_info.trade_contract_size if sym_info else 0.0
+            strict_fee_per_lot = comm_rate + spread_cost
+
         # TÍNH VOLUME TỪ BRAIN SETTINGS
         if parent_pos and signal_class in ["DCA", "PCA"]:
             cfg_key = "dca_config" if signal_class == "DCA" else "pca_config"
             mult = brain.get(cfg_key, getattr(config, f"{signal_class}_CONFIG", {})).get("STEP_MULTIPLIER", 1.5)
             raw_lot = parent_pos.volume * mult
+            lot_size = round(raw_lot / getattr(config, "LOT_STEP", 0.01)) * getattr(config, "LOT_STEP", 0.01)
+            lot_size = max(config.MIN_LOT_SIZE, min(lot_size, config.MAX_LOT_SIZE))
         else:
             base_risk = risk_tsl.get("base_risk", getattr(config, "BOT_RISK_PERCENT", 0.3))
             mode_multiplier = risk_tsl.get("mode_multipliers", {}).get(market_mode, 1.0)
             final_risk_percent = base_risk * mode_multiplier
             risk_usd = acc_info['equity'] * (final_risk_percent / 100.0)
-            raw_lot = risk_usd / (sl_distance * sym_info.trade_contract_size)
-
-        lot_size = round(raw_lot / getattr(config, "LOT_STEP", 0.01)) * getattr(config, "LOT_STEP", 0.01)
-        lot_size = max(config.MIN_LOT_SIZE, min(lot_size, config.MAX_LOT_SIZE))
+            
+            # [FIX V4.3] Gọi qua Connector để check Free Margin và tự động nới SL nếu bị lỗi sàn
+            calc_lot, safe_sl = self.connector.calculate_lot_size(symbol, risk_usd, sl_price, order_type, strict_fee_per_lot)
+            if calc_lot is None: return "ERR_LOT_CALC_FAILED"
+            lot_size = calc_lot
+            sl_price = safe_sl
 
         # TÍNH TP
         if parent_pos and signal_class in ["DCA", "PCA"]:
@@ -115,7 +138,6 @@ class TradeManager:
             reward_ratio = getattr(config, "REWARD_RATIO", 1.5)
             tp_price = current_price + (sl_distance * reward_ratio) if direction == "BUY" else current_price - (sl_distance * reward_ratio)
 
-        order_type = mt5.ORDER_TYPE_BUY if direction == "BUY" else mt5.ORDER_TYPE_SELL
         comment = f"[BOT]_AUTO_{signal_class}"
         
         result = self.connector.place_order(symbol, order_type, lot_size, sl_price, tp_price, bot_magic, comment)
@@ -193,6 +215,7 @@ class TradeManager:
         
         price = tick.ask if direction == "BUY" else tick.bid
         equity = acc_info['equity']
+        order_type = mt5.ORDER_TYPE_BUY if direction == "BUY" else mt5.ORDER_TYPE_SELL
 
         if manual_sl > 0: sl_distance = abs(price - manual_sl)
         else: sl_distance = price * (params.get("SL_PERCENT", 0.5) / 100.0)
@@ -201,19 +224,31 @@ class TradeManager:
 
         brain = self._get_brain_settings()
         risk_pct = brain.get("risk_tsl", {}).get("base_risk", params.get("RISK_PERCENT", 0.3))
+        sl_price = manual_sl if manual_sl > 0 else (price - sl_distance if direction == "BUY" else price + sl_distance)
 
         if manual_lot > 0: lot_size = manual_lot
         else:
-            risk_usd = equity * (risk_pct / 100.0)
-            lot_size = round((risk_usd / (sl_distance * sym_info.trade_contract_size)) / config.LOT_STEP) * config.LOT_STEP
+            # [NEW V4.3] STRICT RISK CALCULATION CHO LỆNH TAY
+            strict_fee_per_lot = 0.0
+            if params.get("STRICT_RISK", False):
+                acc_type = getattr(config, "DEFAULT_ACCOUNT_TYPE", "STANDARD")
+                if acc_type in ["PRO", "STANDARD"]: comm_rate = 0.0
+                else: comm_rate = getattr(config, "COMMISSION_RATES", {}).get(symbol, getattr(config, "ACCOUNT_TYPES_CONFIG", {}).get(acc_type, {}).get("COMMISSION_PER_LOT", 7.0))
+                
+                spread_cost = sym_info.spread * sym_info.point * sym_info.trade_contract_size if sym_info else 0.0
+                strict_fee_per_lot = comm_rate + spread_cost
 
-        lot_size = max(config.MIN_LOT_SIZE, min(lot_size, config.MAX_LOT_SIZE))
-        sl_price = manual_sl if manual_sl > 0 else (price - sl_distance if direction == "BUY" else price + sl_distance)
+            risk_usd = equity * (risk_pct / 100.0)
+            
+            # [FIX V4.3] Dùng Connector chung nguồn thay vì tự chia chay
+            calc_lot, safe_sl = self.connector.calculate_lot_size(symbol, risk_usd, sl_price, order_type, strict_fee_per_lot)
+            if calc_lot is None: return "ERR_LOT_CALC_FAILED"
+            lot_size = calc_lot
+            sl_price = safe_sl
 
         if manual_tp > 0: tp_price = manual_tp
         else: tp_price = price + (abs(price - sl_price) * params.get("TP_RR_RATIO", 1.5)) if direction == "BUY" else price - (abs(price - sl_price) * params.get("TP_RR_RATIO", 1.5))
 
-        order_type = mt5.ORDER_TYPE_BUY if direction == "BUY" else mt5.ORDER_TYPE_SELL
         result = self.connector.place_order(symbol, order_type, lot_size, sl_price, tp_price, getattr(config, "MANUAL_MAGIC_NUMBER", 8888), f"[USER]_{preset_name}")
         
         if result and result.retcode == 10009:

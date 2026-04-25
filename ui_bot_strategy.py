@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # FILE: ui_bot_strategy.py
-# V4.2: UNIFIED BOT STRATEGY UI - DYNAMIC MACRO & MULTI-GROUP (KAISER EDITION)
+# V4.3: UNIFIED BOT STRATEGY UI - DYNAMIC MACRO, SCALPING & STRICT RISK (KAISER EDITION)
 
 import customtkinter as ctk
 import json
@@ -15,7 +15,7 @@ TEMPLATE_DIR = "data/templates"
 class BotStrategyUI(ctk.CTkToplevel):
     def __init__(self, master=None):
         super().__init__(master)
-        self.title("🧠 V4.2 Bot Strategy Sandbox (Dynamic Trend & Multi-Group)")
+        self.title("🧠 V4.3 Bot Strategy Sandbox (Dynamic Trend, Scalping & Multi-Group)")
         self.geometry("1150x800")
         self.attributes("-topmost", True)
         self.focus_force()
@@ -34,6 +34,7 @@ class BotStrategyUI(ctk.CTkToplevel):
         base_data = {
             "MASTER_EVAL_MODE": getattr(config, "MASTER_EVAL_MODE", "VETO"),
             "MIN_MATCHING_VOTES": getattr(config, "MIN_MATCHING_VOTES", 3),
+            "FORCE_ANY_MODE": getattr(config, "FORCE_ANY_MODE", False), # [NEW]: Chế độ Scalping
             "G0_TIMEFRAME": getattr(config, "G0_TIMEFRAME", "1d"),
             "G1_TIMEFRAME": getattr(config, "G1_TIMEFRAME", "1h"),
             "G2_TIMEFRAME": getattr(config, "G2_TIMEFRAME", "15m"),
@@ -49,7 +50,8 @@ class BotStrategyUI(ctk.CTkToplevel):
                 "base_sl": "G2", 
                 "tsl_mode": getattr(config, "TSL_LOGIC_MODE", "STATIC"),
                 "bot_tsl": getattr(config, "BOT_DEFAULT_TSL", "BE+STEP_R+SWING"), 
-                "mode_multipliers": {"TREND": 1.0, "RANGE": 0.5, "BREAKOUT": 1.5, "EXHAUSTION": 1.0, "ANY": 1.0}
+                "mode_multipliers": {"TREND": 1.0, "RANGE": 0.5, "BREAKOUT": 1.5, "EXHAUSTION": 1.0, "ANY": 1.0},
+                "strict_risk": getattr(config, "STRICT_RISK_CALC", False) # [NEW]: Trừ phí
             },
             "indicators": getattr(config, "SANDBOX_CONFIG", {}).get("indicators", {}),
             "dca_config": getattr(config, "DCA_CONFIG", {}),
@@ -61,7 +63,7 @@ class BotStrategyUI(ctk.CTkToplevel):
                 with open(BRAIN_SETTINGS_PATH, "r", encoding="utf-8") as f:
                     saved_data = json.load(f)
                     
-                    for key in ["MASTER_EVAL_MODE", "MIN_MATCHING_VOTES", "G0_TIMEFRAME", "G1_TIMEFRAME", "G2_TIMEFRAME", "G3_TIMEFRAME"]:
+                    for key in ["MASTER_EVAL_MODE", "MIN_MATCHING_VOTES", "FORCE_ANY_MODE", "G0_TIMEFRAME", "G1_TIMEFRAME", "G2_TIMEFRAME", "G3_TIMEFRAME"]:
                         if key in saved_data: base_data[key] = saved_data[key]
 
                     if "voting_rules" in saved_data:
@@ -248,8 +250,19 @@ class BotStrategyUI(ctk.CTkToplevel):
     def _build_risk_tab(self):
         risk_data = self.brain_data.get("risk_tsl", {})
         
+        # --- [NEW] CỤM OPTIONS NÂNG CAO (SCALPING & STRICT RISK) ---
+        f_adv = ctk.CTkFrame(self.tab_risk, fg_color="#2b2b2b", corner_radius=8)
+        f_adv.pack(fill="x", padx=20, pady=(10, 10))
+        
+        self.var_force_any = ctk.BooleanVar(value=self.brain_data.get("FORCE_ANY_MODE", False))
+        ctk.CTkCheckBox(f_adv, text="Force ANY Mode (Scalping: Bỏ qua check G0/G1)", variable=self.var_force_any, font=("Roboto", 13, "bold"), text_color="#FF9800").grid(row=0, column=0, padx=15, pady=10, sticky="w")
+        
+        self.var_strict_risk = ctk.BooleanVar(value=risk_data.get("strict_risk", False))
+        ctk.CTkCheckBox(f_adv, text="Strict Risk (Trừ phí Spread/Comm vào Lot)", variable=self.var_strict_risk, font=("Roboto", 13, "bold"), text_color="#F44336").grid(row=0, column=1, padx=15, pady=10, sticky="w")
+        # -------------------------------------------------------------
+
         f_base = ctk.CTkFrame(self.tab_risk, fg_color="transparent")
-        f_base.pack(fill="x", padx=20, pady=(15, 5))
+        f_base.pack(fill="x", padx=20, pady=(5, 5))
         ctk.CTkLabel(f_base, text="BOT BASE RISK (% Cắt lỗ/Lệnh):", font=("Roboto", 13, "bold"), text_color="#E040FB").pack(side="left")
         self.var_base_risk = ctk.StringVar(value=str(risk_data.get("base_risk", 0.3)))
         ctk.CTkEntry(f_base, textvariable=self.var_base_risk, width=80, justify="center").pack(side="left", padx=15)
@@ -261,7 +274,8 @@ class BotStrategyUI(ctk.CTkToplevel):
         cur_sl = risk_data.get("base_sl", "G2")
         if cur_sl == "entry": cur_sl = "G2"
         self.var_base_sl = ctk.StringVar(value=cur_sl)
-        ctk.CTkComboBox(f_base_sl, values=["G0", "G1", "G2", "G3"], variable=self.var_base_sl, width=100).pack(side="left", padx=15)
+        # [NEW] Thêm Option DYNAMIC vào Base SL
+        ctk.CTkComboBox(f_base_sl, values=["G0", "G1", "G2", "G3", "DYNAMIC"], variable=self.var_base_sl, width=100).pack(side="left", padx=15)
 
         ctk.CTkLabel(self.tab_risk, text="BOT TSL TACTICS:", font=("Roboto", 13, "bold"), text_color="#00C853").pack(anchor="w", padx=20, pady=(10, 0))
         f_tactic_btns = ctk.CTkFrame(self.tab_risk, fg_color="transparent")
@@ -302,11 +316,12 @@ class BotStrategyUI(ctk.CTkToplevel):
         dca_cfg = self.brain_data.get("dca_config", {})
         pca_cfg = self.brain_data.get("pca_config", {})
 
+        # --- DCA FRAME ---
         dca_frame = ctk.CTkFrame(self.tab_dca_pca, fg_color="#2b2b2b", corner_radius=8)
         dca_frame.pack(fill="x", padx=10, pady=10)
         
         self.dca_active = ctk.BooleanVar(value=dca_cfg.get("ENABLED", False))
-        ctk.CTkCheckBox(dca_frame, text="Kích hoạt AUTO DCA (Gồng lỗ/Bắt đáy thuận nến)", variable=self.dca_active, font=("Roboto", 13, "bold"), text_color="#FFAB00").grid(row=0, column=0, columnspan=4, padx=10, pady=10, sticky="w")
+        ctk.CTkCheckBox(dca_frame, text="Kích hoạt AUTO DCA (Gồng lỗ/Bắt đáy thuận nến)", variable=self.dca_active, font=("Roboto", 13, "bold"), text_color="#FFAB00").grid(row=0, column=0, columnspan=6, padx=10, pady=10, sticky="w")
         
         ctk.CTkLabel(dca_frame, text="Max Steps:").grid(row=1, column=0, padx=10, pady=5, sticky="w")
         self.dca_steps = ctk.StringVar(value=str(dca_cfg.get("MAX_STEPS", 3)))
@@ -316,11 +331,17 @@ class BotStrategyUI(ctk.CTkToplevel):
         self.dca_mult = ctk.StringVar(value=str(dca_cfg.get("STEP_MULTIPLIER", 1.5)))
         ctk.CTkEntry(dca_frame, textvariable=self.dca_mult, width=70).grid(row=1, column=3, padx=10, pady=5)
 
+        # [NEW] ATR Distance cho DCA
+        ctk.CTkLabel(dca_frame, text="ATR Distance:").grid(row=1, column=4, padx=10, pady=5, sticky="w")
+        self.dca_atr = ctk.StringVar(value=str(dca_cfg.get("DISTANCE_ATR_R", 1.0)))
+        ctk.CTkEntry(dca_frame, textvariable=self.dca_atr, width=70).grid(row=1, column=5, padx=10, pady=5)
+
+        # --- PCA FRAME ---
         pca_frame = ctk.CTkFrame(self.tab_dca_pca, fg_color="#2b2b2b", corner_radius=8)
         pca_frame.pack(fill="x", padx=10, pady=10)
 
         self.pca_active = ctk.BooleanVar(value=pca_cfg.get("ENABLED", False))
-        ctk.CTkCheckBox(pca_frame, text="Kích hoạt AUTO PCA (Nhồi thuận Trend mạnh)", variable=self.pca_active, font=("Roboto", 13, "bold"), text_color="#00C853").grid(row=0, column=0, columnspan=4, padx=10, pady=10, sticky="w")
+        ctk.CTkCheckBox(pca_frame, text="Kích hoạt AUTO PCA (Nhồi thuận Trend mạnh)", variable=self.pca_active, font=("Roboto", 13, "bold"), text_color="#00C853").grid(row=0, column=0, columnspan=6, padx=10, pady=10, sticky="w")
         
         ctk.CTkLabel(pca_frame, text="Max Steps:").grid(row=1, column=0, padx=10, pady=5, sticky="w")
         self.pca_steps = ctk.StringVar(value=str(pca_cfg.get("MAX_STEPS", 2)))
@@ -329,6 +350,11 @@ class BotStrategyUI(ctk.CTkToplevel):
         ctk.CTkLabel(pca_frame, text="Vol Multiplier (x):").grid(row=1, column=2, padx=10, pady=5, sticky="w")
         self.pca_mult = ctk.StringVar(value=str(pca_cfg.get("STEP_MULTIPLIER", 0.5)))
         ctk.CTkEntry(pca_frame, textvariable=self.pca_mult, width=70).grid(row=1, column=3, padx=10, pady=5)
+
+        # [NEW] ATR Distance cho PCA
+        ctk.CTkLabel(pca_frame, text="ATR Distance:").grid(row=1, column=4, padx=10, pady=5, sticky="w")
+        self.pca_atr = ctk.StringVar(value=str(pca_cfg.get("DISTANCE_ATR_R", 1.5)))
+        ctk.CTkEntry(pca_frame, textvariable=self.pca_atr, width=70).grid(row=1, column=5, padx=10, pady=5)
 
     def _pack_data(self):
         new_inds = {}
@@ -363,15 +389,18 @@ class BotStrategyUI(ctk.CTkToplevel):
             "base_sl": self.var_base_sl.get(),
             "tsl_mode": self.var_tsl_mode.get(),
             "bot_tsl": bot_tsl_str,
-            "mode_multipliers": {mode: float(var.get() or 1.0) for mode, var in self.mult_vars.items()}
+            "mode_multipliers": {mode: float(var.get() or 1.0) for mode, var in self.mult_vars.items()},
+            "strict_risk": self.var_strict_risk.get() # [NEW]
         }
 
-        new_dca = {"ENABLED": self.dca_active.get(), "MAX_STEPS": int(self.dca_steps.get() or 3), "STEP_MULTIPLIER": float(self.dca_mult.get() or 1.5), "DISTANCE_ATR_R": getattr(config, "DCA_CONFIG", {}).get("DISTANCE_ATR_R", 1.0)}
-        new_pca = {"ENABLED": self.pca_active.get(), "MAX_STEPS": int(self.pca_steps.get() or 2), "STEP_MULTIPLIER": float(self.pca_mult.get() or 0.5), "CONFIRM_ADX": getattr(config, "PCA_CONFIG", {}).get("CONFIRM_ADX", 23)}
+        # [NEW] Thêm Distance ATR R
+        new_dca = {"ENABLED": self.dca_active.get(), "MAX_STEPS": int(self.dca_steps.get() or 3), "STEP_MULTIPLIER": float(self.dca_mult.get() or 1.5), "DISTANCE_ATR_R": float(self.dca_atr.get() or 1.0)}
+        new_pca = {"ENABLED": self.pca_active.get(), "MAX_STEPS": int(self.pca_steps.get() or 2), "STEP_MULTIPLIER": float(self.pca_mult.get() or 0.5), "DISTANCE_ATR_R": float(self.pca_atr.get() or 1.5), "CONFIRM_ADX": getattr(config, "PCA_CONFIG", {}).get("CONFIRM_ADX", 23)}
 
         return {
             "MASTER_EVAL_MODE": self.master_eval_var.get(),
             "MIN_MATCHING_VOTES": int(self.min_votes_var.get() or 3),
+            "FORCE_ANY_MODE": self.var_force_any.get(), # [NEW]
             "G0_TIMEFRAME": self.tf_vars["G0"].get(),
             "G1_TIMEFRAME": self.tf_vars["G1"].get(),
             "G2_TIMEFRAME": self.tf_vars["G2"].get(),
@@ -396,11 +425,18 @@ class BotStrategyUI(ctk.CTkToplevel):
             config.BOT_RISK_PERCENT = output_data["risk_tsl"]["base_risk"]
             config.TSL_LOGIC_MODE = output_data["risk_tsl"]["tsl_mode"]
             
+            # [NEW] Hot Reload biến mới
+            config.FORCE_ANY_MODE = output_data["FORCE_ANY_MODE"]
+            config.STRICT_RISK_CALC = output_data["risk_tsl"]["strict_risk"]
+            config.DCA_CONFIG = output_data["dca_config"]
+            config.PCA_CONFIG = output_data["pca_config"]
+            
             # Tự động đóng cửa sổ mượt mà không hiện popup phiền phức
             self.destroy()
         except Exception as e:
             # Chỉ hiện lỗi nếu thực sự ghi file thất bại
             messagebox.showerror("Lỗi hệ thống", f"Lỗi ghi file cấu hình:\n{e}")
+            
     def load_template(self):
         file_path = filedialog.askopenfilename(initialdir=TEMPLATE_DIR, title="Chọn Template", filetypes=[("JSON files", "*.json")])
         if file_path:

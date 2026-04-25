@@ -13,6 +13,7 @@ import config
 from core.exness_connector import ExnessConnector
 from core.data_engine import data_engine
 from signals.signal_generator import signal_generator
+from core.logger_setup import setup_logging  # [NEW V4.3] Import hệ thống Log
 
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] [DAEMON] %(message)s")
 logger = logging.getLogger("BotDaemon")
@@ -199,8 +200,15 @@ class StandaloneBotDaemon:
                     time.sleep(0.5)
 
 if __name__ == "__main__":
+    # [NEW V4.3] Khởi chạy hệ thống Log 3 Lớp chuẩn xác cho luồng Bot ngầm
+    setup_logging(debug_mode=False)
+    
     daemon = StandaloneBotDaemon()
     try:
-        if daemon.connector._is_connected: daemon.run()
+        if daemon.connector._is_connected: 
+            daemon.run()
     except KeyboardInterrupt:
+        import logging
+        logger = logging.getLogger("BotDaemon")
         logger.info("Đang tắt tiến trình Daemon...")
+        

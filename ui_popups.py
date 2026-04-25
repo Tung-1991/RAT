@@ -107,21 +107,30 @@ def open_bot_setting_popup(app):
 # ==============================================================================
 def open_preset_config_popup(app):
     p_name = app.cbo_preset.get(); data = config.PRESETS.get(p_name, {})
-    top = ctk.CTkToplevel(app); top.title(f"Preset: {p_name}"); top.geometry("400x450"); top.attributes("-topmost", True)
+    top = ctk.CTkToplevel(app); top.title(f"Preset: {p_name}"); top.geometry("400x500"); top.attributes("-topmost", True)
     #top.transient(app)
     
     acc = app.connector.get_account_info(); eq = acc['equity'] if acc else 1000.0
     tick = app.connector.get_market_status(app.cbo_symbol.get()); cp = tick.get("ask", 1000.0) if isinstance(tick, dict) else 1000.0
     
     ctk.CTkLabel(top, text=f"PRESET: {p_name}", font=FONT_BOLD).pack(pady=10)
+    
+    ctk.CTkLabel(top, text="Risk Per Trade (%):").pack()
     e_risk = ctk.CTkEntry(top, justify="center"); e_risk.insert(0, str(data.get("RISK_PERCENT", 0.3))); e_risk.pack()
     lbl_h_risk = ctk.CTkLabel(top, text="~ -$0.00", text_color="gray", font=("Roboto", 11)); lbl_h_risk.pack(pady=(0, 5))
 
+    ctk.CTkLabel(top, text="Stop Loss (%):").pack()
     e_sl = ctk.CTkEntry(top, justify="center"); e_sl.insert(0, str(data.get("SL_PERCENT", 0.5))); e_sl.pack()
     lbl_h_sl = ctk.CTkLabel(top, text="~ Price: 0.00", text_color="gray", font=("Roboto", 11)); lbl_h_sl.pack(pady=(0, 5))
     
+    ctk.CTkLabel(top, text="Take Profit (RR):").pack()
     e_tp = ctk.CTkEntry(top, justify="center"); e_tp.insert(0, str(data.get("TP_RR_RATIO", 2.0))); e_tp.pack()
     lbl_h_tp = ctk.CTkLabel(top, text="~ +$0.00", text_color="gray", font=("Roboto", 11)); lbl_h_tp.pack(pady=(0, 10))
+    
+    # [NEW] Thêm Checkbox Strict Risk (Tính phí Spread/Comm)
+    var_strict = ctk.BooleanVar(value=data.get("STRICT_RISK", False))
+    chk_strict = ctk.CTkCheckBox(top, text="Strict Risk (Trừ phí Spread/Comm vào Lot)", variable=var_strict, text_color="#F44336", font=("Roboto", 12, "bold"))
+    chk_strict.pack(pady=(5, 10))
     
     def live(*args):
         try:
@@ -133,8 +142,18 @@ def open_preset_config_popup(app):
         except ValueError: pass
 
     e_risk.bind("<KeyRelease>", live); e_sl.bind("<KeyRelease>", live); e_tp.bind("<KeyRelease>", live); live()
-    ctk.CTkButton(top, text="LƯU PRESET", command=lambda: [config.PRESETS[p_name].update({"RISK_PERCENT":float(e_risk.get()), "SL_PERCENT":float(e_sl.get()), "TP_RR_RATIO":float(e_tp.get())}), app.save_settings(), top.destroy()], fg_color=COL_GREEN).pack(pady=20, fill="x", padx=30)
+    
+    def save_preset():
+        config.PRESETS[p_name].update({
+            "RISK_PERCENT": float(e_risk.get()), 
+            "SL_PERCENT": float(e_sl.get()), 
+            "TP_RR_RATIO": float(e_tp.get()),
+            "STRICT_RISK": var_strict.get()
+        })
+        app.save_settings()
+        top.destroy()
 
+    ctk.CTkButton(top, text="LƯU PRESET", command=save_preset, fg_color=COL_GREEN).pack(pady=20, fill="x", padx=30)
 # ==============================================================================
 # 3. POPUP TSL (CÓ BE SOFT/SMART, PNL LEVELS +, STEP R)
 # ==============================================================================

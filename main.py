@@ -14,7 +14,7 @@ import subprocess
 from datetime import datetime
 import MetaTrader5 as mt5
 import logging
-
+from core.logger_setup import setup_logging  # [NEW V4.3] Import hệ thống Log 3 lớp
 import config
 from core.exness_connector import ExnessConnector
 from core.checklist_manager import ChecklistManager
@@ -415,12 +415,24 @@ class BotUI(ctk.CTk):
             except: mlot = 0.0
             
             f_lot = mlot if mlot > 0 else 0
+            # --- [V4.3] TÍNH TOÁN LOT PREVIEW CHÍNH XÁC ---
             if f_lot == 0:
-                risk_usd = acc['equity'] * (current_risk_pct/100)
-                sl_dist = cur_price * (params["SL_PERCENT"]/100)
-                if sl_dist > 0: 
-                    raw_calc = round((risk_usd / (sl_dist * c_size)) / config.LOT_STEP) * config.LOT_STEP
-                    f_lot = raw_calc
+                risk_usd = acc['equity'] * (current_risk_pct / 100)
+                sl_dist = cur_price * (params["SL_PERCENT"] / 100)
+                
+                # Tính phí nếu Preset bật STRICT_RISK
+                strict_fee = 0.0
+                if params.get("STRICT_RISK", False):
+                    comm_rate = self.get_fee_config(sym)
+                    spread_cost_per_lot = (tick.ask - tick.bid) * c_size
+                    strict_fee = comm_rate + spread_cost_per_lot
+                
+                if sl_dist > 0:
+                    # Mức lỗ trên 1 lot (Profit âm)
+                    loss_per_lot = sl_dist * c_size
+                    # Lot = Risk / (Lỗ do giá + Phí sàn)
+                    raw_calc = risk_usd / (loss_per_lot + strict_fee)
+                    f_lot = round(raw_calc / config.LOT_STEP) * config.LOT_STEP
 
             if f_lot < config.MIN_LOT_SIZE:
                 self.lbl_prev_lot.configure(text=f"LOT: KHÔNG HỢP LỆ (Min {config.MIN_LOT_SIZE})", text_color=COL_RED)
@@ -697,6 +709,10 @@ class BotUI(ctk.CTk):
         menu.post(event.x_root, event.y_root)
 
 if __name__ == "__main__":
+    # Khởi tạo hệ thống Log 3 Lớp trước khi bật App
+    # data/logs/sẽ tự động được tạo ra
+    setup_logging(debug_mode=False) 
+    
     try:
         app = BotUI()
         app.mainloop()

@@ -155,58 +155,57 @@ class ExnessConnector:
         return profit
 
     # --- (THAY ĐỔI) Sửa Lỗi 2 (Phần 1) ---
-    def calculate_lot_size(self, symbol: str, risk_amount_usd: float, sl_price: float, order_type: int) -> Optional[Tuple[float, float]]:
+    def calculate_lot_size(self, symbol: str, risk_amount_usd: float, sl_price: float, order_type: int, strict_fee_per_lot: float = 0.0) -> Optional[Tuple[float, float]]:
         """
         Tính toán lot size chính xác với xử lý lỗi toàn diện và cơ chế dự phòng.
-        (THAY ĐỔI): Trả về (lot_size, adjusted_sl_price)
+        (THAY ĐỔI V4.3): Hỗ trợ Strict Risk (trừ phí Spread/Comm trực tiếp vào Lot).
         """
         if not self._is_connected:
             logger.error(f"MT5 chưa kết nối - không thể tính lot size cho {symbol}")
-            return None, 0.0 # (THAY ĐỔI)
+            return None, 0.0
         
         try:
             # BƯỚC 1: Lấy thông tin symbol và validate
             symbol_info = mt5.symbol_info(symbol)
             if not symbol_info:
                 logger.error(f"Không lấy được thông tin symbol {symbol}")
-                return None, 0.0 # (THAY ĐỔI)
+                return None, 0.0
 
             tick = mt5.symbol_info_tick(symbol)
             if not tick:
                 logger.error(f"Không lấy được tick data của {symbol}")
-                return None, 0.0 # (THAY ĐỔI)
+                return None, 0.0
             
             # BƯỚC 2: Xác định giá vào lệnh và các tham số cơ bản
             entry_price = tick.ask if order_type == mt5.ORDER_TYPE_BUY else tick.bid
             min_vol, max_vol, vol_step = symbol_info.volume_min, symbol_info.volume_max, symbol_info.volume_step
 
             # BƯỚC 3: Validate và tự động điều chỉnh khoảng cách SL
-            # (GIÁ TRỊ sl_price CÓ THỂ BỊ THAY ĐỔI TẠI ĐÂY)
             min_distance = symbol_info.spread * symbol_info.point * 2.0
             if abs(entry_price - sl_price) < min_distance:
                 logger.warning(f"SL quá gần cho {symbol}. Khoảng cách hiện tại: {abs(entry_price - sl_price):.5f} < Yêu cầu: {min_distance:.5f}")
-                # Thêm một khoảng đệm an toàn 20%
                 buffer = min_distance * 1.2
                 sl_price = entry_price - buffer if order_type == mt5.ORDER_TYPE_BUY else entry_price + buffer
                 logger.info(f"Tự động điều chỉnh SL cho {symbol} về mức an toàn: {sl_price:.5f}")
 
-            # BƯỚC 4: Tính mức lỗ, ưu tiên hàm của MT5 (dùng sl_price đã điều chỉnh)
+            # BƯỚC 4: Tính mức lỗ trên 1 Lot của MT5
             loss_per_lot = mt5.order_calc_profit(order_type, symbol, 1.0, entry_price, sl_price)
 
             # BƯỚC 5: Validate kết quả tính mức lỗ và fallback khẩn cấp
             if loss_per_lot is None or loss_per_lot >= 0:
                 logger.critical(f"TÍNH TOÁN LỖ THẤT BẠI cho {symbol} ngay cả sau khi điều chỉnh SL. Giá trị loss_per_lot: {loss_per_lot}")
-                logger.critical(f"Bỏ qua quy tắc rủi ro! Sử dụng lot size tối thiểu ({min_vol}) làm giải pháp khẩn cấp.")
-                return min_vol, sl_price # (THAY ĐỔI)
+                return min_vol, sl_price 
 
-            # --- [FIX START] KIỂM TRA CHIA CHO SỐ 0 HOẶC QUÁ NHỎ ---
             if abs(loss_per_lot) < 0.00001:
                 logger.critical(f"LỖI TOÁN HỌC: Mức lỗ ({loss_per_lot}) quá nhỏ (gần bằng 0). Trả về Min Lot để an toàn.")
-                return min_vol, sl_price # (THAY ĐỔI)
-            # --- [FIX END] ---
+                return min_vol, sl_price 
+
+            # --- [V4.3 NEW] STRICT RISK CALCULATION ---
+            # Cộng thêm phí (Spread + Comm) vào mức lỗ trên 1 lot để bóp Vol lại
+            total_loss_per_lot = abs(loss_per_lot) + strict_fee_per_lot
 
             # BƯỚC 6: Tính toán và làm tròn lot size
-            lot_size = risk_amount_usd / abs(loss_per_lot)
+            lot_size = risk_amount_usd / total_loss_per_lot
 
             if vol_step > 0:
                 lot_size = round(lot_size / vol_step) * vol_step
@@ -215,13 +214,24 @@ class ExnessConnector:
             # BƯỚC 7: Áp dụng giới hạn min/max của sàn
             if lot_size < min_vol:
                 logger.warning(f"Lot size tính toán ({lot_size:.2f}) < mức tối thiểu ({min_vol}). Sử dụng mức tối thiểu.")
-                return min_vol, sl_price # (THAY ĐỔI)
+                return min_vol, sl_price 
             if lot_size > max_vol:
                 logger.warning(f"Lot size tính toán ({lot_size:.2f}) > mức tối đa ({max_vol}). Sử dụng mức tối đa.")
-                return max_vol, sl_price # (THAY ĐỔI)
+                return max_vol, sl_price 
             
             logger.debug(f"Tính toán lot size thành công cho {symbol}: {lot_size:.2f} (Rủi ro: ${risk_amount_usd:.2f})")
-            return lot_size, sl_price # (THAY ĐỔI)
+            return lot_size, sl_price 
+
+        except Exception as e:
+            logger.error(f"Lỗi ngoại lệ nghiêm trọng trong calculate_lot_size cho {symbol}: {e}", exc_info=True)
+            try:
+                symbol_info = mt5.symbol_info(symbol)
+                if symbol_info:
+                    logger.critical(f"FALLBACK NGOẠI LỆ: Sử dụng lot size tối thiểu cho {symbol} do lỗi không xác định.")
+                    return symbol_info.volume_min, 0.0 
+            except:
+                pass
+            return None, 0.0
 
         except Exception as e:
             logger.error(f"Lỗi ngoại lệ nghiêm trọng trong calculate_lot_size cho {symbol}: {e}", exc_info=True)
@@ -239,6 +249,7 @@ class ExnessConnector:
                                           sl_price: float, tp_price: float) -> Tuple[bool, str]:
         """
         Kiểm tra các tham số của lệnh một cách toàn diện trước khi gửi lên server MT5.
+        (THAY ĐỔI V4.3): Thêm tính năng check Free Margin siêu an toàn.
         """
         try:
             symbol_info = mt5.symbol_info(symbol)
@@ -259,7 +270,6 @@ class ExnessConnector:
 
             # Kiểm tra giá và khoảng cách SL/TP
             entry_price = tick.ask if order_type == mt5.ORDER_TYPE_BUY else tick.bid
-            # stops_level là khoảng cách tối thiểu tính bằng point mà sàn yêu cầu
             min_distance_points = getattr(symbol_info, 'trade_stops_level', 0)
             min_distance_price = min_distance_points * symbol_info.point
 
@@ -275,6 +285,16 @@ class ExnessConnector:
                 if order_type == mt5.ORDER_TYPE_SELL and entry_price - tp_price < min_distance_price:
                     return False, f"TP quá gần. Khoảng cách {entry_price - tp_price:.5f} < yêu cầu {min_distance_price:.5f}"
             
+            # --- [V4.3 NEW] KIỂM TRA FREE MARGIN (KÝ QUỸ DƯ) ---
+            margin_required = mt5.order_calc_margin(order_type, symbol, lot_size, entry_price)
+            acc_info = mt5.account_info()
+            
+            if margin_required is not None and acc_info is not None:
+                # Chừa lại một lớp đệm an toàn 5% (Tránh trượt giá lúc mở)
+                safe_margin_free = acc_info.margin_free * 0.95 
+                if margin_required > safe_margin_free:
+                    return False, f"Thiếu Margin (Cần: ${margin_required:.2f}, Free Margin: ${acc_info.margin_free:.2f})"
+
             return True, "Hợp lệ"
             
         except Exception as e:

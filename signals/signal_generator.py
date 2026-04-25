@@ -102,9 +102,10 @@ class SignalGenerator:
 
         return group_trends
 
+
     def _detect_market_mode(self, dfs, context, inds_config=None, voting_rules=None):
         """
-        V4.2: Cảm biến Vĩ mô Động - 2 Bước
+        V4.3: Cảm biến Vĩ mô Động - Tích hợp Force ANY Mode (Scalping)
         Bước 1: Tính Base Mode (TREND/RANGE)
         Bước 2: Các Indicator bắt Breakout/Exhaustion chà đạp lên kết quả
         """
@@ -113,6 +114,10 @@ class SignalGenerator:
                 
         if not inds_config or not voting_rules: 
             return "ANY", "NONE", 0
+
+        # --- [V4.3 NEW] FORCE ANY MODE (CHẾ ĐỘ SCALPING BỎ QUA VĨ MÔ) ---
+        if getattr(config, "FORCE_ANY_MODE", False):
+            return "ANY", "FORCED_SCALP", 0
 
         # 1. Tìm nhóm Macro (Ưu tiên các Indicator ở G0, nếu không thì G1)
         g0_inds = {k: v for k, v in inds_config.items() if v.get("active") and "G0" in v.get("groups", [v.get("group", "G2")])}
