@@ -238,7 +238,11 @@ class TradeManager:
                     import time
 
                     self.state["bot_last_entry_times"][symbol] = time.time()
-                    save_state(self.state)
+                
+                # [NEW] Tăng counter ngay khi vào lệnh thành công để Safeguard check được ngay
+                self.state["bot_trades_today"] = self.state.get("bot_trades_today", 0) + 1
+                self.state["trades_today_count"] = self.state.get("trades_today_count", 0) + 1
+                save_state(self.state)
 
             return "SUCCESS"
 
@@ -386,6 +390,11 @@ class TradeManager:
         if result and result.retcode == 10009:
             self.update_trade_tactic(result.order, tactic_str)
             self.state["initial_r_dist"][str(result.order)] = abs(price - sl_price)
+            
+            # [NEW] Tăng counter lệnh Manual
+            self.state["manual_trades_today"] = self.state.get("manual_trades_today", 0) + 1
+            self.state["trades_today_count"] = self.state.get("trades_today_count", 0) + 1
+            
             save_state(self.state)
             self.log(
                 f"🚀 [USER EXEC] {direction} {symbol} #{result.order} | Vol: {lot_size:.2f} | TSL: {tactic_str}"
@@ -430,16 +439,13 @@ class TradeManager:
                             is_bot = d_out.magic == bot_magic
 
                             self.state["pnl_today"] += real_pnl
-                            self.state["trades_today_count"] += 1
+                            
                             if real_pnl < 0:
                                 self.state["daily_loss_count"] += 1
 
                             if is_bot:
                                 self.state["bot_pnl_today"] = (
                                     self.state.get("bot_pnl_today", 0) + real_pnl
-                                )
-                                self.state["bot_trades_today"] = (
-                                    self.state.get("bot_trades_today", 0) + 1
                                 )
                                 if real_pnl < 0:
                                     self.state["bot_daily_loss_count"] = (
@@ -448,9 +454,6 @@ class TradeManager:
                             else:
                                 self.state["manual_pnl_today"] = (
                                     self.state.get("manual_pnl_today", 0) + real_pnl
-                                )
-                                self.state["manual_trades_today"] = (
-                                    self.state.get("manual_trades_today", 0) + 1
                                 )
                                 if real_pnl < 0:
                                     self.state["manual_daily_loss_count"] = (

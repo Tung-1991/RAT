@@ -238,7 +238,7 @@ class ChecklistManager:
         if state["starting_balance"] == 0:
             state["starting_balance"] = account_info.get("balance", 0)
         start_bal = state["starting_balance"]
-        pnl_today = state["pnl_today"]
+        pnl_today = state.get("bot_pnl_today", 0.0)
         loss_pct = (pnl_today / start_bal * 100) if start_bal > 0 else 0
         if loss_pct <= -max_loss_pct:
             checks.append(

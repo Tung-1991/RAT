@@ -78,6 +78,9 @@ def load_state() -> Dict[str, Any]:
             if "child_to_parent" not in state: state["child_to_parent"] = {}
             if "last_child_bar_time" not in state: state["last_child_bar_time"] = {} 
             if "bot_last_entry_times" not in state: state["bot_last_entry_times"] = {}
+            if "bot_pnl_today" not in state: state["bot_pnl_today"] = 0.0
+            if "bot_trades_today" not in state: state["bot_trades_today"] = 0
+            if "bot_daily_loss_count" not in state: state["bot_daily_loss_count"] = 0
             if "daily_loss_count" not in state: state["daily_loss_count"] = 0    
 
             current_date = get_today_str()
