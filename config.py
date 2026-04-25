@@ -24,6 +24,7 @@ DATA_DIR = "data"
 STRICT_MODE_DEFAULT = True          
 MAX_PING_MS = 150                   
 MAX_SPREAD_POINTS = 150             
+ENABLE_DEBUG_LOGGING = False        
 
 # ==============================================================================
 # 2. TÀI KHOẢN & GIỚI HẠN GIAO DỊCH 
@@ -78,7 +79,22 @@ FORCE_ANY_MODE = False        # True: Bỏ qua check Vĩ mô G0/G1, ép Market M
 STRICT_RISK_CALC = False      # True: Trừ hao chi phí Spread/Commission thẳng vào Lot Size
 
 # ==============================================================================
-# 5. LOGIC TRAILING STOP CƠ BẢN (BE & STEP & PNL)
+# 5. BOT SAFEGUARD (HÀNG RÀO BẢO VỆ ĐỘC LẬP CỦA BOT)
+# ==============================================================================
+BOT_SAFEGUARD = {
+    "MAX_DAILY_LOSS_PERCENT": 2.5,
+    "MAX_OPEN_POSITIONS": 3,
+    "MAX_TRADES_PER_DAY": 30,
+    "MAX_LOSING_STREAK": 3,
+    "LOSS_COUNT_MODE": "TOTAL",
+    "CHECK_PING": True,
+    "MAX_PING_MS": 150,
+    "CHECK_SPREAD": True,
+    "MAX_SPREAD_POINTS": 50
+}
+
+# ==============================================================================
+# 6. LOGIC TRAILING STOP CƠ BẢN (BE & STEP & PNL)
 # ==============================================================================
 TSL_CONFIG = {
     "BE_MODE": "SOFT",              

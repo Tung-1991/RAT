@@ -206,9 +206,7 @@ class SignalGenerator:
             return main_direction
         return 0
 
-    def _evaluate_pipeline_v4(self, dfs, context, current_mode, voting_rules, active_inds):
-        eval_mode = getattr(config, "MASTER_EVAL_MODE", "VETO")
-        min_votes = getattr(config, "MIN_MATCHING_VOTES", 3)
+    def _evaluate_pipeline_v4(self, dfs, context, current_mode, voting_rules, active_inds, eval_mode="VETO", min_votes=3):
         votes = {}
 
         for grp in ["G0", "G1", "G2", "G3"]:
@@ -255,8 +253,9 @@ class SignalGenerator:
         voting_rules = settings.get("voting_rules", {})
         inds_config = settings.get("indicators", {})
         
-        eval_mode = getattr(config, "MASTER_EVAL_MODE", settings.get("MASTER_EVAL_MODE", "VETO"))
-        min_votes = getattr(config, "MIN_MATCHING_VOTES", settings.get("MIN_MATCHING_VOTES", 3))
+        # [FIX]: Đọc từ settings trước, fallback về config
+        eval_mode = settings.get("MASTER_EVAL_MODE", getattr(config, "MASTER_EVAL_MODE", "VETO"))
+        min_votes = int(settings.get("MIN_MATCHING_VOTES", getattr(config, "MIN_MATCHING_VOTES", 3)))
         
         # 1. Tính Dynamic Trend Compass Cục Bộ
         group_trends = self._detect_dynamic_trend(dfs, context, inds_config, eval_mode, min_votes)
@@ -286,7 +285,7 @@ class SignalGenerator:
                             active_inds_by_group[grp][name] = cfg
 
         # 4. Đẩy vào Phễu Vote
-        return self._evaluate_pipeline_v4(dfs, context, current_mode, voting_rules, active_inds_by_group)
+        return self._evaluate_pipeline_v4(dfs, context, current_mode, voting_rules, active_inds_by_group, eval_mode, min_votes)
 
     # =========================================================================
     # HÀM CŨ (GIỮ LẠI ĐỂ BACKWARD-COMPATIBLE KHÔNG CRASH)

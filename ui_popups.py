@@ -72,11 +72,23 @@ def open_bot_setting_popup(app):
     ctk.CTkLabel(f_safety, text="Cooldown (Phút):").grid(row=2, column=2, sticky="w", padx=10, pady=8)
     e_cooldown = ctk.CTkEntry(f_safety, width=70, justify="center"); e_cooldown.insert(0, str(getattr(config, "COOLDOWN_MINUTES", 1))); e_cooldown.grid(row=2, column=3, sticky="w", padx=10, pady=8)
 
-    ctk.CTkLabel(f_safety, text="Nến Trend (G0/G1):").grid(row=3, column=0, sticky="w", padx=10, pady=8)
-    e_num_h1 = ctk.CTkEntry(f_safety, width=70, justify="center"); e_num_h1.insert(0, str(getattr(config, "NUM_H1_BARS", 70))); e_num_h1.grid(row=3, column=1, sticky="w", padx=10, pady=8)
+    # Đọc safeguard từ file (nếu có) để nạp giá trị Ping/Spread
+    brain = app._get_brain_settings() if hasattr(app, "_get_brain_settings") else {}
+    safe_cfg = brain.get("bot_safeguard", {})
 
-    ctk.CTkLabel(f_safety, text="Nến Entry (G2/G3):").grid(row=3, column=2, sticky="w", padx=10, pady=8)
-    e_num_m15 = ctk.CTkEntry(f_safety, width=70, justify="center"); e_num_m15.insert(0, str(getattr(config, "NUM_M15_BARS", 70))); e_num_m15.grid(row=3, column=3, sticky="w", padx=10, pady=8)
+    var_check_ping = ctk.BooleanVar(value=safe_cfg.get("CHECK_PING", True))
+    chk_ping = ctk.CTkCheckBox(f_safety, text="Check Ping (ms):", variable=var_check_ping); chk_ping.grid(row=3, column=0, sticky="w", padx=10, pady=8)
+    e_max_ping = ctk.CTkEntry(f_safety, width=70, justify="center"); e_max_ping.insert(0, str(safe_cfg.get("MAX_PING_MS", getattr(config, "MAX_PING_MS", 150)))); e_max_ping.grid(row=3, column=1, sticky="w", padx=10, pady=8)
+
+    var_check_spread = ctk.BooleanVar(value=safe_cfg.get("CHECK_SPREAD", True))
+    chk_spread = ctk.CTkCheckBox(f_safety, text="Check Spread (points):", variable=var_check_spread); chk_spread.grid(row=3, column=2, sticky="w", padx=10, pady=8)
+    e_max_spread = ctk.CTkEntry(f_safety, width=70, justify="center"); e_max_spread.insert(0, str(safe_cfg.get("MAX_SPREAD_POINTS", getattr(config, "MAX_SPREAD_POINTS", 50)))); e_max_spread.grid(row=3, column=3, sticky="w", padx=10, pady=8)
+
+    ctk.CTkLabel(f_safety, text="Nến Trend (G0/G1):").grid(row=4, column=0, sticky="w", padx=10, pady=8)
+    e_num_h1 = ctk.CTkEntry(f_safety, width=70, justify="center"); e_num_h1.insert(0, str(getattr(config, "NUM_H1_BARS", 70))); e_num_h1.grid(row=4, column=1, sticky="w", padx=10, pady=8)
+
+    ctk.CTkLabel(f_safety, text="Nến Entry (G2/G3):").grid(row=4, column=2, sticky="w", padx=10, pady=8)
+    e_num_m15 = ctk.CTkEntry(f_safety, width=70, justify="center"); e_num_m15.insert(0, str(getattr(config, "NUM_M15_BARS", 70))); e_num_m15.grid(row=4, column=3, sticky="w", padx=10, pady=8)
     ctk.CTkFrame(tab_core, height=2, fg_color="#333").pack(fill="x", padx=30, pady=10)
 
     # Watchlist
@@ -90,17 +102,39 @@ def open_bot_setting_popup(app):
 
     def save():
         try:
-            config.MAX_DAILY_LOSS_PERCENT, config.MAX_OPEN_POSITIONS = float(e_max_loss.get()), int(e_max_open.get())
-            config.MAX_TRADES_PER_DAY, config.MAX_LOSING_STREAK = int(e_max_trades.get()), int(e_max_streak.get())
-            config.LOSS_COUNT_MODE, config.COOLDOWN_MINUTES = cbo_loss_mode.get(), int(e_cooldown.get())
-            config.NUM_H1_BARS, config.NUM_M15_BARS = int(e_num_h1.get()), int(e_num_m15.get())
-            config.BOT_ACTIVE_SYMBOLS = [coin for coin, var in app.bot_coin_vars.items() if var.get()]
-            app._save_brain_live_config() # <-- Sửa dòng này
-            app.log_message("✅ Core Settings Saved.")
+            # Lưu riêng vào json thay vì config
+            import json, os
+            existing_data = {}
+            cfg_path = "data/brain_settings.json"
+            if os.path.exists(cfg_path):
+                with open(cfg_path, "r", encoding="utf-8") as f:
+                    existing_data = json.load(f)
+            
+            existing_data["bot_safeguard"] = {
+                "MAX_DAILY_LOSS_PERCENT": float(e_max_loss.get()),
+                "MAX_OPEN_POSITIONS": int(e_max_open.get()),
+                "MAX_TRADES_PER_DAY": int(e_max_trades.get()),
+                "MAX_LOSING_STREAK": int(e_max_streak.get()),
+                "LOSS_COUNT_MODE": cbo_loss_mode.get(),
+                "COOLDOWN_MINUTES": int(e_cooldown.get()),
+                "NUM_H1_BARS": int(e_num_h1.get()),
+                "NUM_M15_BARS": int(e_num_m15.get()),
+                "CHECK_PING": var_check_ping.get(),
+                "MAX_PING_MS": int(e_max_ping.get()),
+                "CHECK_SPREAD": var_check_spread.get(),
+                "MAX_SPREAD_POINTS": int(e_max_spread.get())
+            }
+            existing_data["BOT_ACTIVE_SYMBOLS"] = [coin for coin, var in app.bot_coin_vars.items() if var.get()]
+            config.BOT_ACTIVE_SYMBOLS = existing_data["BOT_ACTIVE_SYMBOLS"]
+            
+            with open(cfg_path, "w", encoding="utf-8") as f:
+                json.dump(existing_data, f, indent=4)
+                
+            app.log_message("✅ Đã cập nhật Bot Safeguard ĐỘC LẬP.")
             top.destroy()
         except ValueError: messagebox.showerror("Lỗi", "Dữ liệu nhập sai!")
 
-    ctk.CTkButton(top, text="LƯU CẤU HÌNH CỐT LÕI", fg_color=COL_BLUE_ACCENT, height=45, font=FONT_BOLD, command=save).pack(pady=20, fill="x", padx=40)
+    ctk.CTkButton(top, text="LƯU CẤU HÌNH BOT SAFEGUARD", fg_color=COL_BLUE_ACCENT, height=45, font=FONT_BOLD, command=save).pack(pady=20, fill="x", padx=40)
 
 # ==============================================================================
 # 2. POPUP PRESET (CÓ LIVE PREVIEW ĐẦY ĐỦ)

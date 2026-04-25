@@ -265,8 +265,10 @@ class ExnessConnector:
                 return False, f"Lot size {lot_size} < tối thiểu {symbol_info.volume_min}"
             if lot_size > symbol_info.volume_max:
                 return False, f"Lot size {lot_size} > tối đa {symbol_info.volume_max}"
-            if symbol_info.volume_step > 0 and round(lot_size / symbol_info.volume_step) * symbol_info.volume_step != lot_size:
-                 return False, f"Lot size {lot_size} không đúng bước nhảy {symbol_info.volume_step}"
+            if symbol_info.volume_step > 0:
+                rounded_lot = round(lot_size / symbol_info.volume_step) * symbol_info.volume_step
+                if abs(rounded_lot - lot_size) > 1e-5:
+                     return False, f"Lot size {lot_size} không đúng bước nhảy {symbol_info.volume_step}"
 
             # Kiểm tra giá và khoảng cách SL/TP
             entry_price = tick.ask if order_type == mt5.ORDER_TYPE_BUY else tick.bid

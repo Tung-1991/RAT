@@ -56,14 +56,19 @@ class TradeManager:
     def execute_bot_trade(self, direction, symbol, context, market_mode="ANY", signal_class="ENTRY"):
         config.SYMBOL = symbol 
         acc_info = self.connector.get_account_info()
-        bot_bypass = getattr(config, "BOT_BYPASS_CHECKLIST", True) 
-
-        res = self.checklist.run_pre_trade_checks(acc_info, self.state, symbol, strict_mode=not bot_bypass)
+        
+        brain = self._get_brain_settings()
+        safeguard_cfg = brain.get("bot_safeguard", {})
+        
+        # [FIX] Gọi Checklist độc lập của Bot
+        res = self.checklist.run_bot_safeguard_checks(acc_info, self.state, symbol, safeguard_cfg)
+        
         if not res["passed"]:
-            if bot_bypass:
-                self.log(f"⚠️ [BOT FORCE] Bỏ qua cảnh báo an toàn Checklist để test")
-            else:
-                return "CHECKLIST_FAIL"
+            fail_names = [c["name"] for c in res["checks"] if c["status"] == "FAIL"]
+            fail_reasons = [c["msg"] for c in res["checks"] if c["status"] == "FAIL"]
+            name_str = ",".join(fail_names) if fail_names else "UNK"
+            reason_str = " | ".join(fail_reasons) if fail_reasons else "Lỗi Safeguard không xác định"
+            return f"SAFEGUARD_FAIL|{name_str}|{reason_str}"
 
         tick = mt5.symbol_info_tick(symbol)
         sym_info = mt5.symbol_info(symbol)
@@ -291,9 +296,25 @@ class TradeManager:
                             d_out = deal_out[0]
                             real_pnl = d_out.profit + d_out.commission + d_out.swap
                             
+                            # [NEW] Phân tách rạch ròi PnL và Loss Count của Bot vs Manual
+                            bot_magic = getattr(config, "BOT_MAGIC_NUMBER", 9999)
+                            is_bot = (d_out.magic == bot_magic)
+                            
                             self.state["pnl_today"] += real_pnl
                             self.state["trades_today_count"] += 1
-                            if real_pnl < 0: self.state["daily_loss_count"] += 1
+                            if real_pnl < 0: 
+                                self.state["daily_loss_count"] += 1
+                                
+                            if is_bot:
+                                self.state["bot_pnl_today"] = self.state.get("bot_pnl_today", 0) + real_pnl
+                                self.state["bot_trades_today"] = self.state.get("bot_trades_today", 0) + 1
+                                if real_pnl < 0:
+                                    self.state["bot_daily_loss_count"] = self.state.get("bot_daily_loss_count", 0) + 1
+                            else:
+                                self.state["manual_pnl_today"] = self.state.get("manual_pnl_today", 0) + real_pnl
+                                self.state["manual_trades_today"] = self.state.get("manual_trades_today", 0) + 1
+                                if real_pnl < 0:
+                                    self.state["manual_daily_loss_count"] = self.state.get("manual_daily_loss_count", 0) + 1
                             
                             pos_type_str = "BUY" if d_out.type == mt5.DEAL_TYPE_SELL else "SELL"
                             pnl_sign = "+" if real_pnl >= 0 else ""

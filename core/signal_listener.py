@@ -39,6 +39,7 @@ class SignalListener:
         
         # Lưu UUID các tín hiệu đã xử lý để tránh lặp lệnh
         self.processed_signals = set()
+        self.last_thinking_signal = {} # [NEW] Track để chống spam log
 
     def start(self):
         if not self.running:
@@ -86,7 +87,7 @@ class SignalListener:
                     sig_time = sig.get("timestamp", 0)
                     valid_for = sig.get("valid_for", 300)
                     if time.time() - sig_time > valid_for:
-                        self.log_ui(f"⚠️ Bỏ qua tín hiệu {sig.get('action')} {sig.get('symbol')}: Đã hết hạn.", error=True)
+                        logger.debug(f"Bỏ qua tín hiệu {sig.get('action')} {sig.get('symbol')}: Đã hết hạn.")
                         continue
 
                     # Thực thi
@@ -105,14 +106,21 @@ class SignalListener:
         context = signal.get("context", {})
         market_mode = signal.get("market_mode", "ANY")
 
-        self.log_ui(f"🧠 [BRAIN] Phát hiện tín hiệu {sig_class}: {action} {symbol}", error=False)
-
         if not self.get_auto_trade():
-            self.log_ui(f"⏸️ Chế độ AUTO đang TẮT. Bỏ qua lệnh {sig_class}.", error=True)
+            # [FIX] Thinking Logs (Chống spam)
+            now = time.time()
+            last_sig = self.last_thinking_signal.get(symbol, {"action": "", "time": 0})
+            
+            # Chỉ báo cáo khi đổi hướng hoặc sau mỗi 15 phút (900s)
+            if last_sig["action"] != action or (now - last_sig["time"] > 900):
+                self.log_ui(f"🧠 Thưa Kaiser, tôi thấy tín hiệu đang báo {action} {symbol} cực đẹp, nếu Ngài bật AUTO là tôi húp rồi đấy!", error=False)
+                self.last_thinking_signal[symbol] = {"action": action, "time": now}
             return
 
-        self.log_ui(f"🤖 Bot chuẩn bị bóp cò! Phân loại: {sig_class}", error=False)
-        
+        # Khi AUTO đang bật, reset lại tracker để khi tắt đi nó sẽ báo ngay
+        if symbol in self.last_thinking_signal:
+            del self.last_thinking_signal[symbol]
+
         def run_bot_trade():
             # Truyền đẩy đủ Context và Signal Class sang TradeManager
             result = self.trade_manager.execute_bot_trade(
@@ -124,7 +132,29 @@ class SignalListener:
             )
             
             if "SUCCESS" not in result:
-                self.log_ui(f"❌ Bot vào lệnh thất bại: {result}", error=True)
+                # [FIX] Tường minh lý do lỗi
+                if "SAFEGUARD_FAIL" in result:
+                    parts = result.split("|")
+                    reason_key = parts[1] if len(parts) > 1 else "UNK"
+                    reason_msg = parts[2] if len(parts) > 2 else "Không xác định"
+                    
+                    # [NEW] Chống Spam Log hoàn toàn (State-Based) với Key tĩnh (Loại bỏ nhiễu do biến số thay đổi)
+                    last_key = getattr(self, "last_safeguard_reason", {}).get(symbol, "")
+                    if reason_key != last_key:
+                        # Chỉ in ra khi BẮT ĐẦU bị lỗi này
+                        self.log_ui(f"🤖 Bot định bóp cò {sig_class}: {action} {symbol} nhưng bị chặn!", error=False)
+                        self.log_ui(f"⚠️ [BOT SAFEGUARD] Lý do: {reason_msg}", error=True)
+                        
+                        if not hasattr(self, "last_safeguard_reason"):
+                            self.last_safeguard_reason = {}
+                        self.last_safeguard_reason[symbol] = reason_key
+                else:
+                    self.log_ui(f"🤖 Bot chuẩn bị bóp cò {sig_class}: {action} {symbol}", error=False)
+                    self.log_ui(f"❌ Bot vào lệnh thất bại: {result}", error=True)
+            else:
+                # Nếu lệnh THÀNH CÔNG, xóa bộ nhớ lỗi cũ để lần sau lỗi lại báo
+                if hasattr(self, "last_safeguard_reason") and symbol in self.last_safeguard_reason:
+                    del self.last_safeguard_reason[symbol]
 
         # Chạy Thread độc lập để Listener không bị kẹt
         threading.Thread(target=run_bot_trade, daemon=True).start()
