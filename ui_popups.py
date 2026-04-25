@@ -349,6 +349,15 @@ def open_bot_setting_popup(app):
     e_log_cooldown.insert(0, str(safe_cfg.get("LOG_COOLDOWN_MINUTES", 60)))
     e_log_cooldown.grid(row=6, column=1, sticky="w", padx=10, pady=8)
 
+    # [NEW] Bot Use TP Toggle
+    var_bot_use_tp = ctk.BooleanVar(
+        value=safe_cfg.get("BOT_USE_TP", config.BOT_SAFEGUARD.get("BOT_USE_TP", True))
+    )
+    chk_bot_use_tp = ctk.CTkCheckBox(
+        f_safety, text="Bot Dùng Cứng TP (Preset RR)", variable=var_bot_use_tp
+    )
+    chk_bot_use_tp.grid(row=6, column=2, columnspan=2, sticky="w", padx=10, pady=8)
+
     # Đã chuyển Watchlist lên đầu
 
     def save():
@@ -378,6 +387,7 @@ def open_bot_setting_popup(app):
                 "DAEMON_LOOP_DELAY": float(e_daemon_loop.get()),
                 "DCA_PCA_SCAN_INTERVAL": float(e_scan_delay.get()),
                 "LOG_COOLDOWN_MINUTES": float(e_log_cooldown.get()),
+                "BOT_USE_TP": var_bot_use_tp.get(),
             }
             existing_data["BOT_ACTIVE_SYMBOLS"] = [
                 coin for coin, var in app.bot_coin_vars.items() if var.get()
@@ -673,6 +683,8 @@ def open_edit_popup(app, ticket):
                 p_dist = abs(pos.price_open - ntp)
                 prof = p_dist * pos.volume * 1.0
                 lbl_h_tp.configure(text=f"~ +${prof:.2f}", text_color="#66BB6A")
+            else:
+                lbl_h_tp.configure(text="~ Thả rông (Vô cực)", text_color="#29B6F6")
 
             # Cập nhật Live Trigger Price Preview
             if nsl > 0:
@@ -729,6 +741,7 @@ def open_edit_popup(app, ticket):
         height=26,
         fg_color="#2b2b2b",
         button_color="#1565C0",
+        command=lambda _: do_math()
     )
     cbo_sl_group.pack(side="left", padx=4)
 
@@ -754,6 +767,7 @@ def open_edit_popup(app, ticket):
             )
             e_sl.delete(0, "end")
             e_sl.insert(0, f"{calc_sl:.5f}")
+            do_tp() # Tự động cập nhật TP theo SL mới
             live_edit()
         else:
             messagebox.showwarning(

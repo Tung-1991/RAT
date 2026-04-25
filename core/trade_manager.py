@@ -183,17 +183,20 @@ class TradeManager:
             lot_size = calc_lot
             sl_price = safe_sl
 
-        # TÍNH TP
+        # TÍNH TP (KAISER EDITION: LỰA CHỌN THẢ RÔNG HOẶC CỨNG TP)
         if parent_pos and signal_class in ["DCA", "PCA"]:
             tp_price = parent_pos.tp
             sl_price = parent_pos.sl
         else:
-            reward_ratio = getattr(config, "REWARD_RATIO", 1.5)
-            tp_price = (
-                current_price + (sl_distance * reward_ratio)
-                if direction == "BUY"
-                else current_price - (sl_distance * reward_ratio)
-            )
+            if safeguard_cfg.get("BOT_USE_TP", False):
+                reward_ratio = getattr(config, "REWARD_RATIO", 1.5)
+                tp_price = (
+                    current_price + (sl_distance * reward_ratio)
+                    if direction == "BUY"
+                    else current_price - (sl_distance * reward_ratio)
+                )
+            else:
+                tp_price = 0.0 # Mặc định KHÔNG đặt TP để TSL tự quản lý
 
         comment = f"[BOT]_AUTO_{signal_class}"
 

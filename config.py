@@ -96,7 +96,8 @@ BOT_SAFEGUARD = {
     "MAX_SPREAD_POINTS": 150,
     "DAEMON_LOOP_DELAY": 15.0,
     "DCA_PCA_SCAN_INTERVAL": 2.0,
-    "LOG_COOLDOWN_MINUTES": 60.0
+    "LOG_COOLDOWN_MINUTES": 60.0,
+    "BOT_USE_TP": True
 }
 
 # ==============================================================================
