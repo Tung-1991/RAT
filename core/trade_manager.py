@@ -36,9 +36,13 @@ class TradeManager:
         if "initial_r_dist" not in self.state:
             self.state["initial_r_dist"] = {}
 
-    def log(self, msg, error=False):
+    def log(self, msg, error=False, target=None):
         if self.log_callback:
-            self.log_callback(msg, error=error)
+            # Nếu hàm log_callback hỗ trợ kwargs target
+            try:
+                self.log_callback(msg, error=error, target=target)
+            except TypeError:
+                self.log_callback(msg, error=error)
         else:
             logger = logging.getLogger("TradeManager")
             if error:
@@ -220,7 +224,8 @@ class TradeManager:
                 save_state(self.state)
 
                 self.log(
-                    f"🔥 [{signal_class}] Mẹ #{s_parent} đẻ Con #{s_child} | Vol: {lot_size:.2f}"
+                    f"🔥 [{signal_class}] Mẹ #{s_parent} đẻ Con #{s_child} | Vol: {lot_size:.2f}",
+                    target="bot"
                 )
                 if signal_class == "DCA":
                     threading.Thread(
@@ -230,7 +235,8 @@ class TradeManager:
                     ).start()
             else:
                 self.log(
-                    f"🚀 [BOT EXEC] {direction} {symbol} #{ticket_id} | Lot: {lot_size:.2f} | TSL: {bot_tactic}"
+                    f"🚀 [BOT EXEC] {direction} {symbol} #{ticket_id} | Lot: {lot_size:.2f} | TSL: {bot_tactic}",
+                    target="bot"
                 )
 
                 # [NEW] Ghi nhận thời gian để tính Cooldown cho lần sau
@@ -277,7 +283,7 @@ class TradeManager:
             if abs(p.tp - new_tp) > sym_info.point * 2:
                 self.connector.modify_position(p.ticket, p.sl, new_tp)
 
-        self.log(f"🔄 [BASKET RESCUE] Kéo TP Rổ #{parent_ticket} về: {new_tp:.5f}")
+        self.log(f"🔄 [BASKET RESCUE] Kéo TP Rổ #{parent_ticket} về: {new_tp:.5f}", target="bot")
 
     # ====================================================================================
     # 2. HÀM THỰC THI LỆNH TAY (MANUAL)
@@ -473,8 +479,10 @@ class TradeManager:
                                 real_pnl,
                                 "Closed",
                             )
+                            log_target = "bot" if is_bot else "manual"
                             self.log(
-                                f"[DỌN DẸP] Đóng lệnh {pos_type_str} {d_out.symbol} #{ticket} | Vol: {d_out.volume:.2f} | PnL: {pnl_sign}${real_pnl:.2f}"
+                                f"[DỌN DẸP] Đóng lệnh {pos_type_str} {d_out.symbol} #{ticket} | Vol: {d_out.volume:.2f} | PnL: {pnl_sign}${real_pnl:.2f}",
+                                target=log_target
                             )
 
                     # Xóa Tracking
@@ -499,7 +507,8 @@ class TradeManager:
                             )
                             if child_pos:
                                 self.log(
-                                    f"⚠️ [BASKET CLOSE] Đóng lệnh Con #{child_t} do Mẹ #{ticket} đã chốt!"
+                                    f"⚠️ [BASKET CLOSE] Đóng lệnh Con #{child_t} do Mẹ #{ticket} đã chốt!",
+                                    target="bot"
                                 )
                                 threading.Thread(
                                     target=self.connector.close_position,

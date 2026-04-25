@@ -148,12 +148,29 @@ class SignalListener:
                     reason_key = parts[1] if len(parts) > 1 else "UNK"
                     reason_msg = parts[2] if len(parts) > 2 else "Không xác định"
 
-                    # [NEW] Chống Spam Log hoàn toàn (State-Based) với Key tĩnh (Loại bỏ nhiễu do biến số thay đổi)
+                    # [NEW] Chống Spam Log: CÓ THỜI GIAN COOLDOWN ĐỘNG (Lấy từ UI)
                     last_key = getattr(self, "last_safeguard_reason", {}).get(
                         symbol, ""
                     )
-                    if reason_key != last_key:
-                        # Chỉ in ra khi BẮT ĐẦU bị lỗi này
+                    last_time = getattr(self, "last_safeguard_time", {}).get(
+                        symbol, 0
+                    )
+                    now = time.time()
+                    
+                    try:
+                        import json as _json, os as _os
+                        _cpath = "data/brain_settings.json"
+                        cmin = 60.0
+                        if _os.path.exists(_cpath):
+                            with open(_cpath, "r", encoding="utf-8") as _cf:
+                                cmin = float(_json.load(_cf).get("bot_safeguard", {}).get("LOG_COOLDOWN_MINUTES", 60.0))
+                    except:
+                        cmin = 60.0
+                        
+                    is_cooldown_expired = (now - last_time) >= (cmin * 60)
+
+                    if reason_key != last_key or is_cooldown_expired:
+                        # Chỉ in ra khi BẮT ĐẦU bị lỗi này HOẶC đã hết 30s kể từ lần in cuối
                         self.log_ui(
                             f"🤖 Bot định bóp cò {sig_class}: {action} {symbol} nhưng bị chặn!",
                             error=False,
@@ -164,7 +181,11 @@ class SignalListener:
 
                         if not hasattr(self, "last_safeguard_reason"):
                             self.last_safeguard_reason = {}
+                        if not hasattr(self, "last_safeguard_time"):
+                            self.last_safeguard_time = {}
+                            
                         self.last_safeguard_reason[symbol] = reason_key
+                        self.last_safeguard_time[symbol] = now
                 else:
                     self.log_ui(
                         f"🤖 Bot chuẩn bị bóp cò {sig_class}: {action} {symbol}",

@@ -51,12 +51,18 @@ class StandaloneBotDaemon:
             "pending_signals": self.pending_signals[-10:],
         }
         os.makedirs(os.path.dirname(SIGNAL_FILE), exist_ok=True)
-        try:
-            with open(SIGNAL_FILE_TMP, "w", encoding="utf-8") as f:
-                json.dump(payload, f, indent=4)
-            os.replace(SIGNAL_FILE_TMP, SIGNAL_FILE)
-        except Exception as e:
-            logger.error(f"Lỗi ghi tín hiệu: {e}")
+
+        # [FIX] WinError 5 Access is denied
+        for attempt in range(5):
+            try:
+                with open(SIGNAL_FILE_TMP, "w", encoding="utf-8") as f:
+                    json.dump(payload, f, indent=4)
+                os.replace(SIGNAL_FILE_TMP, SIGNAL_FILE)
+                break
+            except (PermissionError, OSError) as e:
+                time.sleep(0.05)
+                if attempt == 4:
+                    logger.error(f"Lỗi ghi tín hiệu sau 5 lần thử: {e}")
 
     def _write_signal_debugger(self, debug_state):
         try:
@@ -124,16 +130,24 @@ class StandaloneBotDaemon:
                         config, "BOT_ACTIVE_SYMBOLS", getattr(config, "SYMBOLS", [])
                     ),
                 )
-                daemon_delay = getattr(config, "DAEMON_LOOP_DELAY", 15)
+
+                # [NEW] Lấy thời gian quét động từ UI
+                daemon_delay = live_cfg.get("bot_safeguard", {}).get(
+                    "DAEMON_LOOP_DELAY", getattr(config, "DAEMON_LOOP_DELAY", 15)
+                )
+                self.dca_pca_interval = live_cfg.get("bot_safeguard", {}).get(
+                    "DCA_PCA_SCAN_INTERVAL", 2
+                )
+
                 now = time.time()
 
-                # 1. QUÉT TÍN HIỆU ENTRY (Chu kỳ 15s)
+                # 1. QUÉT TÍN HIỆU ENTRY (Chu kỳ động)
                 if symbols and (now - last_signal_scan >= daemon_delay):
                     self._scan_signals(symbols, bot_active)
                     last_signal_scan = now
                     self._atomic_write_signals(symbols)
 
-                # 2. QUÉT DCA/PCA (Chu kỳ 2s - Độc lập hoàn toàn)
+                # 2. QUÉT DCA/PCA (Chu kỳ động - Độc lập hoàn toàn)
                 if (
                     bot_active
                     and symbols
@@ -165,7 +179,7 @@ class StandaloneBotDaemon:
             # Đảm bảo UI luôn nhận được cấu trúc thị trường mới nhất ngay cả khi Bot đang tắt (Manual Mode)
             signal = signal_generator.generate_signal_v4(dfs, context)
 
-            # --- [V4.2.1] Gói toàn bộ context (đã được generate_signal_v4 bơm data) vào Heartbeat ---
+            # --- [V4.2.1] Gói toàn bộ context vào Heartbeat ---
             self.heartbeat_contexts[sym] = context.copy()
             self.heartbeat_contexts[sym].update({"timestamp": time.time()})
 

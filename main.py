@@ -482,11 +482,11 @@ class BotUI(ctk.CTk):
         if acc:
             self.lbl_equity.configure(text=f"${acc['equity']:,.2f}")
             self.lbl_acc_info.configure(
-                text=f"ID: {acc['login']} | Server: {acc['server']}"
+                text=f"ID: {acc['login']}\nServer: {acc['server']}"
             )
         pnl = state["pnl_today"]
         self.lbl_stats.configure(
-            text=f"Ngày hôm nay: ${pnl:.2f}",
+            text=f"PNL: ${pnl:.2f}",
             text_color=COL_GREEN if pnl >= 0 else COL_RED,
         )
 

@@ -20,7 +20,93 @@ COL_BOT_TAG = "#E040FB"
 
 
 # ==============================================================================
-# 1. POPUP CẤU HÌNH LÕI (CHỈ CÒN SAFETY & WATCHLIST)
+# 1. POPUP CẤU HÌNH TỪNG CẶP GIAO DỊCH (SYMBOL CONFIG)
+# ==============================================================================
+def open_symbol_config_popup(app, symbol):
+    import json
+
+    cfg_path = os.path.join(getattr(config, "DATA_DIR", "data"), "brain_settings.json")
+    existing_data = {}
+    if os.path.exists(cfg_path):
+        try:
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                existing_data = json.load(f)
+        except:
+            pass
+
+    symbol_configs = existing_data.get("symbol_configs", {})
+    sym_cfg = symbol_configs.get(symbol, {})
+
+    top = ctk.CTkToplevel(app)
+    top.title(f"Cấu hình riêng: {symbol}")
+    top.geometry("350x300")
+    top.attributes("-topmost", True)
+    top.focus_force()
+    top.grab_set()  # Khóa (Block) cửa sổ mẹ, bắt buộc người dùng thao tác trên popup này
+
+    ctk.CTkLabel(
+        top, text=f"THIẾT LẬP SAFEGUARD: {symbol}", font=FONT_BOLD, text_color="#2196F3"
+    ).pack(pady=10)
+
+    f_grid = ctk.CTkFrame(top, fg_color="transparent")
+    f_grid.pack(fill="x", padx=20, pady=10)
+
+    # Max Orders
+    ctk.CTkLabel(f_grid, text="Max Lệnh Tối Đa:").grid(
+        row=0, column=0, sticky="w", pady=10
+    )
+    e_max_orders = ctk.CTkEntry(f_grid, width=100, justify="center")
+    e_max_orders.insert(0, str(sym_cfg.get("max_orders", 1)))
+    e_max_orders.grid(row=0, column=1, sticky="e", pady=10)
+
+    # Max Spread
+    ctk.CTkLabel(f_grid, text="Max Spread (points):").grid(
+        row=1, column=0, sticky="w", pady=10
+    )
+    e_max_spread = ctk.CTkEntry(f_grid, width=100, justify="center")
+    e_max_spread.insert(0, str(sym_cfg.get("max_spread", 150)))
+    e_max_spread.grid(row=1, column=1, sticky="e", pady=10)
+
+    # Max Ping
+    ctk.CTkLabel(f_grid, text="Max Ping (ms):").grid(
+        row=2, column=0, sticky="w", pady=10
+    )
+    e_max_ping = ctk.CTkEntry(f_grid, width=100, justify="center")
+    e_max_ping.insert(0, str(sym_cfg.get("max_ping", 150)))
+    e_max_ping.grid(row=2, column=1, sticky="e", pady=10)
+
+    def save_sym():
+        try:
+            mo = int(e_max_orders.get())
+            ms = int(e_max_spread.get())
+            mp = int(e_max_ping.get())
+
+            if "symbol_configs" not in existing_data:
+                existing_data["symbol_configs"] = {}
+            existing_data["symbol_configs"][symbol] = {
+                "max_orders": mo,
+                "max_spread": ms,
+                "max_ping": mp,
+            }
+            with open(cfg_path, "w", encoding="utf-8") as f:
+                json.dump(existing_data, f, indent=4)
+            app.log_message(f"✅ Đã lưu cấu hình riêng cho {symbol}.", target="bot")
+            top.destroy()
+        except ValueError:
+            messagebox.showerror("Lỗi", "Dữ liệu nhập sai, vui lòng nhập số nguyên!")
+
+    ctk.CTkButton(
+        top,
+        text="LƯU CẤU HÌNH",
+        fg_color=COL_GREEN,
+        font=FONT_BOLD,
+        height=40,
+        command=save_sym,
+    ).pack(pady=15, fill="x", padx=30)
+
+
+# ==============================================================================
+# 2. POPUP CẤU HÌNH LÕI (CHỈ CÒN SAFETY & WATCHLIST)
 # ==============================================================================
 def open_bot_setting_popup(app):
     top = ctk.CTkToplevel(app)
@@ -51,6 +137,51 @@ def open_bot_setting_popup(app):
 
     ctk.CTkFrame(tab_core, height=2, fg_color="#333").pack(fill="x", padx=30, pady=5)
 
+    # Watchlist (Đã chuyển lên đầu)
+    ctk.CTkLabel(
+        tab_core,
+        text="WATCHLIST - BOT CHỈ QUÉT CÁC COIN SAU:",
+        font=FONT_BOLD,
+        text_color="#2196F3",
+    ).pack(pady=(5, 5))
+    f_coins = ctk.CTkFrame(tab_core, fg_color="transparent")
+    f_coins.pack(fill="x", padx=30, pady=(0, 10))
+    app.bot_coin_vars = {}
+    allowed_list = getattr(config, "BOT_ACTIVE_SYMBOLS", config.COIN_LIST)
+
+    # Tạo layout lưới cho các cặp tiền
+    row_idx = 0
+    col_idx = 0
+    for coin in config.COIN_LIST:
+        var = tk.BooleanVar(value=(coin in allowed_list))
+        app.bot_coin_vars[coin] = var
+
+        f_single_coin = ctk.CTkFrame(f_coins, fg_color="transparent")
+        f_single_coin.grid(row=row_idx, column=col_idx, sticky="w", pady=5, padx=10)
+
+        chk = ctk.CTkCheckBox(
+            f_single_coin, text=coin, variable=var, font=("Consolas", 13), width=80
+        )
+        chk.pack(side="left")
+
+        btn_cfg = ctk.CTkButton(
+            f_single_coin,
+            text="⚙",
+            width=25,
+            height=20,
+            fg_color="#444",
+            hover_color="#666",
+            command=lambda c=coin: open_symbol_config_popup(app, c),
+        )
+        btn_cfg.pack(side="left", padx=(5, 0))
+
+        col_idx += 1
+        if col_idx > 1:
+            col_idx = 0
+            row_idx += 1
+
+    ctk.CTkFrame(tab_core, height=2, fg_color="#333").pack(fill="x", padx=30, pady=5)
+
     # Safety Guard (Bot ONLY - Độc lập hoàn toàn với Manual)
     ctk.CTkLabel(
         tab_core,
@@ -66,7 +197,10 @@ def open_bot_setting_popup(app):
     safe_cfg = {}
     try:
         import json as _json
-        _cfg_path = os.path.join(getattr(config, "DATA_DIR", "data"), "brain_settings.json")
+
+        _cfg_path = os.path.join(
+            getattr(config, "DATA_DIR", "data"), "brain_settings.json"
+        )
         if os.path.exists(_cfg_path):
             with open(_cfg_path, "r", encoding="utf-8") as _f:
                 safe_cfg = _json.load(_f).get("bot_safeguard", {})
@@ -168,6 +302,7 @@ def open_bot_setting_popup(app):
     )
     e_max_spread.grid(row=3, column=3, sticky="w", padx=10, pady=8)
 
+    # Nến G0/G1 và G2/G3
     ctk.CTkLabel(f_safety, text="Nến Trend (G0/G1):").grid(
         row=4, column=0, sticky="w", padx=10, pady=8
     )
@@ -185,25 +320,36 @@ def open_bot_setting_popup(app):
         0, str(safe_cfg.get("NUM_M15_BARS", getattr(config, "NUM_M15_BARS", 70)))
     )
     e_num_m15.grid(row=4, column=3, sticky="w", padx=10, pady=8)
-    ctk.CTkFrame(tab_core, height=2, fg_color="#333").pack(fill="x", padx=30, pady=10)
 
-    # Watchlist
-    ctk.CTkLabel(
-        tab_core,
-        text="WATCHLIST - BOT CHỈ QUÉT CÁC COIN SAU:",
-        font=FONT_BOLD,
-        text_color="#2196F3",
-    ).pack(pady=(5, 5))
-    f_coins = ctk.CTkFrame(tab_core, fg_color="transparent")
-    f_coins.pack(fill="x", padx=30, pady=(0, 10))
-    app.bot_coin_vars = {}
-    allowed_list = getattr(config, "BOT_ACTIVE_SYMBOLS", config.COIN_LIST)
-    for i, coin in enumerate(config.COIN_LIST):
-        var = tk.BooleanVar(value=(coin in allowed_list))
-        app.bot_coin_vars[coin] = var
-        ctk.CTkCheckBox(f_coins, text=coin, variable=var, font=("Consolas", 13)).grid(
-            row=i // 2, column=i % 2, sticky="w", pady=5, padx=10
-        )
+    # Daemon Loop & Scan Time
+    ctk.CTkLabel(f_safety, text="Daemon Loop (giây):").grid(
+        row=5, column=0, sticky="w", padx=10, pady=8
+    )
+    e_daemon_loop = ctk.CTkEntry(f_safety, width=70, justify="center")
+    e_daemon_loop.insert(
+        0,
+        str(
+            safe_cfg.get("DAEMON_LOOP_DELAY", getattr(config, "DAEMON_LOOP_DELAY", 15))
+        ),
+    )
+    e_daemon_loop.grid(row=5, column=1, sticky="w", padx=10, pady=8)
+
+    ctk.CTkLabel(f_safety, text="DCA/PCA Scan (giây):").grid(
+        row=5, column=2, sticky="w", padx=10, pady=8
+    )
+    e_scan_delay = ctk.CTkEntry(f_safety, width=70, justify="center")
+    e_scan_delay.insert(0, str(safe_cfg.get("DCA_PCA_SCAN_INTERVAL", 2)))
+    e_scan_delay.grid(row=5, column=3, sticky="w", padx=10, pady=8)
+
+    # [NEW] Log Cooldown
+    ctk.CTkLabel(f_safety, text="Log Spam Cooldown (Phút):").grid(
+        row=6, column=0, sticky="w", padx=10, pady=8
+    )
+    e_log_cooldown = ctk.CTkEntry(f_safety, width=70, justify="center")
+    e_log_cooldown.insert(0, str(safe_cfg.get("LOG_COOLDOWN_MINUTES", 60)))
+    e_log_cooldown.grid(row=6, column=1, sticky="w", padx=10, pady=8)
+
+    # Đã chuyển Watchlist lên đầu
 
     def save():
         try:
@@ -229,6 +375,9 @@ def open_bot_setting_popup(app):
                 "MAX_PING_MS": int(e_max_ping.get()),
                 "CHECK_SPREAD": var_check_spread.get(),
                 "MAX_SPREAD_POINTS": int(e_max_spread.get()),
+                "DAEMON_LOOP_DELAY": float(e_daemon_loop.get()),
+                "DCA_PCA_SCAN_INTERVAL": float(e_scan_delay.get()),
+                "LOG_COOLDOWN_MINUTES": float(e_log_cooldown.get()),
             }
             existing_data["BOT_ACTIVE_SYMBOLS"] = [
                 coin for coin, var in app.bot_coin_vars.items() if var.get()
@@ -564,13 +713,38 @@ def open_edit_popup(app, ticket):
     e_sl.bind("<KeyRelease>", live_edit)
     e_tp.bind("<KeyRelease>", live_edit)
 
-    f_ast = ctk.CTkFrame(top, fg_color="transparent")
-    f_ast.pack(pady=10)
+    # [UPGRADED] Math SL với dropdown chọn Group
+    f_math = ctk.CTkFrame(top, fg_color="#1a1a1a", corner_radius=6)
+    f_math.pack(fill="x", padx=20, pady=(5, 0))
+
+    ctk.CTkLabel(
+        f_math, text="TREND/RANGE Group:", font=("Roboto", 11), text_color="gray"
+    ).pack(side="left", padx=(8, 4))
+    var_sl_group = ctk.StringVar(value="G2")
+    cbo_sl_group = ctk.CTkOptionMenu(
+        f_math,
+        values=["G0", "G1", "G2", "G3", "DYNAMIC"],
+        variable=var_sl_group,
+        width=100,
+        height=26,
+        fg_color="#2b2b2b",
+        button_color="#1565C0",
+    )
+    cbo_sl_group.pack(side="left", padx=4)
 
     def do_math():
         ctx = app.latest_market_context.get(pos.symbol, {})
-        val = ctx.get("swing_low" if is_buy else "swing_high")
-        atr_val = ctx.get("atr")
+        group = var_sl_group.get()
+
+        # Xử lý DYNAMIC: tự chọn group dựa trên Market Mode
+        if group == "DYNAMIC":
+            mode = ctx.get("market_mode", "ANY")
+            group = "G1" if mode in ["TREND", "BREAKOUT"] else "G2"
+            var_sl_group.set(f"→{group}")  # Hiển thị group thực tế đã chọn
+
+        val = ctx.get(f"swing_low_{group}" if is_buy else f"swing_high_{group}")
+        atr_val = ctx.get(f"atr_{group}")
+
         if val and str(val) != "--" and atr_val:
             mult = getattr(config, "sl_atr_multiplier", 0.2)
             calc_sl = (
@@ -581,10 +755,24 @@ def open_edit_popup(app, ticket):
             e_sl.delete(0, "end")
             e_sl.insert(0, f"{calc_sl:.5f}")
             live_edit()
+        else:
+            messagebox.showwarning(
+                "Không có dữ liệu",
+                f"Không tìm thấy Swing/ATR của {group} cho {pos.symbol}.\nThử chọn Group khác.",
+            )
 
     ctk.CTkButton(
-        f_ast, text="Lấy Math SL", width=140, fg_color="#1565C0", command=do_math
-    ).pack(side="left", padx=5)
+        f_math,
+        text="Lấy Math SL",
+        height=26,
+        fg_color="#1565C0",
+        hover_color="#0D47A1",
+        font=("Roboto", 12, "bold"),
+        command=do_math,
+    ).pack(side="left", padx=8, pady=4)
+
+    f_ast = ctk.CTkFrame(top, fg_color="transparent")
+    f_ast.pack(pady=(6, 0))
 
     def do_tp():
         try:

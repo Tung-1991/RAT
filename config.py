@@ -87,10 +87,16 @@ BOT_SAFEGUARD = {
     "MAX_TRADES_PER_DAY": 30,
     "MAX_LOSING_STREAK": 3,
     "LOSS_COUNT_MODE": "TOTAL",
+    "COOLDOWN_MINUTES": 1,
+    "NUM_H1_BARS": 100,
+    "NUM_M15_BARS": 100,
     "CHECK_PING": True,
     "MAX_PING_MS": 150,
     "CHECK_SPREAD": True,
-    "MAX_SPREAD_POINTS": 50
+    "MAX_SPREAD_POINTS": 150,
+    "DAEMON_LOOP_DELAY": 15.0,
+    "DCA_PCA_SCAN_INTERVAL": 2.0,
+    "LOG_COOLDOWN_MINUTES": 60.0
 }
 
 # ==============================================================================
@@ -115,10 +121,8 @@ be_atr_buffer = 0.8
 # ==============================================================================
 # 7. BỘ NÃO PHÂN TÍCH V4.2 (LEGO MASTER DEFAULTS)
 # ==============================================================================
-NUM_H1_BARS, NUM_M15_BARS = 100, 100  
-COOLDOWN_MINUTES = 1                
+# Bỏ các biến trùng lặp (đã chuyển vào BOT_SAFEGUARD)
 AUTO_TRADE_ENABLED = False          
-DAEMON_LOOP_DELAY = 15
 sl_atr_multiplier = 0.2             
 
 MASTER_STRATEGY = "QUANT" 

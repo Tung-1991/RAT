@@ -183,6 +183,21 @@ class ChecklistManager:
         check_spread = safeguard_cfg.get("CHECK_SPREAD", True)
         max_spread = int(safeguard_cfg.get("MAX_SPREAD_POINTS", 150))
 
+        # [NEW] Đọc cấu hình riêng lẻ của từng cặp tiền (nếu có)
+        import json, os
+        cfg_path = os.path.join(getattr(config, "DATA_DIR", "data"), "brain_settings.json")
+        try:
+            if os.path.exists(cfg_path):
+                with open(cfg_path, "r", encoding="utf-8") as f:
+                    sym_cfgs = json.load(f).get("symbol_configs", {})
+                    if symbol in sym_cfgs:
+                        sc = sym_cfgs[symbol]
+                        max_per_symbol = sc.get("max_orders", max_per_symbol)
+                        max_ping = sc.get("max_ping", max_ping)
+                        max_spread = sc.get("max_spread", max_spread)
+        except:
+            pass
+
         if not self.connector._is_connected:
             return {
                 "passed": False,

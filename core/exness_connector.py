@@ -276,12 +276,20 @@ class ExnessConnector:
             min_distance_price = min_distance_points * symbol_info.point
 
             if sl_price > 0:
-                if order_type == mt5.ORDER_TYPE_BUY and entry_price - sl_price < min_distance_price:
-                    return False, f"SL quá gần. Khoảng cách {entry_price - sl_price:.5f} < yêu cầu {min_distance_price:.5f}"
-                if order_type == mt5.ORDER_TYPE_SELL and sl_price - entry_price < min_distance_price:
-                    return False, f"SL quá gần. Khoảng cách {sl_price - entry_price:.5f} < yêu cầu {min_distance_price:.5f}"
+                # [FIX] Kiểm tra hướng SL trước (SL phải nằm đúng phía so với Entry)
+                if order_type == mt5.ORDER_TYPE_BUY and sl_price >= entry_price:
+                    return False, f"SL sai hướng: BUY nhưng SL ({sl_price:.2f}) >= Entry ({entry_price:.2f}). Kiểm tra lại Swing Point."
+                if order_type == mt5.ORDER_TYPE_SELL and sl_price <= entry_price:
+                    return False, f"SL sai hướng: SELL nhưng SL ({sl_price:.2f}) <= Entry ({entry_price:.2f}). Kiểm tra lại Swing Point."
 
-            if tp_price > 0:
+                # Chỉ check khoảng cách nếu sàn yêu cầu stops_level (BTC Exness = 0, bỏ qua)
+                if min_distance_price > 0:
+                    if order_type == mt5.ORDER_TYPE_BUY and entry_price - sl_price < min_distance_price:
+                        return False, f"SL quá gần. Khoảng cách {entry_price - sl_price:.5f} < yêu cầu {min_distance_price:.5f}"
+                    if order_type == mt5.ORDER_TYPE_SELL and sl_price - entry_price < min_distance_price:
+                        return False, f"SL quá gần. Khoảng cách {sl_price - entry_price:.5f} < yêu cầu {min_distance_price:.5f}"
+
+            if tp_price > 0 and min_distance_price > 0:
                 if order_type == mt5.ORDER_TYPE_BUY and tp_price - entry_price < min_distance_price:
                     return False, f"TP quá gần. Khoảng cách {tp_price - entry_price:.5f} < yêu cầu {min_distance_price:.5f}"
                 if order_type == mt5.ORDER_TYPE_SELL and entry_price - tp_price < min_distance_price:

@@ -27,47 +27,57 @@ COL_BOT_TAG = "#E040FB"
 def setup_left_panel(app, parent):
     """Xây dựng toàn bộ thanh điều khiển bên trái"""
 
-    # 1. TOP HEADER (Equity & Info) - TỐI ƯU KHÔNG GIAN CỘT (V8.4.1 FIX)
+    # 1. TOP HEADER (Equity & Info) - REWORKED LAYOUT
     f_top = ctk.CTkFrame(parent, fg_color="#1a1a1a", corner_radius=8)
     f_top.pack(fill="x", pady=(5, 5), padx=5)
-    f_top.columnconfigure(0, weight=1)
-    f_top.columnconfigure(1, weight=1)
 
-    # Cột trái: Equity & Today PnL
+    # Khung trên: Equity & ID/Server
+    f_top_1 = ctk.CTkFrame(f_top, fg_color="transparent")
+    f_top_1.pack(fill="x", padx=5, pady=(5, 0))
+
     app.lbl_equity = ctk.CTkLabel(
-        f_top, text="$----", font=FONT_EQUITY, text_color=COL_GREEN
+        f_top_1, text="$----", font=FONT_EQUITY, text_color=COL_GREEN
     )
-    app.lbl_equity.grid(row=0, column=0, sticky="w", padx=10, pady=(5, 0))
+    app.lbl_equity.pack(side="left", padx=5)
 
-    f_pnl = ctk.CTkFrame(f_top, fg_color="transparent")
-    f_pnl.grid(row=1, column=0, sticky="w", padx=5, pady=(0, 5))
+    app.lbl_acc_info = ctk.CTkLabel(
+        f_top_1,
+        text="ID: --- \nServer: ---",
+        font=("Roboto", 10),
+        text_color="gray",
+        justify="right",
+    )
+    app.lbl_acc_info.pack(side="right", padx=5, anchor="e")
+
+    # Khung dưới: PNL & Brain Status
+    f_top_2 = ctk.CTkFrame(f_top, fg_color="transparent")
+    f_top_2.pack(fill="x", padx=5, pady=(0, 5))
+
+    f_pnl = ctk.CTkFrame(f_top_2, fg_color="transparent")
+    f_pnl.pack(side="left")
+
     app.lbl_stats = ctk.CTkLabel(
-        f_pnl, text="Today: $0.00", font=FONT_PNL, text_color="white"
+        f_pnl, text="PNL: $0.00", font=FONT_PNL, text_color="white"
     )
     app.lbl_stats.pack(side="left", padx=5)
+
     ctk.CTkButton(
         f_pnl,
         text="⟳",
-        width=30,
+        width=25,
         height=20,
         fg_color="#333",
         hover_color="#444",
         command=app.reset_daily_stats,
-    ).pack(side="left", padx=5)
-
-    # Cột phải: ID/Server & Brain Status
-    app.lbl_acc_info = ctk.CTkLabel(
-        f_top, text="ID: --- | Server: ---", font=("Roboto", 10), text_color="gray"
-    )
-    app.lbl_acc_info.grid(row=0, column=1, sticky="e", padx=10, pady=(10, 0))
+    ).pack(side="left", padx=2)
 
     app.lbl_brain_status = ctk.CTkLabel(
-        f_top,
-        text="🧠 BRAIN: CHỜ KẾT NỐI...",
+        f_top_2,
+        text="🧠 BRAIN: CHỜ...",
         font=("Roboto", 11, "bold"),
         text_color="#FF8F00",
     )
-    app.lbl_brain_status.grid(row=1, column=1, sticky="e", padx=10, pady=(0, 10))
+    app.lbl_brain_status.pack(side="right", padx=5)
 
     # 2. SETTINGS PANEL (Coin, Mode, Tactic)
     f_set = ctk.CTkFrame(parent, fg_color="transparent")
@@ -538,6 +548,25 @@ def setup_right_panel(app, parent):
         segmented_button_unselected_color="#333333",
     )
     log_tabview.pack(fill="both", expand=True, padx=5, pady=(0, 5))
+
+    def _clear_active_log():
+        """Xóa log ở tab đang được chọn"""
+        active_tab = log_tabview.get()
+        widget = app.txt_log_bot if "Bot" in active_tab else app.txt_log_manual
+        widget.configure(state="normal")
+        widget.delete("1.0", "end")
+        widget.configure(state="disabled")
+
+    ctk.CTkButton(
+        f_log_head,
+        text="🗑 Clear",
+        width=70,
+        height=22,
+        fg_color="#444",
+        hover_color="#c62828",
+        font=("Roboto", 11),
+        command=_clear_active_log,
+    ).pack(side="right", padx=(0, 8))
 
     tab_manual = log_tabview.add("📋 Manual")
     tab_bot = log_tabview.add("🤖 Bot")
