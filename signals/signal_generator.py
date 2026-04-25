@@ -116,7 +116,8 @@ class SignalGenerator:
             return "ANY", "NONE", 0
 
         # --- [V4.3 NEW] FORCE ANY MODE (CHẾ ĐỘ SCALPING BỎ QUA VĨ MÔ) ---
-        if getattr(config, "FORCE_ANY_MODE", False):
+        settings = self._get_brain_settings()
+        if settings.get("FORCE_ANY_MODE", getattr(config, "FORCE_ANY_MODE", False)):
             return "ANY", "FORCED_SCALP", 0
 
         # 1. Tìm nhóm Macro (Ưu tiên các Indicator ở G0, nếu không thì G1)
