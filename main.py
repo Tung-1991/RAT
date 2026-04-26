@@ -514,10 +514,7 @@ class BotUI(ctk.CTk):
 
         if tick and acc:
             params = config.PRESETS.get(preset, config.PRESETS["SCALPING"])
-            brain = self.trade_mgr._get_brain_settings()
-            current_risk_pct = brain.get("risk_tsl", {}).get(
-                "base_risk", params.get("RISK_PERCENT", 0.3)
-            )
+            current_risk_pct = params.get("RISK_PERCENT", 0.3)
             sl_pct_display = params.get("SL_PERCENT", 0.0)
             tp_r_display = params.get("TP_RR_RATIO", 0.0)
 

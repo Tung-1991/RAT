@@ -291,8 +291,8 @@ class ChecklistManager:
         bot_magic = getattr(config, "BOT_MAGIC_NUMBER", 9999)
         all_bot_pos = [p for p in positions if p.magic == bot_magic]
 
-        # 1. Kiểm tra tổng số lệnh Bot
-        if len(all_bot_pos) >= max_open:
+        # 1. Kiểm tra tổng số lệnh Bot (DCA/PCA là lệnh cứu hộ nên được bypass)
+        if signal_class == "ENTRY" and len(all_bot_pos) >= max_open:
             checks.append(
                 {
                     "name": "Trạng thái",

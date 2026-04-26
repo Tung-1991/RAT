@@ -149,11 +149,12 @@ class SignalListener:
                     reason_msg = parts[2] if len(parts) > 2 else "Không xác định"
 
                     # [NEW] Chống Spam Log: CÓ THỜI GIAN COOLDOWN ĐỘNG (Lấy từ UI)
+                    track_key = f"{symbol}_{sig_class}"
                     last_key = getattr(self, "last_safeguard_reason", {}).get(
-                        symbol, ""
+                        track_key, ""
                     )
                     last_time = getattr(self, "last_safeguard_time", {}).get(
-                        symbol, 0
+                        track_key, 0
                     )
                     now = time.time()
                     
@@ -184,8 +185,8 @@ class SignalListener:
                         if not hasattr(self, "last_safeguard_time"):
                             self.last_safeguard_time = {}
                             
-                        self.last_safeguard_reason[symbol] = reason_key
-                        self.last_safeguard_time[symbol] = now
+                        self.last_safeguard_reason[track_key] = reason_key
+                        self.last_safeguard_time[track_key] = now
                 else:
                     self.log_ui(
                         f"🤖 Bot chuẩn bị bóp cò {sig_class}: {action} {symbol}",

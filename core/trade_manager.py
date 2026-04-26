@@ -332,10 +332,7 @@ class TradeManager:
         if sl_distance <= 0:
             return "ERR_CALC_SL_ZERO"
 
-        brain = self._get_brain_settings()
-        risk_pct = brain.get("risk_tsl", {}).get(
-            "base_risk", params.get("RISK_PERCENT", 0.3)
-        )
+        risk_pct = params.get("RISK_PERCENT", 0.3)
         sl_price = (
             manual_sl
             if manual_sl > 0

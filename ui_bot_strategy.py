@@ -238,7 +238,7 @@ class BotStrategyUI(ctk.CTkToplevel):
             macro_role_var = ctk.StringVar(value=cfg.get("macro_role", "NONE"))
             ctk.CTkComboBox(
                 scroll_frame,
-                values=["NONE", "TREND/RANGE", "BREAKOUT", "EXHAUSTION"],
+                values=["NONE", "BASE", "BREAKOUT", "EXHAUSTION"],
                 variable=macro_role_var,
                 width=110,
             ).grid(row=row, column=4, padx=5, pady=5, sticky="w")
@@ -691,8 +691,20 @@ class BotStrategyUI(ctk.CTkToplevel):
         try:
             output_data = self._pack_data()
             os.makedirs(os.path.dirname(BRAIN_SETTINGS_PATH), exist_ok=True)
+
+            # [FIX] Keep existing non-strategy keys like bot_safeguard, BOT_ACTIVE_SYMBOLS, symbol_configs
+            existing_data = {}
+            if os.path.exists(BRAIN_SETTINGS_PATH):
+                try:
+                    with open(BRAIN_SETTINGS_PATH, "r", encoding="utf-8") as f:
+                        existing_data = json.load(f)
+                except Exception:
+                    pass
+
+            existing_data.update(output_data)
+
             with open(BRAIN_SETTINGS_PATH, "w", encoding="utf-8") as f:
-                json.dump(output_data, f, indent=4)
+                json.dump(existing_data, f, indent=4)
 
             # Đồng bộ ngay vào config Runtime của UI
             config.MASTER_EVAL_MODE = output_data["MASTER_EVAL_MODE"]
@@ -722,7 +734,7 @@ class BotStrategyUI(ctk.CTkToplevel):
             try:
                 with open(file_path, "r", encoding="utf-8") as f:
                     self.brain_data = json.load(f)
-                
+
                 # [FIX]: Reset tracking dictionaries trước khi build lại UI
                 self.ind_widgets = {}
                 self.vote_widgets = {}
