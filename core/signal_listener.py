@@ -43,6 +43,10 @@ class SignalListener:
         # Lưu UUID các tín hiệu đã xử lý để tránh lặp lệnh
         self.processed_signals = set()
         self.last_thinking_signal = {}  # [NEW] Track để chống spam log
+        
+        # [NEW V4.3.1] Trí nhớ dài hạn cho Safeguard Log
+        self.last_safeguard_reason = {} 
+        self.last_safeguard_time = {}
 
     def start(self):
         if not self.running:
@@ -66,12 +70,17 @@ class SignalListener:
                     continue
 
                 # Đọc file với try-except bắt lỗi JSON đang ghi dở từ Daemon
-                with open(SIGNAL_FILE, "r", encoding="utf-8") as f:
-                    try:
-                        payload = json.load(f)
-                    except json.JSONDecodeError:
-                        time.sleep(0.1)
-                        continue
+                # [FIX V4.3.2] Xử lý tranh chấp file (Permission denied) trên Windows
+                try:
+                    with open(SIGNAL_FILE, "r", encoding="utf-8") as f:
+                        try:
+                            payload = json.load(f)
+                        except json.JSONDecodeError:
+                            time.sleep(0.1)
+                            continue
+                except PermissionError:
+                    time.sleep(0.1) # File đang bị Daemon ghi, đợi một chút rồi thử lại
+                    continue
 
                 # 1. Cập nhật Heartbeat (Sync Context) lên UI
                 heartbeat = payload.get("brain_heartbeat", {})
@@ -150,28 +159,25 @@ class SignalListener:
 
                     # [NEW] Chống Spam Log: CÓ THỜI GIAN COOLDOWN ĐỘNG (Lấy từ UI)
                     track_key = f"{symbol}_{sig_class}"
-                    last_key = getattr(self, "last_safeguard_reason", {}).get(
-                        track_key, ""
-                    )
-                    last_time = getattr(self, "last_safeguard_time", {}).get(
-                        track_key, 0
-                    )
+                    
+                    last_key = self.last_safeguard_reason.get(track_key, "")
+                    last_time = self.last_safeguard_time.get(track_key, 0)
                     now = time.time()
                     
                     try:
                         import json as _json, os as _os
-                        _cpath = "data/brain_settings.json"
-                        cmin = 60.0
+                        _cpath = os.path.join(getattr(config, "DATA_DIR", "data"), "brain_settings.json")
+                        cmin = 30.0 # Mặc định 30 phút cho đỡ spam
                         if _os.path.exists(_cpath):
                             with open(_cpath, "r", encoding="utf-8") as _cf:
-                                cmin = float(_json.load(_cf).get("bot_safeguard", {}).get("LOG_COOLDOWN_MINUTES", 60.0))
+                                b_set = _json.load(_cf)
+                                cmin = float(b_set.get("bot_safeguard", {}).get("LOG_COOLDOWN_MINUTES", 30.0))
                     except:
-                        cmin = 60.0
+                        cmin = 30.0
                         
                     is_cooldown_expired = (now - last_time) >= (cmin * 60)
 
                     if reason_key != last_key or is_cooldown_expired:
-                        # Chỉ in ra khi BẮT ĐẦU bị lỗi này HOẶC đã hết 30s kể từ lần in cuối
                         self.log_ui(
                             f"🤖 Bot định bóp cò {sig_class}: {action} {symbol} nhưng bị chặn!",
                             error=False,
@@ -179,11 +185,6 @@ class SignalListener:
                         self.log_ui(
                             f"⚠️ [BOT SAFEGUARD] Lý do: {reason_msg}", error=True
                         )
-
-                        if not hasattr(self, "last_safeguard_reason"):
-                            self.last_safeguard_reason = {}
-                        if not hasattr(self, "last_safeguard_time"):
-                            self.last_safeguard_time = {}
                             
                         self.last_safeguard_reason[track_key] = reason_key
                         self.last_safeguard_time[track_key] = now
@@ -194,12 +195,8 @@ class SignalListener:
                     )
                     self.log_ui(f"❌ Bot vào lệnh thất bại: {result}", error=True)
             else:
-                # Nếu lệnh THÀNH CÔNG, xóa bộ nhớ lỗi cũ để lần sau lỗi lại báo
-                if (
-                    hasattr(self, "last_safeguard_reason")
-                    and symbol in self.last_safeguard_reason
-                ):
-                    del self.last_safeguard_reason[symbol]
+                # [V4.3.1] Không xóa bộ nhớ lỗi khi thành công nữa để giữ vững Cooldown Log
+                pass
 
         # Chạy Thread độc lập để Listener không bị kẹt
         threading.Thread(target=run_bot_trade, daemon=True).start()

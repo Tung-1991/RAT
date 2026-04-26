@@ -713,10 +713,16 @@ class BotUI(ctk.CTk):
                     )
 
                 if "SWING" in cur_tactic_str and sym_ctx:
+                    brain = self.trade_mgr._get_brain_settings()
+                    trail_group = brain.get("risk_tsl", {}).get("base_sl", "G2")
+                    market_mode = sym_ctx.get("market_mode", "ANY")
+                    if trail_group == "DYNAMIC":
+                        trail_group = "G1" if market_mode in ["TREND", "BREAKOUT"] else "G2"
+                        
                     sh, sl, atr_val = (
-                        sym_ctx.get("swing_high", "--"),
-                        sym_ctx.get("swing_low", "--"),
-                        sym_ctx.get("atr", "--"),
+                        sym_ctx.get(f"swing_high_{trail_group}", "--"),
+                        sym_ctx.get(f"swing_low_{trail_group}", "--"),
+                        sym_ctx.get(f"atr_{trail_group}", "--"),
                     )
                     if sh != "--" and sl != "--" and atr_val != "--":
                         t_buf = getattr(config, "trail_atr_buffer", 0.2)

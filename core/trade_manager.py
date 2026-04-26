@@ -210,6 +210,13 @@ class TradeManager:
             bot_tactic = risk_tsl.get(
                 "bot_tsl", getattr(config, "BOT_DEFAULT_TSL", "BE+STEP_R+SWING")
             )
+            dca_cfg = brain.get("dca_config", getattr(config, "DCA_CONFIG", {}))
+            pca_cfg = brain.get("pca_config", getattr(config, "PCA_CONFIG", {}))
+            if dca_cfg.get("ENABLED", False) and "AUTO_DCA" not in bot_tactic:
+                bot_tactic += "+AUTO_DCA"
+            if pca_cfg.get("ENABLED", False) and "AUTO_PCA" not in bot_tactic:
+                bot_tactic += "+AUTO_PCA"
+            
             self.update_trade_tactic(ticket_id, bot_tactic)
             self.state["initial_r_dist"][str(ticket_id)] = sl_distance
 
@@ -674,6 +681,13 @@ class TradeManager:
 
         if "SWING" in active_modes and context:
             trail_group = brain.get("risk_tsl", {}).get("base_sl", "G2")
+            
+            # [FIX V4.3] Xử lý DYNAMIC SL group
+            market_mode = context.get("market_mode", "ANY")
+            is_trending = market_mode in ["TREND", "BREAKOUT"]
+            if trail_group == "DYNAMIC":
+                trail_group = "G1" if is_trending else "G2"
+
             sh = context.get(f"swing_high_{trail_group}")
             sl = context.get(f"swing_low_{trail_group}")
             atr = context.get(f"atr_{trail_group}", 0)
