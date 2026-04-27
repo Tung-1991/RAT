@@ -290,27 +290,30 @@ class ChecklistManager:
         positions = self.connector.get_all_open_positions()
         bot_magic = getattr(config, "BOT_MAGIC_NUMBER", 9999)
         all_bot_pos = [p for p in positions if p.magic == bot_magic]
+        
+        # [KAISER FIX] Chỉ đếm các lệnh Gốc (ENTRY), bỏ qua lệnh con (DCA/PCA) khi check giới hạn
+        parent_bot_pos = [p for p in all_bot_pos if "_AUTO_DCA" not in p.comment and "_AUTO_PCA" not in p.comment]
 
-        # 1. Kiểm tra tổng số lệnh Bot (DCA/PCA là lệnh cứu hộ nên được bypass)
-        if signal_class == "ENTRY" and len(all_bot_pos) >= max_open:
+        # 1. Kiểm tra tổng số lệnh Bot (Chỉ tính lệnh Gốc)
+        if signal_class == "ENTRY" and len(parent_bot_pos) >= max_open:
             checks.append(
                 {
                     "name": "Trạng thái",
                     "status": "FAIL",
-                    "msg": f"Tổng Bot đang chạy {len(all_bot_pos)} lệnh (Max {max_open})",
+                    "msg": f"Tổng Bot đang chạy {len(parent_bot_pos)} lệnh gốc (Max {max_open})",
                 }
             )
             all_passed = False
 
-        # 2. Kiểm tra giới hạn riêng cho từng Symbol (Chỉ áp dụng cho lệnh ENTRY mới)
+        # 2. Kiểm tra giới hạn riêng cho từng Symbol (Chỉ tính lệnh Gốc)
         if signal_class == "ENTRY":
-            symbol_pos = [p for p in all_bot_pos if p.symbol == symbol]
-            if len(symbol_pos) >= max_per_symbol:
+            symbol_parent_pos = [p for p in parent_bot_pos if p.symbol == symbol]
+            if len(symbol_parent_pos) >= max_per_symbol:
                 checks.append(
                     {
                         "name": "Symbol Limit",
                         "status": "FAIL",
-                        "msg": f"{symbol} đã có {len(symbol_pos)} lệnh (Max {max_per_symbol})",
+                        "msg": f"{symbol} đã có {len(symbol_parent_pos)} lệnh gốc (Max {max_per_symbol})",
                     }
                 )
                 all_passed = False

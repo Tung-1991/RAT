@@ -802,8 +802,17 @@ def open_edit_popup(app, ticket):
         except:
             pass
 
+    def do_clear_tp():
+        e_tp.delete(0, "end")
+        e_tp.insert(0, "0.0")
+        live_edit()
+
     ctk.CTkButton(
-        f_ast, text="Lấy Preset TP", width=140, fg_color="#2E7D32", command=do_tp
+        f_ast, text="Lấy Preset TP", width=120, fg_color="#2E7D32", command=do_tp
+    ).pack(side="left", padx=5)
+
+    ctk.CTkButton(
+        f_ast, text="Bỏ TP (Vô cực)", width=120, fg_color="#455A64", command=do_clear_tp
     ).pack(side="right", padx=5)
 
     f_chk = ctk.CTkFrame(top, fg_color="transparent")

@@ -775,7 +775,11 @@ class BotUI(ctk.CTk):
                 display_ticket = f" ┗━ #{ticket_str}"
 
             origin_tag = "[UI]"
-            if "[BOT]" in p.comment:
+            if "[BOT]_AUTO_DCA" in p.comment:
+                origin_tag = "[BOT-DCA]"
+            elif "[BOT]_AUTO_PCA" in p.comment:
+                origin_tag = "[BOT-PCA]"
+            elif "[BOT]" in p.comment:
                 origin_tag = "[BOT]"
             elif "_Child" in p.comment:
                 origin_tag = "[UI+BOT]"
@@ -808,14 +812,21 @@ class BotUI(ctk.CTk):
             rr_str = f"{risk_str}  |  {rew_str}"
 
             stt_txt = self.tsl_states_map.get(p.ticket, "Running")
-            tactic_info = self.trade_mgr.get_trade_tactic(p.ticket)
-            stt_extras = []
-            if "AUTO_DCA" in tactic_info:
-                stt_extras.append("DCA")
-            if "AUTO_PCA" in tactic_info:
-                stt_extras.append("PCA")
-            if stt_extras:
-                stt_txt += f" | +{'/'.join(stt_extras)}"
+            
+            # [KAISER FIX] Hiển thị rõ loại lệnh con trên Status nếu là lệnh DCA/PCA
+            if "[BOT]_AUTO_DCA" in p.comment:
+                stt_txt = "DCA Child"
+            elif "[BOT]_AUTO_PCA" in p.comment:
+                stt_txt = "PCA Child"
+            else:
+                tactic_info = self.trade_mgr.get_trade_tactic(p.ticket)
+                stt_extras = []
+                if "AUTO_DCA" in tactic_info:
+                    stt_extras.append("DCA")
+                if "AUTO_PCA" in tactic_info:
+                    stt_extras.append("PCA")
+                if stt_extras:
+                    stt_txt += f" | +{'/'.join(stt_extras)}"
 
             values_data = (
                 display_ticket,
