@@ -1019,7 +1019,7 @@ class BotUI(ctk.CTk):
     def on_tree_right_click(self, event):
         row_id = self.tree.identify_row(event.y)
         selected = self.tree.selection()
-        menu = Menu(self, tearoff=0)
+        menu = Menu(self, tearoff=0, font=("Roboto", 14))
 
         if len(selected) > 1:
             menu.add_command(

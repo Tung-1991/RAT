@@ -735,9 +735,9 @@ def open_edit_popup(app, ticket):
     var_sl_group = ctk.StringVar(value="G2")
     cbo_sl_group = ctk.CTkOptionMenu(
         f_math,
-        values=["G0", "G1", "G2", "G3", "DYNAMIC"],
+        values=["G0", "G1", "G2", "G3", "DYNAMIC-G1/G2"],
         variable=var_sl_group,
-        width=100,
+        width=130,
         height=26,
         fg_color="#2b2b2b",
         button_color="#1565C0",
@@ -750,7 +750,7 @@ def open_edit_popup(app, ticket):
         group = var_sl_group.get()
 
         # Xử lý DYNAMIC: tự chọn group dựa trên Market Mode
-        if group == "DYNAMIC":
+        if "DYNAMIC" in group:
             mode = ctx.get("market_mode", "ANY")
             group = "G1" if mode in ["TREND", "BREAKOUT"] else "G2"
             var_sl_group.set(f"→{group}")  # Hiển thị group thực tế đã chọn

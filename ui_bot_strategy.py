@@ -466,9 +466,9 @@ class BotStrategyUI(ctk.CTkToplevel):
         # [NEW] Thêm Option DYNAMIC vào Base SL
         ctk.CTkComboBox(
             f_base_sl,
-            values=["G0", "G1", "G2", "G3", "DYNAMIC"],
+            values=["G0", "G1", "G2", "G3", "DYNAMIC-G1/G2"],
             variable=self.var_base_sl,
-            width=100,
+            width=140,
         ).pack(side="left", padx=15)
 
         ctk.CTkLabel(
