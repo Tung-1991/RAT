@@ -656,10 +656,17 @@ class BotStrategyUI(ctk.CTkToplevel):
         # --- COOLDOWN FRAME ---
         cd_frame = ctk.CTkFrame(self.tab_dca_pca, fg_color="#2b2b2b", corner_radius=8)
         cd_frame.pack(fill="x", padx=10, pady=10)
-        
-        ctk.CTkLabel(cd_frame, text="DCA/PCA Cooldown (giây):", font=("Roboto", 12, "bold"), text_color="#29B6F6").grid(row=0, column=0, padx=10, pady=10, sticky="w")
+
+        ctk.CTkLabel(
+            cd_frame,
+            text="DCA/PCA Cooldown (giây):",
+            font=("Roboto", 12, "bold"),
+            text_color="#29B6F6",
+        ).grid(row=0, column=0, padx=10, pady=10, sticky="w")
         self.dca_pca_cooldown = ctk.StringVar(value=str(dca_cfg.get("COOLDOWN", 60)))
-        ctk.CTkEntry(cd_frame, textvariable=self.dca_pca_cooldown, width=70).grid(row=0, column=1, padx=10, pady=10)
+        ctk.CTkEntry(cd_frame, textvariable=self.dca_pca_cooldown, width=70).grid(
+            row=0, column=1, padx=10, pady=10
+        )
 
     def _pack_data(self):
         new_inds = {}
