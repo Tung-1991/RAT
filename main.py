@@ -378,6 +378,9 @@ class BotUI(ctk.CTk):
                 json.dump(config.TSL_CONFIG, f, indent=4)
             with open(PRESETS_FILE, "w") as f:
                 json.dump(config.PRESETS, f, indent=4)
+            
+            # [HOTFIX V4.4] Đồng bộ ngay lập tức sang brain_settings.json để không bị Sandbox ghi đè ngược
+            self._save_brain_live_config()
         except:
             pass
 

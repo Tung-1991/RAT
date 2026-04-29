@@ -659,9 +659,21 @@ class TradeManager:
         
         profit_usd = pos.profit + pos.swap + getattr(pos, "commission", 0.0)
         
+        # [NEW V4.4] Tự động cộng phí sàn ban đầu vào ngưỡng cắt lỗ
+        s_ticket = str(pos.ticket)
+        if "initial_costs" not in self.state: self.state["initial_costs"] = {}
+        if s_ticket not in self.state["initial_costs"]:
+            # Phí ban đầu = |Profit âm lúc mới mở + Commission + Swap|
+            init_cost = abs(min(0, pos.profit) + pos.swap + getattr(pos, "commission", 0.0))
+            self.state["initial_costs"][s_ticket] = init_cost
+            save_state(self.state)
+
+        initial_cost = self.state["initial_costs"].get(s_ticket, 0.0)
+        dynamic_threshold = hard_stop_usd + initial_cost
+
         # Option 1: Hard Cash Stop (Dynamic Threshold)
-        if profit_usd <= -hard_stop_usd:
-            self.log(f"🔥 [ANTI CASH] Đạt ngưỡng Hard Stop (-${hard_stop_usd})! Cắt lỗ lệnh #{pos.ticket}", target="bot")
+        if profit_usd <= -dynamic_threshold:
+            self.log(f"🔥 [ANTI CASH] Đạt ngưỡng Hard Stop (-${hard_stop_usd} + Phí ${initial_cost:.2f})! Cắt lỗ lệnh #{pos.ticket}", target="bot")
             self.state["exit_reasons"][str(pos.ticket)] = "Anti_Cash_Hard_Stop"
             threading.Thread(target=self.connector.close_position, args=(pos,), daemon=True).start()
             return
