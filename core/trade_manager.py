@@ -681,6 +681,13 @@ class TradeManager:
             threading.Thread(target=self.connector.close_position, args=(pos,), daemon=True).start()
             return
 
+        # Option 2: Time & Drawdown Cut
+        hold_time = time.time() - pos.time
+        if hold_time > time_cut_s and profit_usd < 0:
+            self.log(f"⏳ [ANTI CASH] Quá Min Hold Time ({time_cut_s}s) và đang âm! Cắt lỗ lệnh #{pos.ticket}", target="bot")
+            self.state["exit_reasons"][str(pos.ticket)] = "Anti_Cash_Time_Cut"
+            threading.Thread(target=self.connector.close_position, args=(pos,), daemon=True).start()
+
     def _check_recovery(self, pos, context):
         """[NEW V4.4] Close on Reverse (REV_C) logic"""
         # 1. Lấy signal hiện tại từ context (đã được Daemon ghi vào latest_signal)
@@ -705,13 +712,6 @@ class TradeManager:
                 self.log(f"🔄 [RECOVERY] Đảo chiều Signal ({'SELL' if is_buy else 'BUY'})! Đóng lệnh #{pos.ticket}", target="bot")
                 self.state["exit_reasons"][str(pos.ticket)] = "Recovery_Close"
                 threading.Thread(target=self.connector.close_position, args=(pos,), daemon=True).start()
-            
-        # Option 2: Time & Drawdown Cut
-        hold_time = time.time() - pos.time
-        if hold_time > time_cut_s and profit_usd < 0:
-            self.log(f"⏳ [ANTI CASH] Quá Min Hold Time ({time_cut_s}s) và đang âm! Cắt lỗ lệnh #{pos.ticket}", target="bot")
-            self.state["exit_reasons"][str(pos.ticket)] = "Anti_Cash_Time_Cut"
-            threading.Thread(target=self.connector.close_position, args=(pos,), daemon=True).start()
 
     def _apply_independent_tsl(self, pos, context):
         tactic_str = self.get_trade_tactic(pos.ticket)
