@@ -45,7 +45,7 @@ class DataEngine:
     # =========================================================================
     # [TỐI ƯU CPU] CHỈ TÍNH TOÁN CÁC INDICATOR ĐƯỢC BẬT (ON)
     # =========================================================================
-    def _apply_ta(self, df, inds_config):
+    def _apply_ta(self, df, inds_config, tsl_config=None):
         if df is None or df.empty: 
             return df
         try:
@@ -98,37 +98,41 @@ class DataEngine:
                 df.ta.stoch(k=k, d=d, smooth_k=sm, append=True)
             
             # Parabolic SAR
-            if inds_config.get("psar", {}).get("active"):
-                step = float(inds_config["psar"].get("params", {}).get("step", 0.02))
-                max_step = float(inds_config["psar"].get("params", {}).get("max_step", 0.2))
+            if inds_config.get("psar", {}).get("active") or (tsl_config and "PSAR_STEP" in tsl_config):
+                # Ưu tiên thông số từ TSL Config nếu có
+                step = 0.02
+                max_step = 0.2
+                if tsl_config and "PSAR_STEP" in tsl_config:
+                    step = float(tsl_config["PSAR_STEP"])
+                    max_step = float(tsl_config["PSAR_MAX"])
+                elif inds_config.get("psar"):
+                    step = float(inds_config["psar"].get("params", {}).get("step", 0.02))
+                    max_step = float(inds_config["psar"].get("params", {}).get("max_step", 0.2))
+                
                 df.ta.psar(af0=step, af=step, max_af=max_step, append=True)
 
-            # Pivot Points (Standard Floor) - [FIX] Bổ sung tính toán bị thiếu
+            # Pivot Points (Standard Floor)
             if inds_config.get("pivot_points", {}).get("active"):
-                # Dịch số liệu (shift 1) để lấy High/Low/Close của nến liền trước tính Cản cho nến hiện tại
                 prev_h = df['high'].shift(1)
                 prev_l = df['low'].shift(1)
                 prev_c = df['close'].shift(1)
-                
                 df['PP'] = (prev_h + prev_l + prev_c) / 3
                 df['R1'] = (2 * df['PP']) - prev_l
                 df['S1'] = (2 * df['PP']) - prev_h
 
-            # ATR (Dùng làm filter)
+            # ATR
             if inds_config.get("atr", {}).get("active"):
                 p = int(inds_config["atr"].get("params", {}).get("period", 14))
                 df.ta.atr(length=p, append=True)
             
-            # Nến Nhật (Candle Pattern & Multi Candle)
+            # Nến Nhật
             is_candle_active = inds_config.get("candle", {}).get("active")
             is_mc_active = inds_config.get("multi_candle", {}).get("active")
-            
             if is_candle_active or is_mc_active:
                 O, H, L, C = df['open'], df['high'], df['low'], df['close']
                 body = (C - O).abs()
                 upper_shadow = H - df[['open', 'close']].max(axis=1)
                 lower_shadow = df[['open', 'close']].min(axis=1) - L
-                
                 df["CDL_ENGULFING"] = np.where((C > O) & (C.shift(1) < O.shift(1)) & (C > O.shift(1)) & (O < C.shift(1)), 100,
                                       np.where((C < O) & (C.shift(1) > O.shift(1)) & (C < O.shift(1)) & (O > C.shift(1)), -100, 0))
                 df["CDL_HAMMER"] = np.where((lower_shadow > 2 * body) & (upper_shadow < 0.2 * body) & (C > O), 100, 0)
@@ -141,7 +145,7 @@ class DataEngine:
             
         return df
 
-    def _fetch_bars(self, symbol, timeframe_val, num_bars, inds_config):
+    def _fetch_bars(self, symbol, timeframe_val, num_bars, inds_config, tsl_config=None):
         if isinstance(timeframe_val, int):
             tf = timeframe_val
         else:
@@ -156,7 +160,7 @@ class DataEngine:
         df['time'] = pd.to_datetime(df['time'], unit='s')
         
         # Chỉ tính những Indicator đang bật
-        df = self._apply_ta(df, inds_config)
+        df = self._apply_ta(df, inds_config, tsl_config)
         
         return df
 
@@ -195,6 +199,7 @@ class DataEngine:
         """Kéo độc lập 4 chuỗi dữ liệu cho G0, G1, G2, G3 và tính Cản/ATR cho tất cả"""
         settings = self._get_brain_settings()
         inds_config = settings.get("indicators", {})
+        tsl_config = settings.get("tsl_config", getattr(config, "TSL_CONFIG", {}))
         
         tfs = {
             "G0": settings.get("G0_TIMEFRAME", getattr(config, "G0_TIMEFRAME", "1d")),
@@ -205,8 +210,8 @@ class DataEngine:
         
         num_bars = settings.get("NUM_H1_BARS", 100)
         
-        # Truyền cấu hình Indicator vào để lọc
-        dfs = {grp: self._fetch_bars(symbol, tf, num_bars, inds_config) for grp, tf in tfs.items()}
+        # Truyền cấu hình Indicator và TSL vào để lọc
+        dfs = {grp: self._fetch_bars(symbol, tf, num_bars, inds_config, tsl_config) for grp, tf in tfs.items()}
         
         if any(df.empty for df in dfs.values()):
             return None, None
@@ -220,9 +225,14 @@ class DataEngine:
 
         # [NEW V4.4 FINAL] Lấy giá trị PSAR hiện tại cho TSL PSAR_TRAIL
         try:
-            psar_cols = [c for c in dfs["G2"].columns if c.startswith("PSARl_") or c.startswith("PSARs_")]
+            tsl_cfg = settings.get("tsl_config", getattr(config, "TSL_CONFIG", {}))
+            psar_grp = tsl_cfg.get("PSAR_GROUP", "G2")
+            if psar_grp not in dfs: psar_grp = "G2"
+            
+            df_psar = dfs[psar_grp]
+            psar_cols = [c for c in df_psar.columns if c.startswith("PSARl_") or c.startswith("PSARs_")]
             for col in psar_cols:
-                val = dfs["G2"][col].iloc[-1]
+                val = df_psar[col].iloc[-1]
                 if not pd.isna(val):
                     context["psar"] = float(val)
                     break
@@ -251,14 +261,15 @@ class DataEngine:
         """HÀM CŨ: Phục vụ chạy Bot Daemon bản cũ tránh crash"""
         settings = self._get_brain_settings()
         inds_config = settings.get("indicators", {})
+        tsl_config = settings.get("tsl_config", getattr(config, "TSL_CONFIG", {}))
         
         tf_entry = settings.get("entry_timeframe", "15m")
         tf_trend = settings.get("trend_timeframe", "1h")
         num_entry = settings.get("NUM_M15_BARS", 100)
         num_trend = settings.get("NUM_H1_BARS", 100)
 
-        df_entry = self._fetch_bars(symbol, tf_entry, num_entry, inds_config)
-        df_trend = self._fetch_bars(symbol, tf_trend, num_trend, inds_config)
+        df_entry = self._fetch_bars(symbol, tf_entry, num_entry, inds_config, tsl_config)
+        df_trend = self._fetch_bars(symbol, tf_trend, num_trend, inds_config, tsl_config)
 
         if df_entry.empty or df_trend.empty:
             return None, None, None

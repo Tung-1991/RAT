@@ -76,9 +76,12 @@ def open_symbol_config_popup(app, symbol):
     e_max_ping.grid(row=2, column=1, sticky="e", pady=10)
 
     # [NEW V4.4] Fixed Lot Mode
-    ctk.CTkLabel(f_grid, text="Fixed Lot (0 = Tắt):", text_color="#FFB300", font=("Roboto", 12, "bold")).grid(
-        row=3, column=0, sticky="w", pady=10
-    )
+    ctk.CTkLabel(
+        f_grid,
+        text="Fixed Lot (0 = Tắt):",
+        text_color="#FFB300",
+        font=("Roboto", 12, "bold"),
+    ).grid(row=3, column=0, sticky="w", pady=10)
     e_fixed_lot = ctk.CTkEntry(f_grid, width=100, justify="center")
     e_fixed_lot.insert(0, str(sym_cfg.get("fixed_lot", 0.0)))
     e_fixed_lot.grid(row=3, column=1, sticky="e", pady=10)
@@ -370,13 +373,17 @@ def open_bot_setting_popup(app):
     # [NEW V4.4] Strict Min Lot Rejection & Post-Close Cooldown
     var_strict_min_lot = ctk.BooleanVar(value=safe_cfg.get("STRICT_MIN_LOT", False))
     chk_strict_min_lot = ctk.CTkCheckBox(
-        f_safety, text="Strict Min Lot (Chặn < Min Vol)", variable=var_strict_min_lot, text_color="#F44336", font=("Roboto", 12, "bold")
+        f_safety,
+        text="Strict Min Lot (Chặn < Min Vol)",
+        variable=var_strict_min_lot,
+        text_color="#F44336",
+        font=("Roboto", 12, "bold"),
     )
     chk_strict_min_lot.grid(row=7, column=0, columnspan=2, sticky="w", padx=10, pady=8)
 
-    ctk.CTkLabel(f_safety, text="Nghỉ Sau Đóng Lệnh (Giây):", text_color="#FFB300").grid(
-        row=7, column=2, sticky="w", padx=10, pady=8
-    )
+    ctk.CTkLabel(
+        f_safety, text="Nghỉ Sau Đóng Lệnh (Giây):", text_color="#FFB300"
+    ).grid(row=7, column=2, sticky="w", padx=10, pady=8)
     e_post_close = ctk.CTkEntry(f_safety, width=70, justify="center")
     e_post_close.insert(0, str(safe_cfg.get("POST_CLOSE_COOLDOWN", 0)))
     e_post_close.grid(row=7, column=3, sticky="w", padx=10, pady=8)
@@ -542,33 +549,25 @@ def open_preset_config_popup(app):
 # ==============================================================================
 def open_tsl_popup(app):
     top = ctk.CTkToplevel(app)
-    top.title("TSL Logic")
-    top.geometry("420x600")
+    top.title("TSL Logic Configuration")
+    top.geometry("450x550")
     top.attributes("-topmost", True)
-    # top.transient(app)
 
-    def sec(t):
+    # [FIX V4.4] CHIA LÀM 2 TAB GỌN GÀNG THEO YÊU CẦU CỦA BOSS
+    tabview = ctk.CTkTabview(top, height=450)
+    tabview.pack(fill="both", expand=True, padx=10, pady=5)
+
+    tab_basic = tabview.add("Basic (BE, PNL, STEP)")
+    tab_adv = tabview.add("Advanced (CASH, PSAR)")
+
+    def sec(parent, t):
         ctk.CTkLabel(
-            top, text=t, font=("Roboto", 12, "bold"), text_color="#03A9F4"
+            parent, text=t, font=("Roboto", 12, "bold"), text_color="#03A9F4"
         ).pack(fill="x", padx=15, pady=(10, 2), anchor="w")
-        return ctk.CTkFrame(top, fg_color="transparent")
+        return ctk.CTkFrame(parent, fg_color="transparent")
 
-    # [NEW V4.4] HARD CASH & PSAR
-    f_cash = sec("0. BE HARD CASH & PSAR")
-    f_cash.pack(fill="x", padx=15)
-    
-    cbo_cash_type = ctk.CTkOptionMenu(f_cash, values=["USD", "PERCENT", "POINT"], width=80)
-    cbo_cash_type.set(config.TSL_CONFIG.get("BE_CASH_TYPE", "USD"))
-    cbo_cash_type.pack(side="left", padx=5)
-    
-    e_cash_val = ctk.CTkEntry(f_cash, width=60)
-    e_cash_val.insert(0, str(config.TSL_CONFIG.get("BE_VALUE", 5.0)))
-    e_cash_val.pack(side="left", padx=5)
-    ctk.CTkLabel(f_cash, text="(Mốc Target)").pack(side="left", padx=2)
-    
-    ctk.CTkLabel(f_cash, text="| PSAR Auto", text_color="#FFB300", font=("Roboto", 11, "bold")).pack(side="right", padx=5)
-
-    f_be = sec("1. BREAK-EVEN (BE)")
+    # ================= TAB 1: BASIC =================
+    f_be = sec(tab_basic, "1. BREAK-EVEN (BE)")
     f_be.pack(fill="x", padx=15)
     cbo_be = ctk.CTkOptionMenu(f_be, values=["SOFT", "SMART"], width=100)
     cbo_be.set(config.TSL_CONFIG.get("BE_MODE", "SOFT"))
@@ -578,9 +577,9 @@ def open_tsl_popup(app):
     e_be_rr.pack(side="left", padx=5)
     ctk.CTkLabel(f_be, text="Trigger(R):").pack(side="left")
 
-    f_pnl = sec("2. KHÓA LÃI PNL (LEVELS)")
+    f_pnl = sec(tab_basic, "2. KHÓA LÃI PNL (LEVELS)")
     f_pnl.pack(fill="both", expand=True, padx=15)
-    scroll_pnl = ctk.CTkScrollableFrame(f_pnl, height=120)
+    scroll_pnl = ctk.CTkScrollableFrame(f_pnl, height=100)
     scroll_pnl.pack(fill="both", expand=True)
     pnl_entries = []
 
@@ -610,7 +609,7 @@ def open_tsl_popup(app):
         command=lambda: pnl_entries.pop()[0].destroy() if pnl_entries else None,
     ).pack(side="right", padx=5)
 
-    f_step = sec("3. STEP R (TRAIL)")
+    f_step = sec(tab_basic, "3. STEP R (TRAIL)")
     f_step.pack(fill="x", padx=15)
     e_sz = ctk.CTkEntry(f_step, width=50)
     e_sz.insert(0, str(config.TSL_CONFIG.get("STEP_R_SIZE", 1.0)))
@@ -620,6 +619,49 @@ def open_tsl_popup(app):
     e_rt.pack(side="right", padx=5)
     ctk.CTkLabel(f_step, text="Size(R):").pack(side="left")
     ctk.CTkLabel(f_step, text="Lock(0-1):").pack(side="right", padx=5)
+
+    # ================= TAB 2: ADVANCED =================
+    f_swing_man = sec(tab_adv, "4. MANUAL SWING (Bám nến)")
+    f_swing_man.pack(fill="x", padx=15)
+    cbo_swing_grp = ctk.CTkOptionMenu(f_swing_man, values=["G0", "G1", "G2", "G3"], width=100)
+    cbo_swing_grp.set(config.TSL_CONFIG.get("SWING_GROUP", "G2"))
+    cbo_swing_grp.pack(side="right")
+    ctk.CTkLabel(f_swing_man, text="Group Theo Dõi:").pack(side="left")
+
+    f_cash = sec(tab_adv, "5. BE HARD CASH (Khóa lãi thực)")
+    f_cash.pack(fill="x", padx=15)
+
+    cbo_cash_type = ctk.CTkOptionMenu(
+        f_cash, values=["USD", "PERCENT", "POINT"], width=80
+    )
+    cbo_cash_type.set(config.TSL_CONFIG.get("BE_CASH_TYPE", "USD"))
+    cbo_cash_type.pack(side="left", padx=5)
+
+    e_cash_val = ctk.CTkEntry(f_cash, width=60)
+    e_cash_val.insert(0, str(config.TSL_CONFIG.get("BE_VALUE", 5.0)))
+    e_cash_val.pack(side="left", padx=5)
+    ctk.CTkLabel(f_cash, text="(Mốc Target Bù Phí + X)").pack(side="left", padx=2)
+
+    f_psar = sec(tab_adv, "6. PSAR TRAILING (Đuổi chấm)")
+    f_psar.pack(fill="x", padx=15)
+    
+    f_psar_row1 = ctk.CTkFrame(f_psar, fg_color="transparent")
+    f_psar_row1.pack(fill="x", pady=2)
+    cbo_psar_grp = ctk.CTkOptionMenu(f_psar_row1, values=["G0", "G1", "G2", "G3"], width=80)
+    cbo_psar_grp.set(config.TSL_CONFIG.get("PSAR_GROUP", "G2"))
+    cbo_psar_grp.pack(side="right")
+    ctk.CTkLabel(f_psar_row1, text="Group:").pack(side="left")
+
+    f_psar_row2 = ctk.CTkFrame(f_psar, fg_color="transparent")
+    f_psar_row2.pack(fill="x", pady=2)
+    e_psar_step = ctk.CTkEntry(f_psar_row2, width=60)
+    e_psar_step.insert(0, str(config.TSL_CONFIG.get("PSAR_STEP", 0.02)))
+    e_psar_step.pack(side="left", padx=5)
+    e_psar_max = ctk.CTkEntry(f_psar_row2, width=60)
+    e_psar_max.insert(0, str(config.TSL_CONFIG.get("PSAR_MAX", 0.2)))
+    e_psar_max.pack(side="right", padx=5)
+    ctk.CTkLabel(f_psar_row2, text="Step:").pack(side="left")
+    ctk.CTkLabel(f_psar_row2, text="Max:").pack(side="right")
 
     def save():
         try:
@@ -639,17 +681,26 @@ def open_tsl_popup(app):
                     ),
                     "STEP_R_SIZE": float(e_sz.get()),
                     "STEP_R_RATIO": float(e_rt.get()),
+                    "SWING_GROUP": cbo_swing_grp.get(),
+                    "PSAR_GROUP": cbo_psar_grp.get(),
+                    "PSAR_STEP": float(e_psar_step.get()),
+                    "PSAR_MAX": float(e_psar_max.get()),
                 }
             )
             app.save_settings()
-            app.log_message("✅ TSL Saved.")
+            app.log_message("✅ TSL Saved.", target="bot")
             top.destroy()
         except:
             messagebox.showerror("Lỗi", "Cấu hình sai!")
 
-    ctk.CTkButton(top, text="LƯU TSL LOGIC", fg_color=COL_GREEN, command=save).pack(
-        pady=15, fill="x", padx=40
-    )
+    ctk.CTkButton(
+        top,
+        text="LƯU TSL LOGIC",
+        fg_color=COL_GREEN,
+        height=40,
+        font=FONT_BOLD,
+        command=save,
+    ).pack(pady=(0, 15), fill="x", padx=40)
 
 
 # ==============================================================================
@@ -711,6 +762,7 @@ def open_edit_popup(app, ticket):
         "PNL": "PNL" in cur_t,
         "STEP": "STEP_R" in cur_t,
         "SWING": "SWING" in cur_t,
+        "REV_C": "REVERSE_CLOSE" in cur_t,  # [FIX] Nút Close on Reverse
     }
 
     def live_edit(*args):
@@ -757,7 +809,9 @@ def open_edit_popup(app, ticket):
                     if states["SWING"]:
                         preview_txts.append("SWING (Đuổi theo nến H1/M15)")
                     if states["BE_C"]:
-                        preview_txts.append(f"BE_CASH ({config.TSL_CONFIG.get('BE_VALUE', 5)})")
+                        preview_txts.append(
+                            f"BE_CASH ({config.TSL_CONFIG.get('BE_VALUE', 5)})"
+                        )
                     if states["PSAR"]:
                         preview_txts.append("PSAR TRAIL")
 
@@ -904,10 +958,14 @@ def open_edit_popup(app, ticket):
             act = []
             for k, v in states.items():
                 if v:
-                    if k == "STEP": act.append("STEP_R")
-                    elif k == "BE_C": act.append("BE_CASH")
-                    elif k == "PSAR": act.append("PSAR_TRAIL")
-                    else: act.append(k)
+                    if k == "STEP":
+                        act.append("STEP_R")
+                    elif k == "BE_C":
+                        act.append("BE_CASH")
+                    elif k == "PSAR":
+                        act.append("PSAR_TRAIL")
+                    else:
+                        act.append(k)
             final_t = "+".join(act) if act else "OFF"
             if chk_dca.get():
                 final_t += "+AUTO_DCA"

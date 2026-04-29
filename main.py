@@ -90,6 +90,8 @@ class BotUI(ctk.CTk):
             "PNL": False,
             "STEP_R": True,
             "SWING": True,
+            "BE_CASH": False,     # [FIX] Thêm State cho TSL CASH
+            "PSAR_TRAIL": False,  # [FIX] Thêm State cho TSL PSAR
             "AUTO_DCA": False,
             "AUTO_PCA": False,
         }
@@ -254,6 +256,11 @@ class BotUI(ctk.CTk):
         set_btn(self.btn_tactic_pnl, self.tactic_states["PNL"])
         set_btn(self.btn_tactic_step, self.tactic_states["STEP_R"])
         set_btn(self.btn_tactic_swing, self.tactic_states["SWING"])
+        
+        if hasattr(self, "btn_tactic_cash"): # [FIX] Update màu nút CASH
+            set_btn(self.btn_tactic_cash, self.tactic_states["BE_CASH"])
+        if hasattr(self, "btn_tactic_psar"): # [FIX] Update màu nút PSAR
+            set_btn(self.btn_tactic_psar, self.tactic_states["PSAR_TRAIL"])
 
         if hasattr(self, "btn_tactic_dca"):
             set_btn(self.btn_tactic_dca, self.tactic_states["AUTO_DCA"])
@@ -1044,9 +1051,22 @@ class BotUI(ctk.CTk):
             if row_id:
                 self.tree.selection_set(row_id)
                 ticket = int(row_id)
+                
+                # [FIX V4.4] Thêm Toggle Close on Reverse vào Menu chuột phải
+                current_tactic = self.trade_mgr.get_trade_tactic(ticket)
+                rev_status = "ON" if "REVERSE_CLOSE" in current_tactic else "OFF"
+                def toggle_rev():
+                    new_t = current_tactic + "+REVERSE_CLOSE" if rev_status == "OFF" else current_tactic.replace("+REVERSE_CLOSE", "").replace("++", "+").strip("+")
+                    self.trade_mgr.update_trade_tactic(ticket, new_t)
+                    self.log_message(f"Update Reverse Close #{ticket}: {rev_status} -> {'ON' if rev_status == 'OFF' else 'OFF'}")
+                
                 menu.add_command(
                     label=f"📝 Sửa lệnh #{ticket}",
                     command=lambda: self.open_edit_popup(ticket),
+                )
+                menu.add_command(
+                    label=f"🔄 Đảo Chiều Tự Cắt: {rev_status}",
+                    command=toggle_rev,
                 )
                 menu.add_separator()
                 menu.add_command(

@@ -140,7 +140,7 @@ class BotStrategyUI(ctk.CTkToplevel):
             hover_color="#0D47A1",
             command=self.load_template,
         ).pack(side="left", padx=5)
-        
+
         ctk.CTkButton(
             btn_frame,
             text="💾 SAVE AS TEMPLATE",
@@ -422,7 +422,7 @@ class BotStrategyUI(ctk.CTkToplevel):
         )
         ctk.CTkCheckBox(
             f_adv,
-            text="Force ANY Mode (Scalping: Bỏ qua check G0/G1)",
+            text="Force ANY Mode (Scalping)",
             variable=self.var_force_any,
             font=("Roboto", 13, "bold"),
             text_color="#FF9800",
@@ -431,11 +431,44 @@ class BotStrategyUI(ctk.CTkToplevel):
         self.var_strict_risk = ctk.BooleanVar(value=risk_data.get("strict_risk", False))
         ctk.CTkCheckBox(
             f_adv,
-            text="Strict Risk (Trừ phí Spread/Comm vào Lot)",
+            text="Strict Risk (Trừ Phí)",
             variable=self.var_strict_risk,
             font=("Roboto", 13, "bold"),
             text_color="#F44336",
         ).grid(row=0, column=1, padx=15, pady=10, sticky="w")
+
+        # [FIX V4.4] TÍCH HỢP TÍNH NĂNG CLOSE ON REVERSE VÀO SANDBOX
+        import os, json
+
+        safe_cfg = {}
+        try:
+            _cfg_path = os.path.join("data", "brain_settings.json")
+            if os.path.exists(_cfg_path):
+                with open(_cfg_path, "r", encoding="utf-8") as _f:
+                    safe_cfg = json.load(_f).get("bot_safeguard", {})
+        except:
+            pass
+
+        self.var_close_rev = ctk.BooleanVar(
+            value=safe_cfg.get("CLOSE_ON_REVERSE", False)
+        )
+        ctk.CTkCheckBox(
+            f_adv,
+            text="Close on Reverse (Đảo chiều cắt lệnh)",
+            variable=self.var_close_rev,
+            font=("Roboto", 13, "bold"),
+            text_color="#00E676",
+        ).grid(row=1, column=0, padx=15, pady=10, sticky="w")
+
+        f_rev_time = ctk.CTkFrame(f_adv, fg_color="transparent")
+        f_rev_time.grid(row=1, column=1, padx=15, pady=10, sticky="w")
+        ctk.CTkLabel(f_rev_time, text="Min Hold Time (s):").pack(side="left")
+        self.var_rev_time = ctk.StringVar(
+            value=str(safe_cfg.get("CLOSE_ON_REVERSE_MIN_TIME", 180))
+        )
+        ctk.CTkEntry(
+            f_rev_time, textvariable=self.var_rev_time, width=60, justify="center"
+        ).pack(side="left", padx=5)
         # -------------------------------------------------------------
 
         f_base = ctk.CTkFrame(self.tab_risk, fg_color="transparent")
@@ -659,6 +692,10 @@ class BotStrategyUI(ctk.CTkToplevel):
             "strict_risk": self.var_strict_risk.get(),  # [NEW]
         }
 
+        # [FIX V4.4] Trích xuất config Close on Reverse
+        self.temp_close_rev = self.var_close_rev.get()
+        self.temp_rev_time = float(self.var_rev_time.get() or 180)
+
         # [NEW] Thêm Distance ATR R
         new_dca = {
             "ENABLED": self.dca_active.get(),
@@ -704,6 +741,14 @@ class BotStrategyUI(ctk.CTkToplevel):
                     pass
 
             existing_data.update(output_data)
+
+            # [FIX V4.4] Cập nhật Close on Reverse vào bot_safeguard khi Sandbox bấm lưu
+            if "bot_safeguard" not in existing_data:
+                existing_data["bot_safeguard"] = {}
+            existing_data["bot_safeguard"]["CLOSE_ON_REVERSE"] = self.temp_close_rev
+            existing_data["bot_safeguard"]["CLOSE_ON_REVERSE_MIN_TIME"] = (
+                self.temp_rev_time
+            )
 
             with open(BRAIN_SETTINGS_PATH, "w", encoding="utf-8") as f:
                 json.dump(existing_data, f, indent=4)

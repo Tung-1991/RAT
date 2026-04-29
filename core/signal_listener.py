@@ -43,9 +43,9 @@ class SignalListener:
         # Lưu UUID các tín hiệu đã xử lý để tránh lặp lệnh
         self.processed_signals = set()
         self.last_thinking_signal = {}  # [NEW] Track để chống spam log
-        
+
         # [NEW V4.3.1] Trí nhớ dài hạn cho Safeguard Log
-        self.last_safeguard_reason = {} 
+        self.last_safeguard_reason = {}
         self.last_safeguard_time = {}
 
     def start(self):
@@ -79,7 +79,7 @@ class SignalListener:
                             time.sleep(0.1)
                             continue
                 except PermissionError:
-                    time.sleep(0.1) # File đang bị Daemon ghi, đợi một chút rồi thử lại
+                    time.sleep(0.1)  # File đang bị Daemon ghi, đợi một chút rồi thử lại
                     continue
 
                 # 1. Cập nhật Heartbeat (Sync Context) lên UI
@@ -123,40 +123,61 @@ class SignalListener:
         market_mode = signal.get("market_mode", "ANY")
 
         # [NEW V4.4 FINAL] LƯỚI LỌC 0: TỰ ĐỘNG CẮT LỆNH ĐẢO CHIỀU (CLOSE ON REVERSE)
-        # Chạy độc lập với AUTO-TRADE. Bất cứ lệnh nào đang ôm tactic REVERSE_CLOSE 
+        # Chạy độc lập với AUTO-TRADE. Bất cứ lệnh nào đang ôm tactic REVERSE_CLOSE
         # đều sẽ bị chém ngay lập tức khi có tín hiệu ngược (bảo vệ tài khoản).
         try:
             positions = self.trade_manager.connector.get_all_open_positions()
             opposite_type = 1 if action == "BUY" else 0  # 1 = SELL, 0 = BUY
-            
+
             for p in positions:
                 if p.symbol == symbol and p.type == opposite_type:
                     tactic = self.trade_manager.get_trade_tactic(p.ticket)
                     if "REVERSE_CLOSE" in tactic:
                         hold_time = time.time() - p.time
-                        
+
                         # Đọc thông số chống nhiễu (Min Hold Time)
                         try:
                             import json as _json, os as _os
-                            _cpath = _os.path.join(getattr(config, "DATA_DIR", "data"), "brain_settings.json")
+
+                            _cpath = _os.path.join(
+                                getattr(config, "DATA_DIR", "data"),
+                                "brain_settings.json",
+                            )
                             with open(_cpath, "r", encoding="utf-8") as _cf:
                                 b_set = _json.load(_cf)
-                                min_hold = float(b_set.get("bot_safeguard", {}).get("CLOSE_ON_REVERSE_MIN_TIME", 180))
+                                min_hold = float(
+                                    b_set.get("bot_safeguard", {}).get(
+                                        "CLOSE_ON_REVERSE_MIN_TIME", 180
+                                    )
+                                )
                         except Exception:
                             min_hold = 180.0
-                            
+
                         if hold_time >= min_hold:
-                            self.log_ui(f"🔄 [REVERSE TACTIC] Tín hiệu {action} -> Tự động chém lệnh ngược #{p.ticket} (Đã giữ: {hold_time:.0f}s)", False)
-                            
+                            self.log_ui(
+                                f"🔄 [REVERSE TACTIC] Tín hiệu {action} -> Tự động chém lệnh ngược #{p.ticket} (Đã giữ: {hold_time:.0f}s)",
+                                False,
+                            )
+
                             # Lưu lý do thoát lệnh để ghi log CSV
                             if "exit_reasons" not in self.trade_manager.state:
                                 self.trade_manager.state["exit_reasons"] = {}
-                            self.trade_manager.state["exit_reasons"][str(p.ticket)] = f"Reverse_to_{action}"
-                            
+                            self.trade_manager.state["exit_reasons"][str(p.ticket)] = (
+                                f"Reverse_to_{action}"
+                            )
+
                             import threading
-                            threading.Thread(target=self.trade_manager.connector.close_position, args=(p,), daemon=True).start()
+
+                            threading.Thread(
+                                target=self.trade_manager.connector.close_position,
+                                args=(p,),
+                                daemon=True,
+                            ).start()
                         else:
-                            self.log_ui(f"⏳ [REVERSE TACTIC] Tín hiệu {action} nhưng giữ lệnh #{p.ticket} (Chưa đủ {min_hold}s chống nhiễu)", False)
+                            self.log_ui(
+                                f"⏳ [REVERSE TACTIC] Tín hiệu {action} nhưng giữ lệnh #{p.ticket} (Chưa đủ {min_hold}s chống nhiễu)",
+                                False,
+                            )
         except Exception as e:
             logger.error(f"[Listener] Lỗi Reverse Check: {e}")
 
@@ -197,22 +218,29 @@ class SignalListener:
 
                     # [NEW] Chống Spam Log: CÓ THỜI GIAN COOLDOWN ĐỘNG (Lấy từ UI)
                     track_key = f"{symbol}_{sig_class}"
-                    
+
                     last_key = self.last_safeguard_reason.get(track_key, "")
                     last_time = self.last_safeguard_time.get(track_key, 0)
                     now = time.time()
-                    
+
                     try:
                         import json as _json, os as _os
-                        _cpath = os.path.join(getattr(config, "DATA_DIR", "data"), "brain_settings.json")
-                        cmin = 30.0 # Mặc định 30 phút cho đỡ spam
+
+                        _cpath = os.path.join(
+                            getattr(config, "DATA_DIR", "data"), "brain_settings.json"
+                        )
+                        cmin = 30.0  # Mặc định 30 phút cho đỡ spam
                         if _os.path.exists(_cpath):
                             with open(_cpath, "r", encoding="utf-8") as _cf:
                                 b_set = _json.load(_cf)
-                                cmin = float(b_set.get("bot_safeguard", {}).get("LOG_COOLDOWN_MINUTES", 30.0))
+                                cmin = float(
+                                    b_set.get("bot_safeguard", {}).get(
+                                        "LOG_COOLDOWN_MINUTES", 30.0
+                                    )
+                                )
                     except:
                         cmin = 30.0
-                        
+
                     is_cooldown_expired = (now - last_time) >= (cmin * 60)
 
                     if reason_key != last_key or is_cooldown_expired:
@@ -223,7 +251,7 @@ class SignalListener:
                         self.log_ui(
                             f"⚠️ [BOT SAFEGUARD] Lý do: {reason_msg}", error=True
                         )
-                            
+
                         self.last_safeguard_reason[track_key] = reason_key
                         self.last_safeguard_time[track_key] = now
                 else:

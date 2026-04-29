@@ -703,7 +703,7 @@ class TradeManager:
 
         # [NEW V4.4] 2. PSAR TRAILING
         if "PSAR_TRAIL" in active_modes and context:
-            psar_val = context.get("psar")  # Yêu cầu DataEngine cấp biến này
+            psar_val = context.get("psar") 
             if psar_val:
                 candidates.append((psar_val, f"PSAR ➔ {psar_val:.2f}"))
                 milestones.append((0, f"PSAR Đợi ➔ {psar_val:.2f}"))
@@ -729,7 +729,7 @@ class TradeManager:
 
         if "STEP_R" in active_modes:
             sz, rt = tsl_cfg.get("STEP_R_SIZE", 1.0), tsl_cfg.get("STEP_R_RATIO", 0.8)
-            steps = max(0, math.floor(curr_r / sz))
+            steps = math.floor(curr_r / sz)
 
             if steps >= 1:
                 step_sl = (
@@ -794,7 +794,7 @@ class TradeManager:
                         break
 
         if "SWING" in active_modes and context:
-            trail_group = brain.get("risk_tsl", {}).get("base_sl", "G2")
+            trail_group = tsl_cfg.get("SWING_GROUP", "G2")
             market_mode = context.get("market_mode", "ANY")
             is_trending = market_mode in ["TREND", "BREAKOUT"]
             if trail_group == "DYNAMIC":

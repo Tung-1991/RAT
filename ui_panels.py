@@ -176,14 +176,6 @@ def setup_left_panel(app, parent):
     app.cbo_account_type.set(config.DEFAULT_ACCOUNT_TYPE)
     app.cbo_account_type.pack(side="right", fill="x", padx=(5, 0))
 
-    # [NEW V4.4] Tách biệt Swing Manual khỏi cấu hình Bot
-    f_manual_swing = ctk.CTkFrame(f_set, fg_color="#2b2b2b", corner_radius=6)
-    f_manual_swing.grid(row=2, column=1, sticky="ew", padx=5, pady=2)
-    ctk.CTkLabel(f_manual_swing, text="MANUAL SWING:", font=("Roboto", 11, "bold"), text_color="#03A9F4").pack(side="left", padx=5)
-    
-    app.cbo_manual_swing = ctk.CTkOptionMenu(f_manual_swing, values=["G0", "G1", "G2", "G3"], width=70, height=24)
-    app.cbo_manual_swing.set("G2")
-    app.cbo_manual_swing.pack(side="right", padx=5, pady=2)
 
     # --- DÒNG 3: TACTIC ---
     ctk.CTkLabel(f_set, text="TACTIC:", font=FONT_SECTION, text_color="gray").grid(
@@ -208,6 +200,16 @@ def setup_left_panel(app, parent):
         f_tsl_row, text="SWING", width=42, command=lambda: app.toggle_tactic("SWING")
     )
     app.btn_tactic_swing.pack(side="left", padx=1)
+    
+    # [FIX V4.4] Thêm nút CASH và PSAR lên Pannel
+    app.btn_tactic_cash = ctk.CTkButton(
+        f_tsl_row, text="CASH", width=42, command=lambda: app.toggle_tactic("BE_CASH")
+    )
+    app.btn_tactic_cash.pack(side="left", padx=1)
+    app.btn_tactic_psar = ctk.CTkButton(
+        f_tsl_row, text="PSAR", width=42, command=lambda: app.toggle_tactic("PSAR_TRAIL")
+    )
+    app.btn_tactic_psar.pack(side="left", padx=1)
 
     # [NEW V4.4] AUTO RECOVERY Section
     f_extra = ctk.CTkFrame(f_set, fg_color="#1a1a1a", corner_radius=4)
