@@ -68,6 +68,7 @@ MAX_OPEN_POSITIONS = 3
 
 MIN_LOT_SIZE, MAX_LOT_SIZE = 0.01, 200.0
 LOT_STEP = 0.01
+MAX_LOT_CAP = 0.0  # [NEW V4.4] Giới hạn Lot tối đa cho mỗi lệnh (0 = Không GH)
 MANUAL_CONFIG = {"BYPASS_CHECKLIST": False, "DEFAULT_LOT": 0.0}
 
 # ==============================================================================
@@ -134,6 +135,7 @@ BOT_SAFEGUARD = {
     "STRICT_MIN_LOT": False,  # [NEW V4.4] Chặn Lot < Min_Vol
     "POST_CLOSE_COOLDOWN": 0,  # [NEW V4.4] Thời gian nghỉ nến sau SL (Giây)
     "CLOSE_ON_REVERSE_MIN_TIME": 180,  # [NEW V4.4] Min Hold Time cho REVERSE_CLOSE
+    "DCA_PCA_COOLDOWN_SECONDS": 300,  # [NEW V4.4] Khoảng nghỉ giữa 2 lần nhồi (Giây)
 }
 
 # ==============================================================================
@@ -145,6 +147,7 @@ TSL_CONFIG = {
     "BE_MODE": "SOFT",
     "BE_OFFSET_RR": 0.8,
     "BE_OFFSET_POINTS": 0,
+    "ONE_TIME_BE": False,  # [NEW V4.4] Chỉ kích hoạt BE/BE_CASH 1 lần duy nhất
     "PNL_LEVELS": [[0.5, 0.1], [1.0, 0.5], [2.0, 1.2]],
     "STEP_R_SIZE": 1.0,
     "STEP_R_RATIO": 0.8,
@@ -152,6 +155,8 @@ TSL_CONFIG = {
     "PSAR_GROUP": "G2",
     "PSAR_STEP": 0.02,
     "PSAR_MAX": 0.2,
+    "ANTI_CASH_USD": 10.0,  # [NEW V4.4] Ngưỡng cắt lỗ USD cứng
+    "ANTI_CASH_TIME": 60,   # [NEW V4.4] Thời gian âm tối đa (giây)
 }
 
 # ==============================================================================
