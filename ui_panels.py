@@ -211,19 +211,32 @@ def setup_left_panel(app, parent):
     )
     app.btn_tactic_psar.pack(side="left", padx=1)
 
-    # [NEW V4.4] AUTO RECOVERY Section
-    f_extra = ctk.CTkFrame(f_set, fg_color="#1a1a1a", corner_radius=4)
-    f_extra.grid(row=4, column=1, sticky="ew", padx=5, pady=(5, 0))
-    ctk.CTkLabel(f_extra, text="AUTO RECOVERY:", font=("Roboto", 10), text_color="gray").pack(side="left", padx=5)
+    # [NEW V4.4] RECOVERY & SAFELOCK Section
+    ctk.CTkLabel(f_set, text="DEF:", font=FONT_SECTION, text_color="gray").grid(
+        row=4, column=0, sticky="w", pady=5
+    )
+    f_extra = ctk.CTkFrame(f_set, fg_color="transparent")
+    f_extra.grid(row=4, column=1, sticky="ew", padx=5)
     
     app.btn_tactic_dca = ctk.CTkButton(
-        f_extra, text="DCA", width=60, height=24, fg_color="#424242", command=lambda: app.toggle_tactic("AUTO_DCA")
+        f_extra, text="DCA", width=42, command=lambda: app.toggle_tactic("AUTO_DCA")
     )
-    app.btn_tactic_dca.pack(side="left", padx=2, pady=5)
+    app.btn_tactic_dca.pack(side="left", padx=1)
+    
     app.btn_tactic_pca = ctk.CTkButton(
-        f_extra, text="PCA", width=60, height=24, fg_color="#424242", command=lambda: app.toggle_tactic("AUTO_PCA")
+        f_extra, text="PCA", width=42, command=lambda: app.toggle_tactic("AUTO_PCA")
     )
-    app.btn_tactic_pca.pack(side="left", padx=2, pady=5)
+    app.btn_tactic_pca.pack(side="left", padx=1)
+    
+    app.btn_tactic_rev_c = ctk.CTkButton(
+        f_extra, text="REV_C", width=46, command=lambda: app.toggle_tactic("REV_C")
+    )
+    app.btn_tactic_rev_c.pack(side="left", padx=1)
+    
+    app.btn_tactic_anti_cash = ctk.CTkButton(
+        f_extra, text="ANTI CASH", width=60, command=lambda: app.toggle_tactic("ANTI_CASH")
+    )
+    app.btn_tactic_anti_cash.pack(side="left", padx=1)
 
     f_btn_settings = ctk.CTkFrame(f_tsl_row, fg_color="transparent")
     f_btn_settings.pack(side="right", padx=(0, 0))

@@ -223,6 +223,8 @@ class StandaloneBotDaemon:
                     bot_positions[pos.symbol] = []
                 bot_positions[pos.symbol].append(pos)
 
+        from core.storage_manager import get_last_dca_pca_close_time
+
         for symbol, pos_list in bot_positions.items():
             context = self.heartbeat_contexts.get(symbol)
             if not context:
@@ -230,6 +232,11 @@ class StandaloneBotDaemon:
                 if not ctx:
                     continue
                 context = ctx
+            
+            # [NEW V4.4] Check Cooldown DCA/PCA
+            cd_time = dca_cfg.get("COOLDOWN", 60)
+            if time.time() - get_last_dca_pca_close_time(symbol) < cd_time:
+                continue
 
             current_price = context.get("current_price", 0)
             

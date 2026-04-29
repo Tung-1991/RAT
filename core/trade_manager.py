@@ -243,6 +243,11 @@ class TradeManager:
             lot_size = calc_lot
             sl_price = safe_sl
 
+        # [NEW V4.4] Áp dụng Max Lot Cap (Tính cho từng lệnh riêng lẻ)
+        max_lot_cap = float(sym_cfgs.get("max_lot_cap", 0.0))
+        if max_lot_cap > 0:
+            lot_size = min(lot_size, max_lot_cap)
+
         # TÍNH TP
         if parent_pos and signal_class in ["DCA", "PCA"]:
             tp_price = parent_pos.tp
@@ -443,6 +448,13 @@ class TradeManager:
             lot_size = calc_lot
             sl_price = safe_sl
 
+        # [NEW V4.4] Áp dụng Max Lot Cap (Tính cho từng lệnh riêng lẻ)
+        brain = self._get_brain_settings()
+        sym_cfgs = brain.get("symbol_configs", {}).get(symbol, {})
+        max_lot_cap = float(sym_cfgs.get("max_lot_cap", 0.0))
+        if max_lot_cap > 0:
+            lot_size = min(lot_size, max_lot_cap)
+
         if manual_tp > 0:
             tp_price = manual_tp
         else:
@@ -560,6 +572,12 @@ class TradeManager:
                                 f"[DỌN DẸP] Đóng lệnh {pos_type_str} {d_out.symbol} #{ticket} ({exit_reason}) | PnL: {pnl_sign}${real_pnl:.2f}",
                                 target=log_target,
                             )
+                            
+                            # Cập nhật last_dca_pca_close_time nếu lệnh này là con (DCA/PCA)
+                            from core.storage_manager import update_last_dca_pca_close_time
+                            bot_tactic = self.get_trade_tactic(ticket)
+                            if "AUTO_DCA" in bot_tactic or "AUTO_PCA" in bot_tactic:
+                                update_last_dca_pca_close_time(d_out.symbol, time.time())
 
                     if ticket in self.state["active_trades"]:
                         self.state["active_trades"].remove(ticket)
@@ -623,6 +641,9 @@ class TradeManager:
                     else {}
                 )
                 tsl_status_map[pos.ticket] = self._apply_independent_tsl(pos, sym_ctx)
+                
+                if "ANTI_CASH" in self.get_trade_tactic(pos.ticket):
+                    self._check_anti_cash(pos)
 
             if needs_save:
                 save_state(self.state)
@@ -630,6 +651,27 @@ class TradeManager:
         except Exception as e:
             self.log(f"❌ Lỗi update loop: {e}", error=True)
         return tsl_status_map
+
+    def _check_anti_cash(self, pos):
+        tsl_cfg = self._get_brain_settings().get("tsl_config", getattr(config, "TSL_CONFIG", {}))
+        hard_stop_usd = float(tsl_cfg.get("ANTI_CASH_USD", 10.0))
+        time_cut_s = int(tsl_cfg.get("ANTI_CASH_TIME", 60))
+        
+        profit_usd = pos.profit + pos.swap + getattr(pos, "commission", 0.0)
+        
+        # Option 1: Hard Cash Stop (Dynamic Threshold)
+        if profit_usd <= -hard_stop_usd:
+            self.log(f"🔥 [ANTI CASH] Đạt ngưỡng Hard Stop (-${hard_stop_usd})! Cắt lỗ lệnh #{pos.ticket}", target="bot")
+            self.state["exit_reasons"][str(pos.ticket)] = "Anti_Cash_Hard_Stop"
+            threading.Thread(target=self.connector.close_position, args=(pos,), daemon=True).start()
+            return
+            
+        # Option 2: Time & Drawdown Cut
+        hold_time = time.time() - pos.time
+        if hold_time > time_cut_s and profit_usd < 0:
+            self.log(f"⏳ [ANTI CASH] Quá Min Hold Time ({time_cut_s}s) và đang âm! Cắt lỗ lệnh #{pos.ticket}", target="bot")
+            self.state["exit_reasons"][str(pos.ticket)] = "Anti_Cash_Time_Cut"
+            threading.Thread(target=self.connector.close_position, args=(pos,), daemon=True).start()
 
     def _apply_independent_tsl(self, pos, context):
         tactic_str = self.get_trade_tactic(pos.ticket)
@@ -661,6 +703,13 @@ class TradeManager:
 
         brain = self._get_brain_settings()
         tsl_cfg = brain.get("tsl_config", getattr(config, "TSL_CONFIG", {}))
+
+        # [NEW V4.4] ONE-TIME BE: Bỏ qua BE/BE_CASH nếu SL đã được khoá an toàn
+        one_time_be = tsl_cfg.get("ONE_TIME_BE", False)
+        sl_better_than_entry = (is_buy and pos.sl >= pos.price_open) or (not is_buy and pos.sl > 0 and pos.sl <= pos.price_open)
+        if one_time_be and sl_better_than_entry:
+            if "BE" in active_modes: active_modes.remove("BE")
+            if "BE_CASH" in active_modes: active_modes.remove("BE_CASH")
 
         # [NEW V4.4] 1. BE_HARD_CASH (Nâng cấp thành Thang cuốn cuốn chiếu Lãi Thực Tế)
         if "BE_CASH" in active_modes:

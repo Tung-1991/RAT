@@ -86,6 +86,17 @@ def open_symbol_config_popup(app, symbol):
     e_fixed_lot.insert(0, str(sym_cfg.get("fixed_lot", 0.0)))
     e_fixed_lot.grid(row=3, column=1, sticky="e", pady=10)
 
+    # [NEW V4.4] Max Lot Cap
+    ctk.CTkLabel(
+        f_grid,
+        text="Max Lot Cap (0=Tắt):",
+        text_color="#FFB300",
+        font=("Roboto", 12, "bold"),
+    ).grid(row=4, column=0, sticky="w", pady=10)
+    e_max_lot_cap = ctk.CTkEntry(f_grid, width=100, justify="center")
+    e_max_lot_cap.insert(0, str(sym_cfg.get("max_lot_cap", 0.0)))
+    e_max_lot_cap.grid(row=4, column=1, sticky="e", pady=10)
+
     def save_sym():
         try:
             mo = int(e_max_orders.get())
@@ -99,6 +110,7 @@ def open_symbol_config_popup(app, symbol):
                 "max_spread": ms,
                 "max_ping": mp,
                 "fixed_lot": float(e_fixed_lot.get()),
+                "max_lot_cap": float(e_max_lot_cap.get()),
             }
             with open(cfg_path, "w", encoding="utf-8") as f:
                 json.dump(existing_data, f, indent=4)
@@ -557,11 +569,11 @@ def open_preset_config_popup(app):
 def open_tsl_popup(app):
     top = ctk.CTkToplevel(app)
     top.title("TSL Logic Configuration")
-    top.geometry("450x550")
+    top.geometry("450x650")
     top.attributes("-topmost", True)
 
     # [FIX V4.4] CHIA LÀM 2 TAB GỌN GÀNG THEO YÊU CẦU CỦA BOSS
-    tabview = ctk.CTkTabview(top, height=450)
+    tabview = ctk.CTkTabview(top, height=550)
     tabview.pack(fill="both", expand=True, padx=10, pady=5)
 
     tab_basic = tabview.add("Basic (BE, PNL, STEP)")
@@ -637,24 +649,30 @@ def open_tsl_popup(app):
 
     f_cash = sec(tab_adv, "5. BE HARD CASH (Thang cuốn USD/Point/%)")
     f_cash.pack(fill="x", padx=15)
+    
+    f_cash_r1 = ctk.CTkFrame(f_cash, fg_color="transparent")
+    f_cash_r1.pack(fill="x")
+    f_cash_r2 = ctk.CTkFrame(f_cash, fg_color="transparent")
+    f_cash_r2.pack(fill="x", pady=(5, 0))
 
     cbo_cash_type = ctk.CTkOptionMenu(
-        f_cash, values=["USD", "PERCENT", "POINT"], width=80
+        f_cash_r1, values=["USD", "PERCENT", "POINT"], width=80
     )
     cbo_cash_type.set(config.TSL_CONFIG.get("BE_CASH_TYPE", "USD"))
     cbo_cash_type.pack(side="left", padx=5)
 
-    e_cash_val = ctk.CTkEntry(f_cash, width=60)
+    e_cash_val = ctk.CTkEntry(f_cash_r1, width=50)
     e_cash_val.insert(0, str(config.TSL_CONFIG.get("BE_VALUE", 5.0)))
     e_cash_val.pack(side="left", padx=5)
 
     cbo_cash_strat = ctk.CTkOptionMenu(
-        f_cash, values=["TRAILING (Gap)", "LOCK (Tight)"], width=110
+        f_cash_r1, values=["TRAILING (Gap)", "LOCK (Tight)"], width=110
     )
     cbo_cash_strat.set(config.TSL_CONFIG.get("BE_CASH_STRAT", "TRAILING (Gap)"))
     cbo_cash_strat.pack(side="left", padx=5)
 
-    ctk.CTkLabel(f_cash, text="(Mốc & Bước nhảy)").pack(side="left", padx=2)
+    var_be_one_time = ctk.BooleanVar(value=config.TSL_CONFIG.get("ONE_TIME_BE", False))
+    ctk.CTkCheckBox(f_cash_r2, text="One-Time (Chỉ khóa mốc 1)", variable=var_be_one_time, width=60).pack(side="left", padx=5)
 
     f_psar = sec(tab_adv, "6. PSAR TRAILING (Đuổi chấm)")
     f_psar.pack(fill="x", padx=15)
@@ -677,6 +695,21 @@ def open_tsl_popup(app):
     ctk.CTkLabel(f_psar_row2, text="Step:").pack(side="left")
     ctk.CTkLabel(f_psar_row2, text="Max:").pack(side="right")
 
+    f_anti = sec(tab_adv, "7. ANTI CASH (Cắt lỗ cứng)")
+    f_anti.pack(fill="x", padx=15)
+    
+    f_anti_row = ctk.CTkFrame(f_anti, fg_color="transparent")
+    f_anti_row.pack(fill="x", pady=2)
+    e_anti_usd = ctk.CTkEntry(f_anti_row, width=60)
+    e_anti_usd.insert(0, str(config.TSL_CONFIG.get("ANTI_CASH_USD", 10.0)))
+    e_anti_usd.pack(side="left", padx=5)
+    ctk.CTkLabel(f_anti_row, text="Hard Stop (USD):").pack(side="left")
+    
+    e_anti_time = ctk.CTkEntry(f_anti_row, width=60)
+    e_anti_time.insert(0, str(config.TSL_CONFIG.get("ANTI_CASH_TIME", 60)))
+    e_anti_time.pack(side="right", padx=5)
+    ctk.CTkLabel(f_anti_row, text="Time Cut (s):").pack(side="right")
+
     def save():
         try:
             config.TSL_CONFIG.update(
@@ -686,6 +719,7 @@ def open_tsl_popup(app):
                     "BE_CASH_STRAT": cbo_cash_strat.get(),
                     "BE_MODE": cbo_be.get(),
                     "BE_OFFSET_RR": float(e_be_rr.get()),
+                    "ONE_TIME_BE": var_be_one_time.get(),
                     "PNL_LEVELS": sorted(
                         [
                             [float(e1.get()), float(e2.get())]
@@ -700,6 +734,8 @@ def open_tsl_popup(app):
                     "PSAR_GROUP": cbo_psar_grp.get(),
                     "PSAR_STEP": float(e_psar_step.get()),
                     "PSAR_MAX": float(e_psar_max.get()),
+                    "ANTI_CASH_USD": float(e_anti_usd.get()),
+                    "ANTI_CASH_TIME": int(e_anti_time.get()),
                 }
             )
             app.save_settings()
@@ -777,7 +813,8 @@ def open_edit_popup(app, ticket):
         "PNL": "PNL" in cur_t,
         "STEP": "STEP_R" in cur_t,
         "SWING": "SWING" in cur_t,
-        "REV_C": "REVERSE_CLOSE" in cur_t,  # [FIX] Nút Close on Reverse
+        "REV_C": "REV_C" in cur_t,  # [FIX] Nút Close on Reverse
+        "ANTI_CASH": "ANTI_CASH" in cur_t, # [NEW]
     }
 
     def live_edit(*args):

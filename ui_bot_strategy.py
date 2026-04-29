@@ -518,7 +518,7 @@ class BotStrategyUI(ctk.CTkToplevel):
         current_tactic_str = risk_data.get("bot_tsl", "BE+STEP_R+SWING")
 
         # [NEW V4.4] Bổ sung thêm BE_CASH và PSAR_TRAIL vào danh sách chiến thuật Bot
-        for t in ["BE", "PNL", "STEP_R", "SWING", "BE_CASH", "PSAR_TRAIL"]:
+        for t in ["BE", "PNL", "STEP_R", "SWING", "BE_CASH", "PSAR_TRAIL", "ANTI_CASH"]:
             is_active = t in current_tactic_str
             var = ctk.BooleanVar(value=is_active)
             ctk.CTkCheckBox(
@@ -653,6 +653,14 @@ class BotStrategyUI(ctk.CTkToplevel):
             row=1, column=5, padx=10, pady=5
         )
 
+        # --- COOLDOWN FRAME ---
+        cd_frame = ctk.CTkFrame(self.tab_dca_pca, fg_color="#2b2b2b", corner_radius=8)
+        cd_frame.pack(fill="x", padx=10, pady=10)
+        
+        ctk.CTkLabel(cd_frame, text="DCA/PCA Cooldown (giây):", font=("Roboto", 12, "bold"), text_color="#29B6F6").grid(row=0, column=0, padx=10, pady=10, sticky="w")
+        self.dca_pca_cooldown = ctk.StringVar(value=str(dca_cfg.get("COOLDOWN", 60)))
+        ctk.CTkEntry(cd_frame, textvariable=self.dca_pca_cooldown, width=70).grid(row=0, column=1, padx=10, pady=10)
+
     def _pack_data(self):
         new_inds = {}
         for ind_name, widgets in self.ind_widgets.items():
@@ -702,6 +710,7 @@ class BotStrategyUI(ctk.CTkToplevel):
             "MAX_STEPS": int(self.dca_steps.get() or 3),
             "STEP_MULTIPLIER": float(self.dca_mult.get() or 1.5),
             "DISTANCE_ATR_R": float(self.dca_atr.get() or 1.0),
+            "COOLDOWN": int(self.dca_pca_cooldown.get() or 60),
         }
         new_pca = {
             "ENABLED": self.pca_active.get(),

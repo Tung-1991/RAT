@@ -61,7 +61,8 @@ def load_state() -> Dict[str, Any]:
         "last_child_bar_time": {},
         "bot_last_entry_times": {},
         "exit_reasons": {},          # [NEW V4.4] Tracking lý do đóng lệnh
-        "last_close_times": {}       # [NEW V4.4] Tracking thời gian đóng lệnh cho Cooldown
+        "last_close_times": {},      # [NEW V4.4] Tracking thời gian đóng lệnh cho Cooldown
+        "last_dca_pca_close_time": {} # [NEW V4.4] Tracking DCA/PCA Cooldown
     }
     
     os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
@@ -83,6 +84,7 @@ def load_state() -> Dict[str, Any]:
             if "bot_last_entry_times" not in state: state["bot_last_entry_times"] = {}
             if "exit_reasons" not in state: state["exit_reasons"] = {}
             if "last_close_times" not in state: state["last_close_times"] = {}
+            if "last_dca_pca_close_time" not in state: state["last_dca_pca_close_time"] = {}
             if "bot_pnl_today" not in state: state["bot_pnl_today"] = 0.0
             if "bot_trades_today" not in state: state["bot_trades_today"] = 0
             if "bot_daily_loss_count" not in state: state["bot_daily_loss_count"] = 0
@@ -126,6 +128,17 @@ def save_state(state: Dict[str, Any]):
             json.dump(state, f, indent=4)
     except:
         pass
+
+def get_last_dca_pca_close_time(symbol: str) -> float:
+    state = load_state()
+    return state.get("last_dca_pca_close_time", {}).get(symbol, 0.0)
+
+def update_last_dca_pca_close_time(symbol: str, timestamp: float):
+    state = load_state()
+    if "last_dca_pca_close_time" not in state:
+        state["last_dca_pca_close_time"] = {}
+    state["last_dca_pca_close_time"][symbol] = timestamp
+    save_state(state)
 
 def load_brain_settings() -> Dict[str, Any]:
     default_brain = {
