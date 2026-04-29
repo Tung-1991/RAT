@@ -39,7 +39,7 @@ def open_symbol_config_popup(app, symbol):
 
     top = ctk.CTkToplevel(app)
     top.title(f"Cấu hình riêng: {symbol}")
-    top.geometry("350x300")
+    top.geometry("380x480")
     top.attributes("-topmost", True)
     top.focus_force()
     top.grab_set()  # Khóa (Block) cửa sổ mẹ, bắt buộc người dùng thao tác trên popup này
