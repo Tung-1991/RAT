@@ -137,14 +137,12 @@ class SignalListener:
 
                         # Đọc thông số chống nhiễu (Min Hold Time)
                         try:
-                            import json as _json, os as _os
-
-                            _cpath = _os.path.join(
+                            cpath = os.path.join(
                                 getattr(config, "DATA_DIR", "data"),
                                 "brain_settings.json",
                             )
-                            with open(_cpath, "r", encoding="utf-8") as _cf:
-                                b_set = _json.load(_cf)
+                            with open(cpath, "r", encoding="utf-8") as cf:
+                                b_set = json.load(cf)
                                 min_hold = float(
                                     b_set.get("bot_safeguard", {}).get(
                                         "CLOSE_ON_REVERSE_MIN_TIME", 180
@@ -165,8 +163,6 @@ class SignalListener:
                             self.trade_manager.state["exit_reasons"][str(p.ticket)] = (
                                 f"Reverse_to_{action}"
                             )
-
-                            import threading
 
                             threading.Thread(
                                 target=self.trade_manager.connector.close_position,
@@ -224,15 +220,13 @@ class SignalListener:
                     now = time.time()
 
                     try:
-                        import json as _json, os as _os
-
-                        _cpath = os.path.join(
+                        cpath = os.path.join(
                             getattr(config, "DATA_DIR", "data"), "brain_settings.json"
                         )
                         cmin = 30.0  # Mặc định 30 phút cho đỡ spam
-                        if _os.path.exists(_cpath):
-                            with open(_cpath, "r", encoding="utf-8") as _cf:
-                                b_set = _json.load(_cf)
+                        if os.path.exists(cpath):
+                            with open(cpath, "r", encoding="utf-8") as cf:
+                                b_set = json.load(cf)
                                 cmin = float(
                                     b_set.get("bot_safeguard", {}).get(
                                         "LOG_COOLDOWN_MINUTES", 30.0

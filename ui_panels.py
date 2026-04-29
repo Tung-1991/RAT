@@ -568,7 +568,13 @@ def setup_right_panel(app, parent):
     def _clear_active_log():
         """Xóa log ở tab đang được chọn"""
         active_tab = log_tabview.get()
-        widget = app.txt_log_bot if "Bot" in active_tab else app.txt_log_manual
+        if "Bot-Log" in active_tab:
+            widget = app.txt_log_bot_log
+        elif "Bot" in active_tab:
+            widget = app.txt_log_bot
+        else:
+            widget = app.txt_log_manual
+            
         widget.configure(state="normal")
         widget.delete("1.0", "end")
         widget.configure(state="disabled")
