@@ -94,6 +94,8 @@ class BotUI(ctk.CTk):
             "PSAR_TRAIL": False,  # [FIX] Thêm State cho TSL PSAR
             "AUTO_DCA": False,
             "AUTO_PCA": False,
+            "REV_C": False,      # [NEW V4.4] Recovery/Safelock
+            "ANTI_CASH": False,   # [NEW V4.4] Hard stop logic
         }
         self.running = True
         self.tsl_states_map = {}
@@ -289,6 +291,10 @@ class BotUI(ctk.CTk):
             set_btn(self.btn_tactic_dca, self.tactic_states["AUTO_DCA"])
         if hasattr(self, "btn_tactic_pca"):
             set_btn(self.btn_tactic_pca, self.tactic_states["AUTO_PCA"])
+        if hasattr(self, "btn_tactic_rev_c"):
+            set_btn(self.btn_tactic_rev_c, self.tactic_states["REV_C"])
+        if hasattr(self, "btn_tactic_anti_cash"):
+            set_btn(self.btn_tactic_anti_cash, self.tactic_states["ANTI_CASH"])
 
     def on_symbol_change(self, new_symbol):
         config.UI_ACTIVE_SYMBOL = new_symbol

@@ -178,6 +178,7 @@ class StandaloneBotDaemon:
             # [FIX CORE]: Luôn chạy hàm generate_signal_v4 để tính toán và lưu Trend, Mode vào biến context
             # Đảm bảo UI luôn nhận được cấu trúc thị trường mới nhất ngay cả khi Bot đang tắt (Manual Mode)
             signal = signal_generator.generate_signal_v4(dfs, context)
+            context["latest_signal"] = signal # [NEW V4.4] Phục vụ logic REV_C
 
             # --- [V4.2.1] Gói toàn bộ context vào Heartbeat ---
             self.heartbeat_contexts[sym] = context.copy()

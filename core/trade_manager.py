@@ -581,7 +581,7 @@ class TradeManager:
 
                     if ticket in self.state["active_trades"]:
                         self.state["active_trades"].remove(ticket)
-                    for key in ["trade_tactics", "initial_r_dist", "exit_reasons"]:
+                    for key in ["trade_tactics", "initial_r_dist", "exit_reasons", "initial_costs"]:
                         if s_ticket in self.state.get(key, {}):
                             del self.state[key][s_ticket]
 
@@ -644,6 +644,9 @@ class TradeManager:
                 
                 if "ANTI_CASH" in self.get_trade_tactic(pos.ticket):
                     self._check_anti_cash(pos)
+                
+                if "REV_C" in self.get_trade_tactic(pos.ticket):
+                    self._check_recovery(pos, sym_ctx)
 
             if needs_save:
                 save_state(self.state)
@@ -677,6 +680,31 @@ class TradeManager:
             self.state["exit_reasons"][str(pos.ticket)] = "Anti_Cash_Hard_Stop"
             threading.Thread(target=self.connector.close_position, args=(pos,), daemon=True).start()
             return
+
+    def _check_recovery(self, pos, context):
+        """[NEW V4.4] Close on Reverse (REV_C) logic"""
+        # 1. Lấy signal hiện tại từ context (đã được Daemon ghi vào latest_signal)
+        current_signal = context.get("latest_signal", 0) 
+        
+        is_buy = pos.type == mt5.ORDER_TYPE_BUY
+        is_reversed = False
+        
+        # Logic: Nếu đang BUY mà signal là -1 (SELL) hoặc ngược lại
+        if is_buy and current_signal == -1:
+            is_reversed = True
+        elif not is_buy and current_signal == 1:
+            is_reversed = True
+            
+        if is_reversed:
+            # Check Min Hold Time từ config bot_safeguard
+            safe_cfg = self._get_brain_settings().get("bot_safeguard", {})
+            min_hold = float(safe_cfg.get("CLOSE_ON_REVERSE_MIN_TIME", 180))
+            hold_time = time.time() - pos.time
+            
+            if hold_time >= min_hold:
+                self.log(f"🔄 [RECOVERY] Đảo chiều Signal ({'SELL' if is_buy else 'BUY'})! Đóng lệnh #{pos.ticket}", target="bot")
+                self.state["exit_reasons"][str(pos.ticket)] = "Recovery_Close"
+                threading.Thread(target=self.connector.close_position, args=(pos,), daemon=True).start()
             
         # Option 2: Time & Drawdown Cut
         hold_time = time.time() - pos.time
