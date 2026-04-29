@@ -15,10 +15,14 @@ htmlcov/
 
 # 3. Dữ liệu Bot & Log (Bỏ qua toàn bộ thư mục data)
 data/
+!data/templates/        # [NGOẠI LỆ]: Cho phép lưu thư mục Templates chiến thuật
+!data/templates/*.json
+
 *.log
-# Chỉ bỏ qua các file json phát sinh trong quá trình chạy, 
-# nếu có file json cấu hình quan trọng Ngài nên cân nhắc.
+
+# 3.1 Xử lý JSON
 *.json
+!data/templates/*.json  # [NGOẠI LỆ]: Giữ lại các file JSON chiến thuật để push lên Git
 
 # 4. Cấu hình nhạy cảm (Cảnh báo DevSecOps)
 # Nếu config.py chứa API Key hoặc Password của Ngài, nên bỏ qua nó 

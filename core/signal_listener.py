@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # FILE: core/signal_listener.py
-# V3.1: SIGNAL ROUTER - HANDLING ENTRY, DCA, PCA (KAISER EDITION)
+# V4.4 (FINAL): SIGNAL ROUTER - HANDLING ENTRY, DCA, PCA & REVERSE CLOSE (KAISER EDITION)
 
 import json
 import os
@@ -121,6 +121,44 @@ class SignalListener:
         sig_class = signal.get("signal_class", "ENTRY")
         context = signal.get("context", {})
         market_mode = signal.get("market_mode", "ANY")
+
+        # [NEW V4.4 FINAL] LƯỚI LỌC 0: TỰ ĐỘNG CẮT LỆNH ĐẢO CHIỀU (CLOSE ON REVERSE)
+        # Chạy độc lập với AUTO-TRADE. Bất cứ lệnh nào đang ôm tactic REVERSE_CLOSE 
+        # đều sẽ bị chém ngay lập tức khi có tín hiệu ngược (bảo vệ tài khoản).
+        try:
+            positions = self.trade_manager.connector.get_all_open_positions()
+            opposite_type = 1 if action == "BUY" else 0  # 1 = SELL, 0 = BUY
+            
+            for p in positions:
+                if p.symbol == symbol and p.type == opposite_type:
+                    tactic = self.trade_manager.get_trade_tactic(p.ticket)
+                    if "REVERSE_CLOSE" in tactic:
+                        hold_time = time.time() - p.time
+                        
+                        # Đọc thông số chống nhiễu (Min Hold Time)
+                        try:
+                            import json as _json, os as _os
+                            _cpath = _os.path.join(getattr(config, "DATA_DIR", "data"), "brain_settings.json")
+                            with open(_cpath, "r", encoding="utf-8") as _cf:
+                                b_set = _json.load(_cf)
+                                min_hold = float(b_set.get("bot_safeguard", {}).get("CLOSE_ON_REVERSE_MIN_TIME", 180))
+                        except Exception:
+                            min_hold = 180.0
+                            
+                        if hold_time >= min_hold:
+                            self.log_ui(f"🔄 [REVERSE TACTIC] Tín hiệu {action} -> Tự động chém lệnh ngược #{p.ticket} (Đã giữ: {hold_time:.0f}s)", False)
+                            
+                            # Lưu lý do thoát lệnh để ghi log CSV
+                            if "exit_reasons" not in self.trade_manager.state:
+                                self.trade_manager.state["exit_reasons"] = {}
+                            self.trade_manager.state["exit_reasons"][str(p.ticket)] = f"Reverse_to_{action}"
+                            
+                            import threading
+                            threading.Thread(target=self.trade_manager.connector.close_position, args=(p,), daemon=True).start()
+                        else:
+                            self.log_ui(f"⏳ [REVERSE TACTIC] Tín hiệu {action} nhưng giữ lệnh #{p.ticket} (Chưa đủ {min_hold}s chống nhiễu)", False)
+        except Exception as e:
+            logger.error(f"[Listener] Lỗi Reverse Check: {e}")
 
         if not self.get_auto_trade():
             # [FIX] Thinking Logs (Chống spam)

@@ -176,12 +176,21 @@ def setup_left_panel(app, parent):
     app.cbo_account_type.set(config.DEFAULT_ACCOUNT_TYPE)
     app.cbo_account_type.pack(side="right", fill="x", padx=(5, 0))
 
+    # [NEW V4.4] Tách biệt Swing Manual khỏi cấu hình Bot
+    f_manual_swing = ctk.CTkFrame(f_set, fg_color="#2b2b2b", corner_radius=6)
+    f_manual_swing.grid(row=2, column=1, sticky="ew", padx=5, pady=2)
+    ctk.CTkLabel(f_manual_swing, text="MANUAL SWING:", font=("Roboto", 11, "bold"), text_color="#03A9F4").pack(side="left", padx=5)
+    
+    app.cbo_manual_swing = ctk.CTkOptionMenu(f_manual_swing, values=["G0", "G1", "G2", "G3"], width=70, height=24)
+    app.cbo_manual_swing.set("G2")
+    app.cbo_manual_swing.pack(side="right", padx=5, pady=2)
+
     # --- DÒNG 3: TACTIC ---
     ctk.CTkLabel(f_set, text="TACTIC:", font=FONT_SECTION, text_color="gray").grid(
-        row=2, column=0, sticky="w", pady=5
+        row=3, column=0, sticky="w", pady=5
     )
     f_tsl_row = ctk.CTkFrame(f_set, fg_color="transparent")
-    f_tsl_row.grid(row=2, column=1, sticky="ew", padx=5)
+    f_tsl_row.grid(row=3, column=1, sticky="ew", padx=5)
 
     app.btn_tactic_be = ctk.CTkButton(
         f_tsl_row, text="BE", width=32, command=lambda: app.toggle_tactic("BE")
@@ -200,14 +209,19 @@ def setup_left_panel(app, parent):
     )
     app.btn_tactic_swing.pack(side="left", padx=1)
 
+    # [NEW V4.4] AUTO RECOVERY Section
+    f_extra = ctk.CTkFrame(f_set, fg_color="#1a1a1a", corner_radius=4)
+    f_extra.grid(row=4, column=1, sticky="ew", padx=5, pady=(5, 0))
+    ctk.CTkLabel(f_extra, text="AUTO RECOVERY:", font=("Roboto", 10), text_color="gray").pack(side="left", padx=5)
+    
     app.btn_tactic_dca = ctk.CTkButton(
-        f_tsl_row, text="DCA", width=35, command=lambda: app.toggle_tactic("AUTO_DCA")
+        f_extra, text="DCA", width=60, height=24, fg_color="#424242", command=lambda: app.toggle_tactic("AUTO_DCA")
     )
-    app.btn_tactic_dca.pack(side="left", padx=1)
+    app.btn_tactic_dca.pack(side="left", padx=2, pady=5)
     app.btn_tactic_pca = ctk.CTkButton(
-        f_tsl_row, text="PCA", width=35, command=lambda: app.toggle_tactic("AUTO_PCA")
+        f_extra, text="PCA", width=60, height=24, fg_color="#424242", command=lambda: app.toggle_tactic("AUTO_PCA")
     )
-    app.btn_tactic_pca.pack(side="left", padx=1)
+    app.btn_tactic_pca.pack(side="left", padx=2, pady=5)
 
     f_btn_settings = ctk.CTkFrame(f_tsl_row, fg_color="transparent")
     f_btn_settings.pack(side="right", padx=(0, 0))
@@ -570,6 +584,7 @@ def setup_right_panel(app, parent):
 
     tab_manual = log_tabview.add("📋 Manual")
     tab_bot = log_tabview.add("🤖 Bot")
+    tab_bot_log = log_tabview.add("🤖 Bot-Log")
 
     # --- Tab Manual ---
     app.txt_log_manual = tk.Text(
@@ -606,6 +621,24 @@ def setup_right_panel(app, parent):
     app.txt_log_bot.tag_config("ERROR", foreground=COL_RED)
     app.txt_log_bot.tag_config("WARN", foreground=COL_WARN)
     app.txt_log_bot.tag_config("BLUE", foreground="#29B6F6")
+
+    # --- Tab Bot-Log ---
+    app.txt_log_bot_log = tk.Text(
+        tab_bot_log,
+        font=("Consolas", 18),
+        bg="#121212",
+        fg="#e0e0e0",
+        bd=0,
+        highlightthickness=0,
+        state="disabled",
+        wrap="word",
+    )
+    app.txt_log_bot_log.pack(fill="both", expand=True)
+    app.txt_log_bot_log.tag_config("INFO", foreground="#b0bec5")
+    app.txt_log_bot_log.tag_config("SUCCESS", foreground=COL_GREEN)
+    app.txt_log_bot_log.tag_config("ERROR", foreground=COL_RED)
+    app.txt_log_bot_log.tag_config("WARN", foreground=COL_WARN)
+    app.txt_log_bot_log.tag_config("BLUE", foreground="#29B6F6")
 
     # Giữ backward compat: txt_log trỏ vào manual (cho các module cũ)
     app.txt_log = app.txt_log_manual

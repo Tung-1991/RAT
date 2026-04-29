@@ -75,6 +75,14 @@ def open_symbol_config_popup(app, symbol):
     e_max_ping.insert(0, str(sym_cfg.get("max_ping", 150)))
     e_max_ping.grid(row=2, column=1, sticky="e", pady=10)
 
+    # [NEW V4.4] Fixed Lot Mode
+    ctk.CTkLabel(f_grid, text="Fixed Lot (0 = Tắt):", text_color="#FFB300", font=("Roboto", 12, "bold")).grid(
+        row=3, column=0, sticky="w", pady=10
+    )
+    e_fixed_lot = ctk.CTkEntry(f_grid, width=100, justify="center")
+    e_fixed_lot.insert(0, str(sym_cfg.get("fixed_lot", 0.0)))
+    e_fixed_lot.grid(row=3, column=1, sticky="e", pady=10)
+
     def save_sym():
         try:
             mo = int(e_max_orders.get())
@@ -87,6 +95,7 @@ def open_symbol_config_popup(app, symbol):
                 "max_orders": mo,
                 "max_spread": ms,
                 "max_ping": mp,
+                "fixed_lot": float(e_fixed_lot.get()),
             }
             with open(cfg_path, "w", encoding="utf-8") as f:
                 json.dump(existing_data, f, indent=4)
@@ -358,6 +367,20 @@ def open_bot_setting_popup(app):
     )
     chk_bot_use_tp.grid(row=6, column=2, columnspan=2, sticky="w", padx=10, pady=8)
 
+    # [NEW V4.4] Strict Min Lot Rejection & Post-Close Cooldown
+    var_strict_min_lot = ctk.BooleanVar(value=safe_cfg.get("STRICT_MIN_LOT", False))
+    chk_strict_min_lot = ctk.CTkCheckBox(
+        f_safety, text="Strict Min Lot (Chặn < Min Vol)", variable=var_strict_min_lot, text_color="#F44336", font=("Roboto", 12, "bold")
+    )
+    chk_strict_min_lot.grid(row=7, column=0, columnspan=2, sticky="w", padx=10, pady=8)
+
+    ctk.CTkLabel(f_safety, text="Nghỉ Sau Đóng Lệnh (Giây):", text_color="#FFB300").grid(
+        row=7, column=2, sticky="w", padx=10, pady=8
+    )
+    e_post_close = ctk.CTkEntry(f_safety, width=70, justify="center")
+    e_post_close.insert(0, str(safe_cfg.get("POST_CLOSE_COOLDOWN", 0)))
+    e_post_close.grid(row=7, column=3, sticky="w", padx=10, pady=8)
+
     # Đã chuyển Watchlist lên đầu
 
     def save():
@@ -388,6 +411,8 @@ def open_bot_setting_popup(app):
                 "DCA_PCA_SCAN_INTERVAL": float(e_scan_delay.get()),
                 "LOG_COOLDOWN_MINUTES": float(e_log_cooldown.get()),
                 "BOT_USE_TP": var_bot_use_tp.get(),
+                "STRICT_MIN_LOT": var_strict_min_lot.get(),
+                "POST_CLOSE_COOLDOWN": int(e_post_close.get()),
             }
             existing_data["BOT_ACTIVE_SYMBOLS"] = [
                 coin for coin, var in app.bot_coin_vars.items() if var.get()
@@ -528,6 +553,21 @@ def open_tsl_popup(app):
         ).pack(fill="x", padx=15, pady=(10, 2), anchor="w")
         return ctk.CTkFrame(top, fg_color="transparent")
 
+    # [NEW V4.4] HARD CASH & PSAR
+    f_cash = sec("0. BE HARD CASH & PSAR")
+    f_cash.pack(fill="x", padx=15)
+    
+    cbo_cash_type = ctk.CTkOptionMenu(f_cash, values=["USD", "PERCENT", "POINT"], width=80)
+    cbo_cash_type.set(config.TSL_CONFIG.get("BE_CASH_TYPE", "USD"))
+    cbo_cash_type.pack(side="left", padx=5)
+    
+    e_cash_val = ctk.CTkEntry(f_cash, width=60)
+    e_cash_val.insert(0, str(config.TSL_CONFIG.get("BE_VALUE", 5.0)))
+    e_cash_val.pack(side="left", padx=5)
+    ctk.CTkLabel(f_cash, text="(Mốc Target)").pack(side="left", padx=2)
+    
+    ctk.CTkLabel(f_cash, text="| PSAR Auto", text_color="#FFB300", font=("Roboto", 11, "bold")).pack(side="right", padx=5)
+
     f_be = sec("1. BREAK-EVEN (BE)")
     f_be.pack(fill="x", padx=15)
     cbo_be = ctk.CTkOptionMenu(f_be, values=["SOFT", "SMART"], width=100)
@@ -585,6 +625,8 @@ def open_tsl_popup(app):
         try:
             config.TSL_CONFIG.update(
                 {
+                    "BE_CASH_TYPE": cbo_cash_type.get(),
+                    "BE_VALUE": float(e_cash_val.get()),
                     "BE_MODE": cbo_be.get(),
                     "BE_OFFSET_RR": float(e_be_rr.get()),
                     "PNL_LEVELS": sorted(
@@ -663,7 +705,9 @@ def open_edit_popup(app, ticket):
 
     cur_t = app.trade_mgr.get_trade_tactic(ticket)
     states = {
-        "BE": "BE" in cur_t,
+        "BE_C": "BE_CASH" in cur_t,
+        "PSAR": "PSAR_TRAIL" in cur_t,
+        "BE": "BE" in cur_t and "BE_CASH" not in cur_t,
         "PNL": "PNL" in cur_t,
         "STEP": "STEP_R" in cur_t,
         "SWING": "SWING" in cur_t,
@@ -712,6 +756,10 @@ def open_edit_popup(app, ticket):
                         preview_txts.append(f"PNL @ Lãi {lvl[0]}%")
                     if states["SWING"]:
                         preview_txts.append("SWING (Đuổi theo nến H1/M15)")
+                    if states["BE_C"]:
+                        preview_txts.append(f"BE_CASH ({config.TSL_CONFIG.get('BE_VALUE', 5)})")
+                    if states["PSAR"]:
+                        preview_txts.append("PSAR TRAIL")
 
                     if preview_txts:
                         lbl_tactic_preview.configure(
@@ -741,7 +789,7 @@ def open_edit_popup(app, ticket):
         height=26,
         fg_color="#2b2b2b",
         button_color="#1565C0",
-        command=lambda _: do_math()
+        command=lambda _: do_math(),
     )
     cbo_sl_group.pack(side="left", padx=4)
 
@@ -767,7 +815,7 @@ def open_edit_popup(app, ticket):
             )
             e_sl.delete(0, "end")
             e_sl.insert(0, f"{calc_sl:.5f}")
-            do_tp() # Tự động cập nhật TP theo SL mới
+            do_tp()  # Tự động cập nhật TP theo SL mới
             live_edit()
         else:
             messagebox.showwarning(
@@ -853,7 +901,13 @@ def open_edit_popup(app, ticket):
     def save_e():
         try:
             app.connector.modify_position(ticket, float(e_sl.get()), float(e_tp.get()))
-            act = [k if k != "STEP" else "STEP_R" for k, v in states.items() if v]
+            act = []
+            for k, v in states.items():
+                if v:
+                    if k == "STEP": act.append("STEP_R")
+                    elif k == "BE_C": act.append("BE_CASH")
+                    elif k == "PSAR": act.append("PSAR_TRAIL")
+                    else: act.append(k)
             final_t = "+".join(act) if act else "OFF"
             if chk_dca.get():
                 final_t += "+AUTO_DCA"

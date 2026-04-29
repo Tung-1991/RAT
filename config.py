@@ -97,13 +97,18 @@ BOT_SAFEGUARD = {
     "DAEMON_LOOP_DELAY": 15.0,
     "DCA_PCA_SCAN_INTERVAL": 2.0,
     "LOG_COOLDOWN_MINUTES": 60.0,
-    "BOT_USE_TP": True
+    "BOT_USE_TP": True,
+    "STRICT_MIN_LOT": False,               # [NEW V4.4] Chặn Lot < Min_Vol
+    "POST_CLOSE_COOLDOWN": 0,              # [NEW V4.4] Thời gian nghỉ nến sau SL (Giây)
+    "CLOSE_ON_REVERSE_MIN_TIME": 180       # [NEW V4.4] Min Hold Time cho REVERSE_CLOSE
 }
 
 # ==============================================================================
 # 6. LOGIC TRAILING STOP CƠ BẢN (BE & STEP & PNL)
 # ==============================================================================
 TSL_CONFIG = {
+    "BE_CASH_TYPE": "USD",          # [NEW V4.4] Tùy chọn: USD, PERCENT, POINT
+    "BE_VALUE": 5.0,                # [NEW V4.4] Target khóa lãi cứng
     "BE_MODE": "SOFT",              
     "BE_OFFSET_RR": 0.8,            
     "BE_OFFSET_POINTS": 0,          

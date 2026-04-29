@@ -18,15 +18,16 @@ def get_today_str():
         return prev_day.strftime("%Y-%m-%d")
     return now.strftime("%Y-%m-%d")
 
-def append_trade_log(ticket, symbol, type_str, volume, pnl, close_reason):
+def append_trade_log(ticket, symbol, type_str, volume, pnl, close_reason, market_mode="ANY", trigger_signal="UNK"):
     file_exists = os.path.isfile(MASTER_LOG_FILE)
     try:
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S") 
         with open(MASTER_LOG_FILE, mode='a', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
             if not file_exists:
-                writer.writerow(["Time", "Ticket", "Symbol", "Type", "Vol", "PnL ($)", "Reason"])
-            writer.writerow([now_str, ticket, symbol, type_str, volume, f"{pnl:.2f}", close_reason])
+                # [NEW V4.4] Thêm cột Market Mode và Trigger vào file CSV
+                writer.writerow(["Time", "Ticket", "Symbol", "Type", "Vol", "PnL ($)", "Reason", "Market Mode", "Trigger"])
+            writer.writerow([now_str, ticket, symbol, type_str, volume, f"{pnl:.2f}", close_reason, market_mode, trigger_signal])
     except:
         pass
 
@@ -58,7 +59,9 @@ def load_state() -> Dict[str, Any]:
         "parent_baskets": {},       
         "child_to_parent": {},       
         "last_child_bar_time": {},
-        "bot_last_entry_times": {}
+        "bot_last_entry_times": {},
+        "exit_reasons": {},          # [NEW V4.4] Tracking lý do đóng lệnh
+        "last_close_times": {}       # [NEW V4.4] Tracking thời gian đóng lệnh cho Cooldown
     }
     
     os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
@@ -78,6 +81,8 @@ def load_state() -> Dict[str, Any]:
             if "child_to_parent" not in state: state["child_to_parent"] = {}
             if "last_child_bar_time" not in state: state["last_child_bar_time"] = {} 
             if "bot_last_entry_times" not in state: state["bot_last_entry_times"] = {}
+            if "exit_reasons" not in state: state["exit_reasons"] = {}
+            if "last_close_times" not in state: state["last_close_times"] = {}
             if "bot_pnl_today" not in state: state["bot_pnl_today"] = 0.0
             if "bot_trades_today" not in state: state["bot_trades_today"] = 0
             if "bot_daily_loss_count" not in state: state["bot_daily_loss_count"] = 0

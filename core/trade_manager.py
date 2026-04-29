@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # FILE: core/trade_manager.py
-# V4.1: UNIFIED TRADE MANAGER - DEAL HISTORY & DYNAMIC SL (KAISER EDITION)
+# V4.4 (FINAL): UNIFIED TRADE MANAGER - DYNAMIC MACRO, REVERSE CLOSE & CASH TSL (KAISER EDITION)
 
 import logging
 import json
@@ -36,9 +36,14 @@ class TradeManager:
         if "initial_r_dist" not in self.state:
             self.state["initial_r_dist"] = {}
 
+        # [NEW V4.4] Tracking chuyên sâu cho Cooldown và Log
+        if "exit_reasons" not in self.state:
+            self.state["exit_reasons"] = {}
+        if "last_close_times" not in self.state:
+            self.state["last_close_times"] = {}
+
     def log(self, msg, error=False, target=None):
         if self.log_callback:
-            # Nếu hàm log_callback hỗ trợ kwargs target
             try:
                 self.log_callback(msg, error=error, target=target)
             except TypeError:
@@ -63,6 +68,50 @@ class TradeManager:
         return self.brain_settings
 
     # ====================================================================================
+    # [NEW V4.4] HÀM CẮT LỆNH KHI CÓ TÍN HIỆU ĐẢO CHIỀU (REVERSE SIGNAL)
+    # ====================================================================================
+    def close_opposite_positions(self, symbol, new_direction, min_hold_time=180):
+        bot_magic = getattr(config, "BOT_MAGIC_NUMBER", 9999)
+        positions = [
+            p
+            for p in self.connector.get_all_open_positions()
+            if p.symbol == symbol and p.magic == bot_magic
+        ]
+        opposite_type = (
+            mt5.ORDER_TYPE_SELL if new_direction == "BUY" else mt5.ORDER_TYPE_BUY
+        )
+
+        closed_count = 0
+        now = time.time()
+
+        for p in positions:
+            if p.type == opposite_type:
+                hold_time = now - p.time
+                if hold_time >= min_hold_time:
+                    self.log(
+                        f"🔄 [REVERSE] Tín hiệu đảo chiều ({new_direction})! Cắt lệnh #{p.ticket} (Hold: {hold_time:.0f}s)",
+                        target="bot",
+                    )
+                    self.state["exit_reasons"][str(p.ticket)] = (
+                        f"Reverse_to_{new_direction}"
+                    )
+
+                    # Chạy luồng ẩn để cắt lệnh không làm kẹt
+                    threading.Thread(
+                        target=self.connector.close_position,
+                        args=(p,),
+                        daemon=True,
+                    ).start()
+                    closed_count += 1
+                else:
+                    self.log(
+                        f"⏳ [REVERSE] Bỏ qua cắt đảo chiều lệnh #{p.ticket} do chưa đủ Min Hold Time ({hold_time:.0f}s < {min_hold_time}s)",
+                        target="bot",
+                    )
+
+        return closed_count
+
+    # ====================================================================================
     # 1. HÀM THỰC THI LỆNH CHO BOT (HỖ TRỢ ENTRY, DCA, PCA, DYNAMIC SL & STRICT RISK)
     # ====================================================================================
     def execute_bot_trade(
@@ -70,11 +119,16 @@ class TradeManager:
     ):
         config.SYMBOL = symbol
         acc_info = self.connector.get_account_info()
-
         brain = self._get_brain_settings()
         safeguard_cfg = brain.get("bot_safeguard", {})
 
-        # [FIX] Gọi Checklist độc lập của Bot (Truyền thêm signal_class để check giới hạn per symbol)
+        # [NEW V4.4] KIỂM TRA ĐẢO CHIỀU TRƯỚC KHI VÀO LỆNH (Cắt lệnh ngược chiều giải phóng Margin)
+        close_on_reverse = safeguard_cfg.get("CLOSE_ON_REVERSE", False)
+        if close_on_reverse and signal_class == "ENTRY":
+            min_hold = safeguard_cfg.get("CLOSE_ON_REVERSE_MIN_TIME", 180)
+            self.close_opposite_positions(symbol, direction, min_hold)
+
+        # Gọi Checklist độc lập của Bot
         res = self.checklist.run_bot_safeguard_checks(
             acc_info, self.state, symbol, safeguard_cfg, signal_class
         )
@@ -96,23 +150,14 @@ class TradeManager:
             return "ERR_NO_TICK"
 
         current_price = tick.ask if direction == "BUY" else tick.bid
-        brain = self._get_brain_settings()
         risk_tsl = brain.get("risk_tsl", {})
         order_type = mt5.ORDER_TYPE_BUY if direction == "BUY" else mt5.ORDER_TYPE_SELL
 
         # TÍNH TOÁN SMART SL TỪ CẤU HÌNH BRAIN
-        sl_group = risk_tsl.get("base_sl", "G2")  # Lấy G0, G1, G2, G3 hoặc DYNAMIC
-
-        # [NEW V4.3] DYNAMIC BASE SL LOGIC
+        sl_group = risk_tsl.get("base_sl", "G2")
         if sl_group == "DYNAMIC":
-            if market_mode in ["TREND", "BREAKOUT"]:
-                sl_group = (
-                    "G1"  # Thị trường có xu hướng -> Lấy khung lớn để SL xa, gồng lời
-                )
-            else:
-                sl_group = "G2"  # Sideway / Any -> Lấy khung nhỏ để SL ngắn, RR tốt
+            sl_group = "G1" if market_mode in ["TREND", "BREAKOUT"] else "G2"
 
-        # Đọc thẳng vào data của Group tương ứng
         buffer_atr = context.get(f"atr_{sl_group}", 0.0005)
         swing_l = context.get(f"swing_low_{sl_group}", current_price)
         swing_h = context.get(f"swing_high_{sl_group}", current_price)
@@ -133,10 +178,8 @@ class TradeManager:
             if positions:
                 parent_pos = sorted(positions, key=lambda x: x.time)[0]
 
-        # [NEW V4.3] TÍNH STRICT FEE TRƯỚC KHI TÍNH LOT
         strict_fee_per_lot = 0.0
         if risk_tsl.get("strict_risk", False):
-            # Tính Commission
             acc_type = getattr(config, "DEFAULT_ACCOUNT_TYPE", "STANDARD")
             if acc_type in ["PRO", "STANDARD"]:
                 comm_rate = 0.0
@@ -147,7 +190,6 @@ class TradeManager:
                     .get(acc_type, {})
                     .get("COMMISSION_PER_LOT", 7.0),
                 )
-            # Tính Spread
             spread_cost = (
                 sym_info.spread * sym_info.point * sym_info.trade_contract_size
                 if sym_info
@@ -155,7 +197,11 @@ class TradeManager:
             )
             strict_fee_per_lot = comm_rate + spread_cost
 
-        # TÍNH VOLUME TỪ BRAIN SETTINGS
+        # [NEW V4.4] TÍNH VOLUME - TÍCH HỢP FIXED LOT & STRICT MIN LOT
+        sym_cfgs = brain.get("symbol_configs", {}).get(symbol, {})
+        fixed_lot = float(sym_cfgs.get("fixed_lot", 0.0))
+        strict_min_lot = safeguard_cfg.get("STRICT_MIN_LOT", False)
+
         if parent_pos and signal_class in ["DCA", "PCA"]:
             cfg_key = "dca_config" if signal_class == "DCA" else "pca_config"
             mult = brain.get(
@@ -166,6 +212,15 @@ class TradeManager:
                 config, "LOT_STEP", 0.01
             )
             lot_size = max(config.MIN_LOT_SIZE, min(lot_size, config.MAX_LOT_SIZE))
+
+        elif fixed_lot > 0:
+            lot_size = fixed_lot
+            # Vẫn gọi qua connector để lấy safe_sl chống lỗi sàn
+            _, safe_sl = self.connector.calculate_lot_size(
+                symbol, 10.0, sl_price, order_type, 0
+            )
+            sl_price = safe_sl if safe_sl else sl_price
+
         else:
             base_risk = risk_tsl.get(
                 "base_risk", getattr(config, "BOT_RISK_PERCENT", 0.3)
@@ -174,16 +229,21 @@ class TradeManager:
             final_risk_percent = base_risk * mode_multiplier
             risk_usd = acc_info["equity"] * (final_risk_percent / 100.0)
 
-            # [FIX V4.3] Gọi qua Connector để check Free Margin và tự động nới SL nếu bị lỗi sàn
             calc_lot, safe_sl = self.connector.calculate_lot_size(
                 symbol, risk_usd, sl_price, order_type, strict_fee_per_lot
             )
-            if calc_lot is None:
-                return "ERR_LOT_CALC_FAILED"
+
+            # Xử lý Strict Min Lot Rejection
+            if calc_lot is None or calc_lot == 0:
+                if strict_min_lot:
+                    return "SAFEGUARD_FAIL|Strict Min Lot|Từ chối do Vol tính toán < Min Lot (Rủi ro cao)"
+                else:
+                    return "ERR_LOT_CALC_FAILED"
+
             lot_size = calc_lot
             sl_price = safe_sl
 
-        # TÍNH TP (KAISER EDITION: LỰA CHỌN THẢ RÔNG HOẶC CỨNG TP)
+        # TÍNH TP
         if parent_pos and signal_class in ["DCA", "PCA"]:
             tp_price = parent_pos.tp
             sl_price = parent_pos.sl
@@ -196,31 +256,29 @@ class TradeManager:
                     else current_price - (sl_distance * reward_ratio)
                 )
             else:
-                tp_price = 0.0 # Mặc định KHÔNG đặt TP để TSL tự quản lý
+                tp_price = 0.0
 
         comment = f"[BOT]_AUTO_{signal_class}"
-
         result = self.connector.place_order(
             symbol, order_type, lot_size, sl_price, tp_price, bot_magic, comment
         )
 
         if result and result.retcode == 10009:
             ticket_id = result.order
-
             bot_tactic = risk_tsl.get(
                 "bot_tsl", getattr(config, "BOT_DEFAULT_TSL", "BE+STEP_R+SWING")
             )
             dca_cfg = brain.get("dca_config", getattr(config, "DCA_CONFIG", {}))
             pca_cfg = brain.get("pca_config", getattr(config, "PCA_CONFIG", {}))
+
             if dca_cfg.get("ENABLED", False) and "AUTO_DCA" not in bot_tactic:
                 bot_tactic += "+AUTO_DCA"
             if pca_cfg.get("ENABLED", False) and "AUTO_PCA" not in bot_tactic:
                 bot_tactic += "+AUTO_PCA"
-            
+
             self.update_trade_tactic(ticket_id, bot_tactic)
             self.state["initial_r_dist"][str(ticket_id)] = sl_distance
 
-            # LINK RỔ LỆNH DCA/PCA
             if parent_pos and signal_class in ["DCA", "PCA"]:
                 s_parent = str(parent_pos.ticket)
                 s_child = str(ticket_id)
@@ -235,7 +293,7 @@ class TradeManager:
 
                 self.log(
                     f"🔥 [{signal_class}] Mẹ #{s_parent} đẻ Con #{s_child} | Vol: {lot_size:.2f}",
-                    target="bot"
+                    target="bot",
                 )
                 if signal_class == "DCA":
                     threading.Thread(
@@ -246,18 +304,17 @@ class TradeManager:
             else:
                 self.log(
                     f"🚀 [BOT EXEC] {direction} {symbol} #{ticket_id} | Lot: {lot_size:.2f} | TSL: {bot_tactic}",
-                    target="bot"
+                    target="bot",
                 )
-
-                # [NEW] Ghi nhận thời gian để tính Cooldown cho lần sau
                 if signal_class == "ENTRY":
-                    import time
-
                     self.state["bot_last_entry_times"][symbol] = time.time()
-                
-                # [NEW] Tăng counter ngay khi vào lệnh thành công để Safeguard check được ngay
-                self.state["bot_trades_today"] = self.state.get("bot_trades_today", 0) + 1
-                self.state["trades_today_count"] = self.state.get("trades_today_count", 0) + 1
+
+                self.state["bot_trades_today"] = (
+                    self.state.get("bot_trades_today", 0) + 1
+                )
+                self.state["trades_today_count"] = (
+                    self.state.get("trades_today_count", 0) + 1
+                )
                 save_state(self.state)
 
             return "SUCCESS"
@@ -293,7 +350,10 @@ class TradeManager:
             if abs(p.tp - new_tp) > sym_info.point * 2:
                 self.connector.modify_position(p.ticket, p.sl, new_tp)
 
-        self.log(f"🔄 [BASKET RESCUE] Kéo TP Rổ #{parent_ticket} về: {new_tp:.5f}", target="bot")
+        self.log(
+            f"🔄 [BASKET RESCUE] Kéo TP Rổ #{parent_ticket} về: {new_tp:.5f}",
+            target="bot",
+        )
 
     # ====================================================================================
     # 2. HÀM THỰC THI LỆNH TAY (MANUAL)
@@ -349,7 +409,6 @@ class TradeManager:
         if manual_lot > 0:
             lot_size = manual_lot
         else:
-            # [NEW V4.3] STRICT RISK CALCULATION CHO LỆNH TAY
             strict_fee_per_lot = 0.0
             if params.get("STRICT_RISK", False):
                 acc_type = getattr(config, "DEFAULT_ACCOUNT_TYPE", "STANDARD")
@@ -372,7 +431,6 @@ class TradeManager:
 
             risk_usd = equity * (risk_pct / 100.0)
 
-            # [FIX V4.3] Dùng Connector chung nguồn thay vì tự chia chay
             calc_lot, safe_sl = self.connector.calculate_lot_size(
                 symbol, risk_usd, sl_price, order_type, strict_fee_per_lot
             )
@@ -403,11 +461,14 @@ class TradeManager:
         if result and result.retcode == 10009:
             self.update_trade_tactic(result.order, tactic_str)
             self.state["initial_r_dist"][str(result.order)] = abs(price - sl_price)
-            
-            # [NEW] Tăng counter lệnh Manual
-            self.state["manual_trades_today"] = self.state.get("manual_trades_today", 0) + 1
-            self.state["trades_today_count"] = self.state.get("trades_today_count", 0) + 1
-            
+
+            self.state["manual_trades_today"] = (
+                self.state.get("manual_trades_today", 0) + 1
+            )
+            self.state["trades_today_count"] = (
+                self.state.get("trades_today_count", 0) + 1
+            )
+
             save_state(self.state)
             self.log(
                 f"🚀 [USER EXEC] {direction} {symbol} #{result.order} | Vol: {lot_size:.2f} | TSL: {tactic_str}"
@@ -439,7 +500,6 @@ class TradeManager:
                 for ticket in closed_tickets:
                     s_ticket = str(ticket)
 
-                    # QUÉT LỊCH SỬ DEALS ĐỂ LẤY PNL THỰC TẾ
                     deals = mt5.history_deals_get(position=ticket)
                     if deals:
                         deal_out = [d for d in deals if d.entry == mt5.DEAL_ENTRY_OUT]
@@ -447,12 +507,11 @@ class TradeManager:
                             d_out = deal_out[0]
                             real_pnl = d_out.profit + d_out.commission + d_out.swap
 
-                            # [NEW] Phân tách rạch ròi PnL và Loss Count của Bot vs Manual
                             bot_magic = getattr(config, "BOT_MAGIC_NUMBER", 9999)
                             is_bot = d_out.magic == bot_magic
 
                             self.state["pnl_today"] += real_pnl
-                            
+
                             if real_pnl < 0:
                                 self.state["daily_loss_count"] += 1
 
@@ -478,27 +537,31 @@ class TradeManager:
                             )
                             pnl_sign = "+" if real_pnl >= 0 else ""
 
+                            # [NEW V4.4] Lấy lý do thoát lệnh từ Tracker và lưu Cooldown
+                            exit_reason = self.state.get("exit_reasons", {}).get(
+                                s_ticket, "Closed"
+                            )
+                            self.state["last_close_times"][d_out.symbol] = time.time()
+
                             append_trade_log(
                                 ticket,
                                 d_out.symbol,
                                 pos_type_str,
                                 d_out.volume,
                                 real_pnl,
-                                "Closed",
+                                exit_reason,
                             )
                             log_target = "bot" if is_bot else "manual"
                             self.log(
-                                f"[DỌN DẸP] Đóng lệnh {pos_type_str} {d_out.symbol} #{ticket} | Vol: {d_out.volume:.2f} | PnL: {pnl_sign}${real_pnl:.2f}",
-                                target=log_target
+                                f"[DỌN DẸP] Đóng lệnh {pos_type_str} {d_out.symbol} #{ticket} ({exit_reason}) | PnL: {pnl_sign}${real_pnl:.2f}",
+                                target=log_target,
                             )
 
-                    # Xóa Tracking
                     if ticket in self.state["active_trades"]:
                         self.state["active_trades"].remove(ticket)
-                    if s_ticket in self.state.get("trade_tactics", {}):
-                        del self.state["trade_tactics"][s_ticket]
-                    if s_ticket in self.state.get("initial_r_dist", {}):
-                        del self.state["initial_r_dist"][s_ticket]
+                    for key in ["trade_tactics", "initial_r_dist", "exit_reasons"]:
+                        if s_ticket in self.state.get(key, {}):
+                            del self.state[key][s_ticket]
 
                     # Basket Logic
                     if s_ticket in self.state.get("parent_baskets", {}):
@@ -515,7 +578,10 @@ class TradeManager:
                             if child_pos:
                                 self.log(
                                     f"⚠️ [BASKET CLOSE] Đóng lệnh Con #{child_t} do Mẹ #{ticket} đã chốt!",
-                                    target="bot"
+                                    target="bot",
+                                )
+                                self.state["exit_reasons"][str(child_t)] = (
+                                    "Parent_Closed"
                                 )
                                 threading.Thread(
                                     target=self.connector.close_position,
@@ -535,7 +601,6 @@ class TradeManager:
 
                 save_state(self.state)
 
-            # XỬ LÝ TSL CHÍNH XÁC TỪNG LỆNH
             bot_magic = getattr(config, "BOT_MAGIC_NUMBER", 9999)
             manual_magic = getattr(config, "MANUAL_MAGIC_NUMBER", 8888)
             tracked_positions = [
@@ -563,7 +628,6 @@ class TradeManager:
         return tsl_status_map
 
     def _apply_independent_tsl(self, pos, context):
-        """Tính toán và trả về Trạng thái TSL cực kỳ chi tiết cho UI"""
         tactic_str = self.get_trade_tactic(pos.ticket)
         if tactic_str == "OFF" or not tactic_str:
             return "TSL OFF"
@@ -593,6 +657,56 @@ class TradeManager:
 
         brain = self._get_brain_settings()
         tsl_cfg = brain.get("tsl_config", getattr(config, "TSL_CONFIG", {}))
+
+        # [NEW V4.4] 1. BE_HARD_CASH (Khóa Lãi Thực Tế)
+        if "BE_CASH" in active_modes:
+            be_type = tsl_cfg.get("BE_CASH_TYPE", "USD")  # USD, PERCENT, POINT
+            be_val = float(tsl_cfg.get("BE_VALUE", 5.0))
+
+            profit_usd = pos.profit + pos.swap + getattr(pos, "commission", 0.0)
+            acc = self.connector.get_account_info()
+            bal = acc["balance"] if acc else 1000
+
+            # Tính toán mức X lợi nhuận muốn giữ (Bằng USD)
+            trigger_usd = 0
+            if be_type == "USD":
+                trigger_usd = be_val
+            elif be_type == "PERCENT":
+                trigger_usd = bal * (be_val / 100.0)
+            elif be_type == "POINT":
+                trigger_usd = be_val * point * pos.volume * sym_info.trade_contract_size
+
+            # Tính toán tổng phí hao hụt
+            fee = abs(getattr(pos, "commission", 0.0)) + (
+                sym_info.spread * point * pos.volume * sym_info.trade_contract_size
+            )
+            target_profit_usd = trigger_usd + fee
+
+            if profit_usd >= target_profit_usd:
+                # Nếu đạt mức target (Fee + X), kéo SL lên bằng Entry +/- (mức X đó quy đổi ra giá)
+                lock_dist_price = trigger_usd / (
+                    pos.volume * sym_info.trade_contract_size
+                )
+                lock_price = (
+                    pos.price_open + lock_dist_price
+                    if is_buy
+                    else pos.price_open - lock_dist_price
+                )
+                candidates.append((lock_price, f"BE_CASH {be_type}"))
+            else:
+                milestones.append(
+                    (
+                        target_profit_usd - profit_usd,
+                        f"BE_CASH Đợi Lãi ${target_profit_usd:.2f}",
+                    )
+                )
+
+        # [NEW V4.4] 2. PSAR TRAILING
+        if "PSAR_TRAIL" in active_modes and context:
+            psar_val = context.get("psar")  # Yêu cầu DataEngine cấp biến này
+            if psar_val:
+                candidates.append((psar_val, f"PSAR ➔ {psar_val:.2f}"))
+                milestones.append((0, f"PSAR Đợi ➔ {psar_val:.2f}"))
 
         if "BE" in active_modes:
             trig_r = tsl_cfg.get("BE_OFFSET_RR", 0.8)
@@ -681,8 +795,6 @@ class TradeManager:
 
         if "SWING" in active_modes and context:
             trail_group = brain.get("risk_tsl", {}).get("base_sl", "G2")
-            
-            # [FIX V4.3] Xử lý DYNAMIC SL group
             market_mode = context.get("market_mode", "ANY")
             is_trending = market_mode in ["TREND", "BREAKOUT"]
             if trail_group == "DYNAMIC":
@@ -695,35 +807,34 @@ class TradeManager:
             if sh is not None and sl is not None and atr:
                 trail_buf = getattr(config, "trail_atr_buffer", 0.2)
                 tsl_mode = tsl_cfg.get("TSL_LOGIC_MODE", "STATIC")
-
-                # [KAISER UPGRADE]: Xác định trạng thái xu hướng thay cho ADX
                 is_trending = context.get("market_mode", "TREND") in [
                     "TREND",
                     "BREAKOUT",
                 ]
 
                 swing_sl = 0.0
-                if is_buy:  # LỆNH LONG
+                if is_buy:
                     if tsl_mode == "STATIC":
-                        swing_sl = sl - (trail_buf * atr)  # Bám đáy (An toàn/Xa)
+                        swing_sl = sl - (trail_buf * atr)
                     elif tsl_mode == "AGGRESSIVE":
-                        swing_sl = sh - (trail_buf * atr)  # Bám đỉnh (Gắt/Sát)
+                        swing_sl = sh - (trail_buf * atr)
                     elif tsl_mode == "DYNAMIC":
-                        if is_trending:
-                            swing_sl = sl - (trail_buf * atr)  # Có Trend -> Bám đáy
-                        else:
-                            swing_sl = sh - (trail_buf * atr)  # Sideway -> Bám đỉnh
-
-                else:  # LỆNH SHORT
+                        swing_sl = (
+                            sl - (trail_buf * atr)
+                            if is_trending
+                            else sh - (trail_buf * atr)
+                        )
+                else:
                     if tsl_mode == "STATIC":
-                        swing_sl = sh + (trail_buf * atr)  # Bám đỉnh (An toàn/Xa)
+                        swing_sl = sh + (trail_buf * atr)
                     elif tsl_mode == "AGGRESSIVE":
-                        swing_sl = sl + (trail_buf * atr)  # Bám đáy (Gắt/Sát)
+                        swing_sl = sl + (trail_buf * atr)
                     elif tsl_mode == "DYNAMIC":
-                        if is_trending:
-                            swing_sl = sh + (trail_buf * atr)  # Có Trend -> Bám đỉnh
-                        else:
-                            swing_sl = sl + (trail_buf * atr)  # Sideway -> Bám đáy
+                        swing_sl = (
+                            sh + (trail_buf * atr)
+                            if is_trending
+                            else sl + (trail_buf * atr)
+                        )
 
                 candidates.append((swing_sl, f"SWING ➔ {swing_sl:.2f}"))
                 milestones.append((0, f"SWING Đợi ➔ {swing_sl:.2f}"))
@@ -754,6 +865,9 @@ class TradeManager:
             )
             if abs(target_sl - current_sl) > (point / 2):
                 self.connector.modify_position(pos.ticket, target_sl, pos.tp)
+                self.state["exit_reasons"][str(pos.ticket)] = (
+                    f"Hit_TSL_{action_rule}"  # Track TSL hit
+                )
                 return f"{action_rule} Đã kéo ➔ {target_sl:.2f}"
 
         if milestones:

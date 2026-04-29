@@ -338,4 +338,20 @@ class ChecklistManager:
                 )
                 all_passed = False
 
+            # [NEW V4.4] Kiểm tra Post-Close Cooldown (Nghỉ sau khi vừa đóng lệnh)
+            post_close_cd = int(safeguard_cfg.get("POST_CLOSE_COOLDOWN", 0))
+            if post_close_cd > 0:
+                last_close = state.get("last_close_times", {}).get(symbol, 0)
+                elapsed_close = time.time() - last_close
+                if elapsed_close < post_close_cd:
+                    rem_close = int(post_close_cd - elapsed_close)
+                    checks.append(
+                        {
+                            "name": "Post-Close",
+                            "status": "FAIL",
+                            "msg": f"{symbol} vừa đóng lệnh (Còn {rem_close}s)",
+                        }
+                    )
+                    all_passed = False
+
         return {"passed": all_passed, "checks": checks}

@@ -927,11 +927,25 @@ class BotUI(ctk.CTk):
         else:
             tag = "INFO"
 
+        # [NEW V4.4 FINAL] Tự động định tuyến log của bot vào 2 Tab (BOT và BOT-LOG)
+        if target == "bot":
+            if any(k in msg for k in ["🚀", "Đóng lệnh", "Bóp cò", "PnL", "SUCCESS", "FAIL"]):
+                target = "bot"      # Lệnh thực thi -> Sang Tab BOT
+            else:
+                target = "bot-log"  # Log logic/check -> Sang Tab BOT-LOG
+
         self.after(0, lambda: self._write_log(txt, tag, target))
 
     def _write_log(self, txt, tag, target="manual"):
-        widget = self.txt_log_bot if target == "bot" else self.txt_log_manual
-        if widget.winfo_exists():
+        if target == "bot":
+            widget = getattr(self, "txt_log_bot", None)
+        elif target == "bot-log":
+            # Fallback về txt_log_bot nếu Ngài chưa tạo Text widget cho bot_log
+            widget = getattr(self, "txt_log_bot_log", getattr(self, "txt_log_bot", None)) 
+        else:
+            widget = getattr(self, "txt_log_manual", None)
+            
+        if widget and widget.winfo_exists():
             widget.configure(state="normal")
             widget.insert("end", txt, tag)
             widget.see("end")

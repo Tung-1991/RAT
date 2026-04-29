@@ -213,8 +213,22 @@ class ExnessConnector:
 
             # BƯỚC 7: Áp dụng giới hạn min/max của sàn
             if lot_size < min_vol:
-                logger.warning(f"Lot size tính toán ({lot_size:.2f}) < mức tối thiểu ({min_vol}). Sử dụng mức tối thiểu.")
-                return min_vol, sl_price 
+                # [NEW V4.4 FINAL] Đọc cấu hình Strict Min Lot trực tiếp
+                import json, os
+                strict_min_lot = False
+                try:
+                    _cpath = os.path.join("data", "brain_settings.json")
+                    if os.path.exists(_cpath):
+                        with open(_cpath, "r", encoding="utf-8") as _f:
+                            strict_min_lot = json.load(_f).get("bot_safeguard", {}).get("STRICT_MIN_LOT", False)
+                except: pass
+
+                if strict_min_lot:
+                    logger.warning(f"Lot size tính toán ({lot_size:.2f}) < mức tối thiểu ({min_vol}). STRICT_MIN_LOT = ON -> TỪ CHỐI LỆNH.")
+                    return 0.0, sl_price
+                else:
+                    logger.warning(f"Lot size tính toán ({lot_size:.2f}) < mức tối thiểu ({min_vol}). Sử dụng mức tối thiểu.")
+                    return min_vol, sl_price 
             if lot_size > max_vol:
                 logger.warning(f"Lot size tính toán ({lot_size:.2f}) > mức tối đa ({max_vol}). Sử dụng mức tối đa.")
                 return max_vol, sl_price 

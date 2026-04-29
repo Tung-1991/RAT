@@ -17,7 +17,7 @@ class BotStrategyUI(ctk.CTkToplevel):
     def __init__(self, master=None):
         super().__init__(master)
         self.title(
-            "🧠 V4.3 Bot Strategy Sandbox (Dynamic Trend, Scalping & Multi-Group)"
+            "🧠 V4.4 Bot Strategy Sandbox (Professional Template & Advanced TSL)"
         )
         self.geometry("1150x800")
         self.attributes("-topmost", True)
@@ -140,11 +140,12 @@ class BotStrategyUI(ctk.CTkToplevel):
             hover_color="#0D47A1",
             command=self.load_template,
         ).pack(side="left", padx=5)
+        
         ctk.CTkButton(
             btn_frame,
             text="💾 SAVE AS TEMPLATE",
-            fg_color="#424242",
-            hover_color="#616161",
+            fg_color="#455A64",
+            hover_color="#37474F",
             command=self.save_as_template,
         ).pack(side="left", padx=5)
 
@@ -483,7 +484,8 @@ class BotStrategyUI(ctk.CTkToplevel):
         self.bot_tactic_vars = {}
         current_tactic_str = risk_data.get("bot_tsl", "BE+STEP_R+SWING")
 
-        for t in ["BE", "PNL", "STEP_R", "SWING"]:
+        # [NEW V4.4] Bổ sung thêm BE_CASH và PSAR_TRAIL vào danh sách chiến thuật Bot
+        for t in ["BE", "PNL", "STEP_R", "SWING", "BE_CASH", "PSAR_TRAIL"]:
             is_active = t in current_tactic_str
             var = ctk.BooleanVar(value=is_active)
             ctk.CTkCheckBox(

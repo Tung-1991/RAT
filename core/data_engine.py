@@ -218,6 +218,17 @@ class DataEngine:
             "current_price": current_price
         }
 
+        # [NEW V4.4 FINAL] Lấy giá trị PSAR hiện tại cho TSL PSAR_TRAIL
+        try:
+            psar_cols = [c for c in dfs["G2"].columns if c.startswith("PSARl_") or c.startswith("PSARs_")]
+            for col in psar_cols:
+                val = dfs["G2"][col].iloc[-1]
+                if not pd.isna(val):
+                    context["psar"] = float(val)
+                    break
+        except Exception:
+            pass
+
         for grp in ["G0", "G1", "G2", "G3"]:
             df_grp = dfs[grp]
             sh, sl = self._calc_swings(df_grp, lookback=15)
