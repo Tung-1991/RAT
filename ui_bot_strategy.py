@@ -740,6 +740,7 @@ class BotStrategyUI(ctk.CTkToplevel):
                 except Exception:
                     pass
 
+            # [FIX]: Cập nhật gia tăng thay vì ghi đè thô bạo
             existing_data.update(output_data)
 
             # [FIX V4.4] Cập nhật Close on Reverse vào bot_safeguard khi Sandbox bấm lưu
@@ -753,22 +754,23 @@ class BotStrategyUI(ctk.CTkToplevel):
             with open(BRAIN_SETTINGS_PATH, "w", encoding="utf-8") as f:
                 json.dump(existing_data, f, indent=4)
 
-            # Đồng bộ ngay vào config Runtime của UI
-            config.MASTER_EVAL_MODE = output_data["MASTER_EVAL_MODE"]
-            config.MIN_MATCHING_VOTES = output_data["MIN_MATCHING_VOTES"]
-            config.BOT_RISK_PERCENT = output_data["risk_tsl"]["base_risk"]
-            config.TSL_LOGIC_MODE = output_data["risk_tsl"]["tsl_mode"]
+            # [HOT-FIX]: Đồng bộ ngay vào config Runtime của UI Main
+            if hasattr(self.master, "reload_config_from_json"):
+                self.master.reload_config_from_json()
+            else:
+                # Fallback nếu gọi từ nơi khác
+                config.MASTER_EVAL_MODE = output_data["MASTER_EVAL_MODE"]
+                config.MIN_MATCHING_VOTES = output_data["MIN_MATCHING_VOTES"]
+                config.BOT_RISK_PERCENT = output_data["risk_tsl"]["base_risk"]
+                config.TSL_LOGIC_MODE = output_data["risk_tsl"]["tsl_mode"]
+                config.FORCE_ANY_MODE = output_data["FORCE_ANY_MODE"]
+                config.STRICT_RISK_CALC = output_data["risk_tsl"]["strict_risk"]
+                config.DCA_CONFIG = output_data["dca_config"]
+                config.PCA_CONFIG = output_data["pca_config"]
 
-            # [NEW] Hot Reload biến mới
-            config.FORCE_ANY_MODE = output_data["FORCE_ANY_MODE"]
-            config.STRICT_RISK_CALC = output_data["risk_tsl"]["strict_risk"]
-            config.DCA_CONFIG = output_data["dca_config"]
-            config.PCA_CONFIG = output_data["pca_config"]
-
-            # Tự động đóng cửa sổ mượt mà không hiện popup phiền phức
+            # Tự động đóng cửa sổ mượt mà
             self.destroy()
         except Exception as e:
-            # Chỉ hiện lỗi nếu thực sự ghi file thất bại
             messagebox.showerror("Lỗi hệ thống", f"Lỗi ghi file cấu hình:\n{e}")
 
     def load_template(self):

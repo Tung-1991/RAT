@@ -209,6 +209,18 @@ class BotUI(ctk.CTk):
         except Exception as e:
             self.log_message(f"Lỗi đồng bộ cấu hình (Hot-Reload): {e}", error=True)
 
+    def reload_config_from_json(self):
+        """[JOB 1] Đọc lại cấu hình từ file JSON (Master) vào bộ nhớ App"""
+        if os.path.exists(BRAIN_SETTINGS_FILE):
+            try:
+                with open(BRAIN_SETTINGS_FILE, "r", encoding="utf-8") as f:
+                    bs = json.load(f)
+                    for k, v in bs.items():
+                        if hasattr(config, k) and k != "COIN_LIST":
+                            setattr(config, k, v)
+            except Exception as e:
+                self.log_message(f"Lỗi Reload JSON: {e}", error=True)
+
     def update_brain_heartbeat(self, heartbeat: dict):
         self.brain_status = heartbeat.get("status", "UNKNOWN")
         self.brain_wakeup_time = heartbeat.get("wakeup_time", 0)
@@ -308,9 +320,11 @@ class BotUI(ctk.CTk):
         sandbox_window = BotStrategyUI(self)
 
         def on_sandbox_close():
-            self._save_brain_live_config()
+            # [FIX JOB 1]: XÓA bỏ hàm tự động save ghi đè cấu hình cũ
+            # GỌI hàm Reload để nạp dữ liệu Sandbox vừa lưu trên file vào bộ nhớ
+            self.reload_config_from_json() 
             self.log_message(
-                "📡 [V3.0] Đã đóng Sandbox. Daemon sẽ tự động nạp cấu hình mới (Hot-Reload).",
+                "📡 [V3.0] Đã đóng Sandbox. Hệ thống đã nạp cấu hình mới (Hot-Reload) từ JSON.",
                 error=False,
             )
             sandbox_window.destroy()
@@ -1052,11 +1066,11 @@ class BotUI(ctk.CTk):
                 self.tree.selection_set(row_id)
                 ticket = int(row_id)
                 
-                # [FIX V4.4] Thêm Toggle Close on Reverse vào Menu chuột phải
+                # [FIX V4.4] Thêm Toggle Close on Reverse vào Menu chuột phải (Sử dụng tag REV_C)
                 current_tactic = self.trade_mgr.get_trade_tactic(ticket)
-                rev_status = "ON" if "REVERSE_CLOSE" in current_tactic else "OFF"
+                rev_status = "ON" if "REV_C" in current_tactic else "OFF"
                 def toggle_rev():
-                    new_t = current_tactic + "+REVERSE_CLOSE" if rev_status == "OFF" else current_tactic.replace("+REVERSE_CLOSE", "").replace("++", "+").strip("+")
+                    new_t = current_tactic + "+REV_C" if rev_status == "OFF" else current_tactic.replace("+REV_C", "").replace("++", "+").strip("+")
                     self.trade_mgr.update_trade_tactic(ticket, new_t)
                     self.log_message(f"Update Reverse Close #{ticket}: {rev_status} -> {'ON' if rev_status == 'OFF' else 'OFF'}")
                 

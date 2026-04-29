@@ -392,16 +392,18 @@ def open_bot_setting_popup(app):
 
     def save():
         try:
-            # Lưu riêng vào json thay vì config
             import json, os
-
-            existing_data = {}
             cfg_path = "data/brain_settings.json"
+            existing_data = {}
             if os.path.exists(cfg_path):
                 with open(cfg_path, "r", encoding="utf-8") as f:
                     existing_data = json.load(f)
 
-            existing_data["bot_safeguard"] = {
+            # [FIX TRIỆT ĐỂ]: Sử dụng .update() để không làm mất các biến từ Sandbox (như CLOSE_ON_REVERSE)
+            if "bot_safeguard" not in existing_data:
+                existing_data["bot_safeguard"] = {}
+                
+            existing_data["bot_safeguard"].update({
                 "MAX_DAILY_LOSS_PERCENT": float(e_max_loss.get()),
                 "MAX_OPEN_POSITIONS": int(e_max_open.get()),
                 "MAX_TRADES_PER_DAY": int(e_max_trades.get()),
@@ -420,7 +422,8 @@ def open_bot_setting_popup(app):
                 "BOT_USE_TP": var_bot_use_tp.get(),
                 "STRICT_MIN_LOT": var_strict_min_lot.get(),
                 "POST_CLOSE_COOLDOWN": int(e_post_close.get()),
-            }
+            })
+            
             existing_data["BOT_ACTIVE_SYMBOLS"] = [
                 coin for coin, var in app.bot_coin_vars.items() if var.get()
             ]
@@ -429,10 +432,14 @@ def open_bot_setting_popup(app):
             with open(cfg_path, "w", encoding="utf-8") as f:
                 json.dump(existing_data, f, indent=4)
 
-            app.log_message("✅ Đã cập nhật Bot Safeguard ĐỘC LẬP.", target="bot")
+            # [HOT-FIX]: Đồng bộ lại config runtime của Main UI ngay lập tức
+            if hasattr(app, "reload_config_from_json"):
+                app.reload_config_from_json()
+
+            app.log_message("✅ Đã cập nhật Bot Safeguard (Cập nhật gia tăng).", target="bot")
             top.destroy()
-        except ValueError:
-            messagebox.showerror("Lỗi", "Dữ liệu nhập sai!")
+        except Exception as e:
+            messagebox.showerror("Lỗi", f"Lỗi lưu cấu hình: {e}")
 
     ctk.CTkButton(
         top,
@@ -628,7 +635,7 @@ def open_tsl_popup(app):
     cbo_swing_grp.pack(side="right")
     ctk.CTkLabel(f_swing_man, text="Group Theo Dõi:").pack(side="left")
 
-    f_cash = sec(tab_adv, "5. BE HARD CASH (Khóa lãi thực)")
+    f_cash = sec(tab_adv, "5. BE HARD CASH (Thang cuốn USD/Point/%)")
     f_cash.pack(fill="x", padx=15)
 
     cbo_cash_type = ctk.CTkOptionMenu(
@@ -640,7 +647,14 @@ def open_tsl_popup(app):
     e_cash_val = ctk.CTkEntry(f_cash, width=60)
     e_cash_val.insert(0, str(config.TSL_CONFIG.get("BE_VALUE", 5.0)))
     e_cash_val.pack(side="left", padx=5)
-    ctk.CTkLabel(f_cash, text="(Mốc Target Bù Phí + X)").pack(side="left", padx=2)
+
+    cbo_cash_strat = ctk.CTkOptionMenu(
+        f_cash, values=["TRAILING (Gap)", "LOCK (Tight)"], width=110
+    )
+    cbo_cash_strat.set(config.TSL_CONFIG.get("BE_CASH_STRAT", "TRAILING (Gap)"))
+    cbo_cash_strat.pack(side="left", padx=5)
+
+    ctk.CTkLabel(f_cash, text="(Mốc & Bước nhảy)").pack(side="left", padx=2)
 
     f_psar = sec(tab_adv, "6. PSAR TRAILING (Đuổi chấm)")
     f_psar.pack(fill="x", padx=15)
@@ -669,6 +683,7 @@ def open_tsl_popup(app):
                 {
                     "BE_CASH_TYPE": cbo_cash_type.get(),
                     "BE_VALUE": float(e_cash_val.get()),
+                    "BE_CASH_STRAT": cbo_cash_strat.get(),
                     "BE_MODE": cbo_be.get(),
                     "BE_OFFSET_RR": float(e_be_rr.get()),
                     "PNL_LEVELS": sorted(
@@ -810,7 +825,7 @@ def open_edit_popup(app, ticket):
                         preview_txts.append("SWING (Đuổi theo nến H1/M15)")
                     if states["BE_C"]:
                         preview_txts.append(
-                            f"BE_CASH ({config.TSL_CONFIG.get('BE_VALUE', 5)})"
+                            f"CASH TRAIL Bậc thang (Step: {config.TSL_CONFIG.get('BE_VALUE', 5)})"
                         )
                     if states["PSAR"]:
                         preview_txts.append("PSAR TRAIL")

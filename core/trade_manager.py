@@ -275,6 +275,10 @@ class TradeManager:
                 bot_tactic += "+AUTO_DCA"
             if pca_cfg.get("ENABLED", False) and "AUTO_PCA" not in bot_tactic:
                 bot_tactic += "+AUTO_PCA"
+            
+            # [FIX V4.4]: Tự động gán Reverse Close (REV_C) cho lệnh Bot nếu được bật
+            if safeguard_cfg.get("CLOSE_ON_REVERSE", False) and "REV_C" not in bot_tactic:
+                bot_tactic += "+REV_C"
 
             self.update_trade_tactic(ticket_id, bot_tactic)
             self.state["initial_r_dist"][str(ticket_id)] = sl_distance
@@ -658,46 +662,59 @@ class TradeManager:
         brain = self._get_brain_settings()
         tsl_cfg = brain.get("tsl_config", getattr(config, "TSL_CONFIG", {}))
 
-        # [NEW V4.4] 1. BE_HARD_CASH (Khóa Lãi Thực Tế)
+        # [NEW V4.4] 1. BE_HARD_CASH (Nâng cấp thành Thang cuốn cuốn chiếu Lãi Thực Tế)
         if "BE_CASH" in active_modes:
             be_type = tsl_cfg.get("BE_CASH_TYPE", "USD")  # USD, PERCENT, POINT
-            be_val = float(tsl_cfg.get("BE_VALUE", 5.0))
+            be_val = float(tsl_cfg.get("BE_VALUE", 5.0))  # Sử dụng BE_VALUE làm Bước nhảy (Step)
 
             profit_usd = pos.profit + pos.swap + getattr(pos, "commission", 0.0)
             acc = self.connector.get_account_info()
             bal = acc["balance"] if acc else 1000
 
-            # Tính toán mức X lợi nhuận muốn giữ (Bằng USD)
-            trigger_usd = 0
+            # Tính toán Bước nhảy (Step Value) quy đổi ra USD
+            step_usd = 0
             if be_type == "USD":
-                trigger_usd = be_val
+                step_usd = be_val
             elif be_type == "PERCENT":
-                trigger_usd = bal * (be_val / 100.0)
+                step_usd = bal * (be_val / 100.0)
             elif be_type == "POINT":
-                trigger_usd = be_val * point * pos.volume * sym_info.trade_contract_size
+                step_usd = be_val * point * pos.volume * sym_info.trade_contract_size
 
-            # Tính toán tổng phí hao hụt
-            fee = abs(getattr(pos, "commission", 0.0)) + (
-                sym_info.spread * point * pos.volume * sym_info.trade_contract_size
-            )
-            target_profit_usd = trigger_usd + fee
+            if step_usd > 0:
+                # Tính tổng phí hao hụt (Commission + Spread) để cắt hòa vốn không bị âm
+                total_fee = abs(getattr(pos, "commission", 0.0)) + (
+                    sym_info.spread * point * pos.volume * sym_info.trade_contract_size
+                )
+                
+                # Tính xem lợi nhuận gộp (Profit) hiện tại đã đạt được bao nhiêu "Bậc thang"
+                steps_achieved = math.floor(profit_usd / step_usd)
 
-            if profit_usd >= target_profit_usd:
-                # Nếu đạt mức target (Fee + X), kéo SL lên bằng Entry +/- (mức X đó quy đổi ra giá)
-                lock_dist_price = trigger_usd / (
-                    pos.volume * sym_info.trade_contract_size
-                )
-                lock_price = (
-                    pos.price_open + lock_dist_price
-                    if is_buy
-                    else pos.price_open - lock_dist_price
-                )
-                candidates.append((lock_price, f"BE_CASH {be_type}"))
-            else:
+                if steps_achieved >= 1:
+                    # Bậc 1: Khóa $0. Bậc 2: Khóa $5. Bậc n: Khóa (n-1)*Step
+                    locked_profit_usd = (steps_achieved - 1) * step_usd
+                    
+                    # Quy đổi lợi nhuận USD muốn khóa ra khoảng cách giá (Price Distance)
+                    lock_dist_price = locked_profit_usd / (pos.volume * sym_info.trade_contract_size)
+                    
+                    # Mốc hòa vốn cơ sở (Đã cộng phí)
+                    breakeven_dist = total_fee / (pos.volume * sym_info.trade_contract_size)
+                    
+                    if is_buy:
+                        base_be_price = pos.price_open + breakeven_dist
+                        lock_price = base_be_price + lock_dist_price
+                    else:
+                        base_be_price = pos.price_open - breakeven_dist
+                        lock_price = base_be_price - lock_dist_price
+
+                    candidates.append((lock_price, f"CASH Bậc {steps_achieved}"))
+                
+                # Tính Milestone hiển thị lên UI để chờ bậc tiếp theo
+                next_step = steps_achieved + 1
+                next_target_usd = (next_step * step_usd)
                 milestones.append(
                     (
-                        target_profit_usd - profit_usd,
-                        f"BE_CASH Đợi Lãi ${target_profit_usd:.2f}",
+                        next_target_usd - profit_usd,
+                        f"BE_CASH Đợi Bậc {next_step} (${next_target_usd:.2f})",
                     )
                 )
 
