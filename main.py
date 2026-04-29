@@ -209,6 +209,13 @@ class BotUI(ctk.CTk):
         except Exception as e:
             self.log_message(f"Lỗi đồng bộ cấu hình (Hot-Reload): {e}", error=True)
 
+    def _merge_dict(self, target, source):
+        for k, v in source.items():
+            if isinstance(v, dict) and k in target and isinstance(target[k], dict):
+                self._merge_dict(target[k], v)
+            else:
+                target[k] = v
+
     def reload_config_from_json(self):
         """[JOB 1] Đọc lại cấu hình từ file JSON (Master) vào bộ nhớ App"""
         if os.path.exists(BRAIN_SETTINGS_FILE):
@@ -217,7 +224,11 @@ class BotUI(ctk.CTk):
                     bs = json.load(f)
                     for k, v in bs.items():
                         if hasattr(config, k) and k != "COIN_LIST":
-                            setattr(config, k, v)
+                            current_val = getattr(config, k)
+                            if isinstance(current_val, dict) and isinstance(v, dict):
+                                self._merge_dict(current_val, v)
+                            else:
+                                setattr(config, k, v)
             except Exception as e:
                 self.log_message(f"Lỗi Reload JSON: {e}", error=True)
 
@@ -352,7 +363,11 @@ class BotUI(ctk.CTk):
                     bs = json.load(f)
                     for k, v in bs.items():
                         if hasattr(config, k) and k != "COIN_LIST":
-                            setattr(config, k, v)
+                            current_val = getattr(config, k)
+                            if isinstance(current_val, dict) and isinstance(v, dict):
+                                self._merge_dict(current_val, v)
+                            else:
+                                setattr(config, k, v)
             except:
                 pass
 
