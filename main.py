@@ -90,12 +90,12 @@ class BotUI(ctk.CTk):
             "PNL": False,
             "STEP_R": True,
             "SWING": True,
-            "BE_CASH": False,     # [FIX] Thêm State cho TSL CASH
+            "BE_CASH": False,  # [FIX] Thêm State cho TSL CASH
             "PSAR_TRAIL": False,  # [FIX] Thêm State cho TSL PSAR
             "AUTO_DCA": False,
             "AUTO_PCA": False,
-            "REV_C": False,      # [NEW V4.4] Recovery/Safelock
-            "ANTI_CASH": False,   # [NEW V4.4] Hard stop logic
+            "REV_C": False,  # [NEW V4.4] Recovery/Safelock
+            "ANTI_CASH": False,  # [NEW V4.4] Hard stop logic
         }
         self.running = True
         self.tsl_states_map = {}
@@ -281,10 +281,10 @@ class BotUI(ctk.CTk):
         set_btn(self.btn_tactic_pnl, self.tactic_states["PNL"])
         set_btn(self.btn_tactic_step, self.tactic_states["STEP_R"])
         set_btn(self.btn_tactic_swing, self.tactic_states["SWING"])
-        
-        if hasattr(self, "btn_tactic_cash"): # [FIX] Update màu nút CASH
+
+        if hasattr(self, "btn_tactic_cash"):  # [FIX] Update màu nút CASH
             set_btn(self.btn_tactic_cash, self.tactic_states["BE_CASH"])
-        if hasattr(self, "btn_tactic_psar"): # [FIX] Update màu nút PSAR
+        if hasattr(self, "btn_tactic_psar"):  # [FIX] Update màu nút PSAR
             set_btn(self.btn_tactic_psar, self.tactic_states["PSAR_TRAIL"])
 
         if hasattr(self, "btn_tactic_dca"):
@@ -339,7 +339,7 @@ class BotUI(ctk.CTk):
         def on_sandbox_close():
             # [FIX JOB 1]: XÓA bỏ hàm tự động save ghi đè cấu hình cũ
             # GỌI hàm Reload để nạp dữ liệu Sandbox vừa lưu trên file vào bộ nhớ
-            self.reload_config_from_json() 
+            self.reload_config_from_json()
             self.log_message(
                 "📡 [V3.0] Đã đóng Sandbox. Hệ thống đã nạp cấu hình mới (Hot-Reload) từ JSON.",
                 error=False,
@@ -384,7 +384,7 @@ class BotUI(ctk.CTk):
                 json.dump(config.TSL_CONFIG, f, indent=4)
             with open(PRESETS_FILE, "w") as f:
                 json.dump(config.PRESETS, f, indent=4)
-            
+
             # [HOTFIX V4.4] Đồng bộ ngay lập tức sang brain_settings.json để không bị Sandbox ghi đè ngược
             self._save_brain_live_config()
         except:
@@ -762,8 +762,10 @@ class BotUI(ctk.CTk):
                     trail_group = brain.get("risk_tsl", {}).get("base_sl", "G2")
                     market_mode = sym_ctx.get("market_mode", "ANY")
                     if "DYNAMIC" in trail_group:
-                        trail_group = "G1" if market_mode in ["TREND", "BREAKOUT"] else "G2"
-                        
+                        trail_group = (
+                            "G1" if market_mode in ["TREND", "BREAKOUT"] else "G2"
+                        )
+
                     sh, sl, atr_val = (
                         sym_ctx.get(f"swing_high_{trail_group}", "--"),
                         sym_ctx.get(f"swing_low_{trail_group}", "--"),
@@ -857,7 +859,7 @@ class BotUI(ctk.CTk):
             rr_str = f"{risk_str}  |  {rew_str}"
 
             stt_txt = self.tsl_states_map.get(p.ticket, "Running")
-            
+
             # [KAISER FIX] Hiển thị rõ loại lệnh con trên Status nếu là lệnh DCA/PCA
             if "[BOT]_AUTO_DCA" in p.comment:
                 stt_txt = "DCA Child"
@@ -873,7 +875,10 @@ class BotUI(ctk.CTk):
                 if stt_extras:
                     stt_txt += f" | +{'/'.join(stt_extras)}"
 
-            net_pnl = p.profit + p.commission + p.swap
+            net_pnl = p.profit + getattr(p, "swap", 0.0)
+            if acc_type not in ["PRO", "STANDARD"]:
+                net_pnl -= comm_total_usd
+
             values_data = (
                 display_ticket,
                 time_str,
@@ -975,8 +980,11 @@ class BotUI(ctk.CTk):
 
         # [NEW V4.4 FINAL] Tự động định tuyến log của bot vào 2 Tab (BOT và BOT-LOG)
         if target == "bot":
-            if any(k in msg for k in ["🚀", "Đóng lệnh", "Bóp cò", "PnL", "SUCCESS", "FAIL"]):
-                target = "bot"      # Lệnh thực thi -> Sang Tab BOT
+            if any(
+                k in msg
+                for k in ["🚀", "Đóng lệnh", "Bóp cò", "PnL", "SUCCESS", "FAIL"]
+            ):
+                target = "bot"  # Lệnh thực thi -> Sang Tab BOT
             else:
                 target = "bot-log"  # Log logic/check -> Sang Tab BOT-LOG
 
@@ -987,10 +995,12 @@ class BotUI(ctk.CTk):
             widget = getattr(self, "txt_log_bot", None)
         elif target == "bot-log":
             # Fallback về txt_log_bot nếu Ngài chưa tạo Text widget cho bot_log
-            widget = getattr(self, "txt_log_bot_log", getattr(self, "txt_log_bot", None)) 
+            widget = getattr(
+                self, "txt_log_bot_log", getattr(self, "txt_log_bot", None)
+            )
         else:
             widget = getattr(self, "txt_log_manual", None)
-            
+
         if widget and widget.winfo_exists():
             widget.configure(state="normal")
             widget.insert("end", txt, tag)
@@ -1012,7 +1022,7 @@ class BotUI(ctk.CTk):
                     "manual_daily_loss_count": 0,
                     "losing_streak": 0,
                     "cooldown_until": 0.0,
-                    "current_session_id": datetime.now().strftime("%Y%m%d_%H%M%S")
+                    "current_session_id": datetime.now().strftime("%Y%m%d_%H%M%S"),
                 }
             )
             save_state(self.trade_mgr.state)
@@ -1099,15 +1109,24 @@ class BotUI(ctk.CTk):
             if row_id:
                 self.tree.selection_set(row_id)
                 ticket = int(row_id)
-                
+
                 # [FIX V4.4] Thêm Toggle Close on Reverse vào Menu chuột phải (Sử dụng tag REV_C)
                 current_tactic = self.trade_mgr.get_trade_tactic(ticket)
                 rev_status = "ON" if "REV_C" in current_tactic else "OFF"
+
                 def toggle_rev():
-                    new_t = current_tactic + "+REV_C" if rev_status == "OFF" else current_tactic.replace("+REV_C", "").replace("++", "+").strip("+")
+                    new_t = (
+                        current_tactic + "+REV_C"
+                        if rev_status == "OFF"
+                        else current_tactic.replace("+REV_C", "")
+                        .replace("++", "+")
+                        .strip("+")
+                    )
                     self.trade_mgr.update_trade_tactic(ticket, new_t)
-                    self.log_message(f"Update Reverse Close #{ticket}: {rev_status} -> {'ON' if rev_status == 'OFF' else 'OFF'}")
-                
+                    self.log_message(
+                        f"Update Reverse Close #{ticket}: {rev_status} -> {'ON' if rev_status == 'OFF' else 'OFF'}"
+                    )
+
                 menu.add_command(
                     label=f"📝 Sửa lệnh #{ticket}",
                     command=lambda: self.open_edit_popup(ticket),
