@@ -185,7 +185,10 @@ class ChecklistManager:
 
         # [NEW] Đọc cấu hình riêng lẻ của từng cặp tiền (nếu có)
         import json, os
-        cfg_path = os.path.join(getattr(config, "DATA_DIR", "data"), "brain_settings.json")
+
+        cfg_path = os.path.join(
+            getattr(config, "DATA_DIR", "data"), "brain_settings.json"
+        )
         try:
             if os.path.exists(cfg_path):
                 with open(cfg_path, "r", encoding="utf-8") as f:
@@ -290,9 +293,13 @@ class ChecklistManager:
         positions = self.connector.get_all_open_positions()
         bot_magic = getattr(config, "BOT_MAGIC_NUMBER", 9999)
         all_bot_pos = [p for p in positions if p.magic == bot_magic]
-        
+
         # [KAISER FIX] Chỉ đếm các lệnh Gốc (ENTRY), bỏ qua lệnh con (DCA/PCA) khi check giới hạn
-        parent_bot_pos = [p for p in all_bot_pos if "_AUTO_DCA" not in p.comment and "_AUTO_PCA" not in p.comment]
+        parent_bot_pos = [
+            p
+            for p in all_bot_pos
+            if "_AUTO_DCA" not in p.comment and "_AUTO_PCA" not in p.comment
+        ]
 
         # 1. Kiểm tra tổng số lệnh Bot (Chỉ tính lệnh Gốc)
         if signal_class == "ENTRY" and len(parent_bot_pos) >= max_open:
@@ -323,7 +330,7 @@ class ChecklistManager:
                 cooldown_min = float(safeguard_cfg.get("COOLDOWN_MINUTES", 1.0))
             except (ValueError, TypeError):
                 cooldown_min = 1.0
-                
+
             last_entry = state.get("bot_last_entry_times", {}).get(symbol, 0)
             elapsed_sec = time.time() - last_entry
 
@@ -337,6 +344,30 @@ class ChecklistManager:
                     }
                 )
                 all_passed = False
+
+            # [NEW V4.4.1] Kiểm tra Failure Cooldown (Sử dụng chung COOLDOWN_MINUTES của Safeguard)
+            last_fail = state.get("bot_last_fail_times", {}).get(symbol, 0)
+            fail_elapsed = time.time() - last_fail
+            
+            # Lấy đúng giá trị Cooldown (phút) mà Ngài đã cài ở UI và quy đổi sang giây
+            try:
+                cooldown_min = float(safeguard_cfg.get("COOLDOWN_MINUTES", 1.0))
+            except:
+                cooldown_min = 1.0
+                
+            fail_cd_sec = cooldown_min * 60
+            
+            if fail_elapsed < fail_cd_sec:
+                rem_fail = int(fail_cd_sec - fail_elapsed)
+                checks.append(
+                    {
+                        "name": "Fail Cooldown",
+                        "status": "FAIL",
+                        "msg": f"{symbol} vừa lỗi kỹ thuật (Nghỉ theo Safeguard còn {rem_fail}s)",
+                    }
+                )
+                all_passed = False
+
 
             # [NEW V4.4] Kiểm tra Post-Close Cooldown (Nghỉ sau khi vừa đóng lệnh)
             post_close_cd = int(safeguard_cfg.get("POST_CLOSE_COOLDOWN", 0))

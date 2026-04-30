@@ -642,7 +642,7 @@ def open_tsl_popup(app):
     # ================= TAB 2: ADVANCED =================
     f_swing_man = sec(tab_adv, "4. MANUAL SWING (Bám nến)")
     f_swing_man.pack(fill="x", padx=15)
-    cbo_swing_grp = ctk.CTkOptionMenu(f_swing_man, values=["G0", "G1", "G2", "G3"], width=100)
+    cbo_swing_grp = ctk.CTkOptionMenu(f_swing_man, values=["G0", "G1", "G2", "G3", "DYNAMIC-G1/G2"], width=100)
     cbo_swing_grp.set(config.TSL_CONFIG.get("SWING_GROUP", "G2"))
     cbo_swing_grp.pack(side="right")
     ctk.CTkLabel(f_swing_man, text="Group Theo Dõi:").pack(side="left")
@@ -679,7 +679,7 @@ def open_tsl_popup(app):
     
     f_psar_row1 = ctk.CTkFrame(f_psar, fg_color="transparent")
     f_psar_row1.pack(fill="x", pady=2)
-    cbo_psar_grp = ctk.CTkOptionMenu(f_psar_row1, values=["G0", "G1", "G2", "G3"], width=80)
+    cbo_psar_grp = ctk.CTkOptionMenu(f_psar_row1, values=["G0", "G1", "G2", "G3", "DYNAMIC-G1/G2"], width=80)
     cbo_psar_grp.set(config.TSL_CONFIG.get("PSAR_GROUP", "G2"))
     cbo_psar_grp.pack(side="right")
     ctk.CTkLabel(f_psar_row1, text="Group:").pack(side="left")

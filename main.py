@@ -761,7 +761,7 @@ class BotUI(ctk.CTk):
                     brain = self.trade_mgr._get_brain_settings()
                     trail_group = brain.get("risk_tsl", {}).get("base_sl", "G2")
                     market_mode = sym_ctx.get("market_mode", "ANY")
-                    if trail_group == "DYNAMIC":
+                    if "DYNAMIC" in trail_group:
                         trail_group = "G1" if market_mode in ["TREND", "BREAKOUT"] else "G2"
                         
                     sh, sl, atr_val = (

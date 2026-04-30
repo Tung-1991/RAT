@@ -244,7 +244,7 @@ class StandaloneBotDaemon:
             # [KAISER FIX] Lấy ATR theo đúng Group mà Ngài đã chọn ở Risk & TSL (Nguồn cắm SL)
             risk_tsl = brain.get("risk_tsl", {})
             sl_group = risk_tsl.get("base_sl", "G2")
-            if sl_group == "DYNAMIC":
+            if "DYNAMIC" in sl_group:
                 # Giả định DYNAMIC dùng G1 cho Trend, G2 cho Sideway (theo logic TradeManager)
                 market_mode = context.get("market_mode", "ANY")
                 sl_group = "G1" if market_mode in ["TREND", "BREAKOUT"] else "G2"

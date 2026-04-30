@@ -156,7 +156,7 @@ TSL_CONFIG = {
     "PSAR_STEP": 0.02,
     "PSAR_MAX": 0.2,
     "ANTI_CASH_USD": 10.0,  # [NEW V4.4] Ngưỡng cắt lỗ USD cứng
-    "ANTI_CASH_TIME": 3600,   # [NEW V4.4] Thời gian âm tối đa (giây) - 1 Giờ
+    "ANTI_CASH_TIME": 3600,  # [NEW V4.4] Thời gian âm tối đa (giây) - 1 Giờ
 }
 
 # ==============================================================================

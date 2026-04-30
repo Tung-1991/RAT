@@ -155,7 +155,7 @@ class TradeManager:
 
         # TÍNH TOÁN SMART SL TỪ CẤU HÌNH BRAIN
         sl_group = risk_tsl.get("base_sl", "G2")
-        if sl_group == "DYNAMIC":
+        if "DYNAMIC" in sl_group:
             sl_group = "G1" if market_mode in ["TREND", "BREAKOUT"] else "G2"
 
         buffer_atr = context.get(f"atr_{sl_group}", 0.0005)
@@ -280,9 +280,12 @@ class TradeManager:
                 bot_tactic += "+AUTO_DCA"
             if pca_cfg.get("ENABLED", False) and "AUTO_PCA" not in bot_tactic:
                 bot_tactic += "+AUTO_PCA"
-            
+
             # [FIX V4.4]: Tự động gán Reverse Close (REV_C) cho lệnh Bot nếu được bật
-            if safeguard_cfg.get("CLOSE_ON_REVERSE", False) and "REV_C" not in bot_tactic:
+            if (
+                safeguard_cfg.get("CLOSE_ON_REVERSE", False)
+                and "REV_C" not in bot_tactic
+            ):
                 bot_tactic += "+REV_C"
 
             self.update_trade_tactic(ticket_id, bot_tactic)
@@ -572,16 +575,26 @@ class TradeManager:
                                 f"[DỌN DẸP] Đóng lệnh {pos_type_str} {d_out.symbol} #{ticket} ({exit_reason}) | PnL: {pnl_sign}${real_pnl:.2f}",
                                 target=log_target,
                             )
-                            
+
                             # Cập nhật last_dca_pca_close_time nếu lệnh này là con (DCA/PCA)
-                            from core.storage_manager import update_last_dca_pca_close_time
+                            from core.storage_manager import (
+                                update_last_dca_pca_close_time,
+                            )
+
                             bot_tactic = self.get_trade_tactic(ticket)
                             if "AUTO_DCA" in bot_tactic or "AUTO_PCA" in bot_tactic:
-                                update_last_dca_pca_close_time(d_out.symbol, time.time())
+                                update_last_dca_pca_close_time(
+                                    d_out.symbol, time.time()
+                                )
 
                     if ticket in self.state["active_trades"]:
                         self.state["active_trades"].remove(ticket)
-                    for key in ["trade_tactics", "initial_r_dist", "exit_reasons", "initial_costs"]:
+                    for key in [
+                        "trade_tactics",
+                        "initial_r_dist",
+                        "exit_reasons",
+                        "initial_costs",
+                    ]:
                         if s_ticket in self.state.get(key, {}):
                             del self.state[key][s_ticket]
 
@@ -641,10 +654,10 @@ class TradeManager:
                     else {}
                 )
                 tsl_status_map[pos.ticket] = self._apply_independent_tsl(pos, sym_ctx)
-                
+
                 if "ANTI_CASH" in self.get_trade_tactic(pos.ticket):
                     self._check_anti_cash(pos)
-                
+
                 if "REV_C" in self.get_trade_tactic(pos.ticket):
                     self._check_recovery(pos, sym_ctx)
 
@@ -656,18 +669,23 @@ class TradeManager:
         return tsl_status_map
 
     def _check_anti_cash(self, pos):
-        tsl_cfg = self._get_brain_settings().get("tsl_config", getattr(config, "TSL_CONFIG", {}))
+        tsl_cfg = self._get_brain_settings().get(
+            "tsl_config", getattr(config, "TSL_CONFIG", {})
+        )
         hard_stop_usd = float(tsl_cfg.get("ANTI_CASH_USD", 10.0))
         time_cut_s = int(tsl_cfg.get("ANTI_CASH_TIME", 60))
-        
+
         profit_usd = pos.profit + pos.swap + getattr(pos, "commission", 0.0)
-        
+
         # [NEW V4.4] Tự động cộng phí sàn ban đầu vào ngưỡng cắt lỗ
         s_ticket = str(pos.ticket)
-        if "initial_costs" not in self.state: self.state["initial_costs"] = {}
+        if "initial_costs" not in self.state:
+            self.state["initial_costs"] = {}
         if s_ticket not in self.state["initial_costs"]:
             # Phí ban đầu = |Profit âm lúc mới mở + Commission + Swap|
-            init_cost = abs(min(0, pos.profit) + pos.swap + getattr(pos, "commission", 0.0))
+            init_cost = abs(
+                min(0, pos.profit) + pos.swap + getattr(pos, "commission", 0.0)
+            )
             self.state["initial_costs"][s_ticket] = init_cost
             save_state(self.state)
 
@@ -676,42 +694,57 @@ class TradeManager:
 
         # Option 1: Hard Cash Stop (Dynamic Threshold)
         if profit_usd <= -dynamic_threshold:
-            self.log(f"🔥 [ANTI CASH] Đạt ngưỡng Hard Stop (-${hard_stop_usd} + Phí ${initial_cost:.2f})! Cắt lỗ lệnh #{pos.ticket}", target="bot")
+            self.log(
+                f"🔥 [ANTI CASH] Đạt ngưỡng Hard Stop (-${hard_stop_usd} + Phí ${initial_cost:.2f})! Cắt lỗ lệnh #{pos.ticket}",
+                target="bot",
+            )
             self.state["exit_reasons"][str(pos.ticket)] = "Anti_Cash_Hard_Stop"
-            threading.Thread(target=self.connector.close_position, args=(pos,), daemon=True).start()
+            threading.Thread(
+                target=self.connector.close_position, args=(pos,), daemon=True
+            ).start()
             return
 
         # Option 2: Time & Drawdown Cut
         hold_time = time.time() - pos.time
         if hold_time > time_cut_s and profit_usd < 0:
-            self.log(f"⏳ [ANTI CASH] Quá Min Hold Time ({time_cut_s}s) và đang âm! Cắt lỗ lệnh #{pos.ticket}", target="bot")
+            self.log(
+                f"⏳ [ANTI CASH] Quá Min Hold Time ({time_cut_s}s) và đang âm! Cắt lỗ lệnh #{pos.ticket}",
+                target="bot",
+            )
             self.state["exit_reasons"][str(pos.ticket)] = "Anti_Cash_Time_Cut"
-            threading.Thread(target=self.connector.close_position, args=(pos,), daemon=True).start()
+            threading.Thread(
+                target=self.connector.close_position, args=(pos,), daemon=True
+            ).start()
 
     def _check_recovery(self, pos, context):
         """[NEW V4.4] Close on Reverse (REV_C) logic"""
         # 1. Lấy signal hiện tại từ context (đã được Daemon ghi vào latest_signal)
-        current_signal = context.get("latest_signal", 0) 
-        
+        current_signal = context.get("latest_signal", 0)
+
         is_buy = pos.type == mt5.ORDER_TYPE_BUY
         is_reversed = False
-        
+
         # Logic: Nếu đang BUY mà signal là -1 (SELL) hoặc ngược lại
         if is_buy and current_signal == -1:
             is_reversed = True
         elif not is_buy and current_signal == 1:
             is_reversed = True
-            
+
         if is_reversed:
             # Check Min Hold Time từ config bot_safeguard
             safe_cfg = self._get_brain_settings().get("bot_safeguard", {})
             min_hold = float(safe_cfg.get("CLOSE_ON_REVERSE_MIN_TIME", 180))
             hold_time = time.time() - pos.time
-            
+
             if hold_time >= min_hold:
-                self.log(f"🔄 [RECOVERY] Đảo chiều Signal ({'SELL' if is_buy else 'BUY'})! Đóng lệnh #{pos.ticket}", target="bot")
+                self.log(
+                    f"🔄 [RECOVERY] Đảo chiều Signal ({'SELL' if is_buy else 'BUY'})! Đóng lệnh #{pos.ticket}",
+                    target="bot",
+                )
                 self.state["exit_reasons"][str(pos.ticket)] = "Recovery_Close"
-                threading.Thread(target=self.connector.close_position, args=(pos,), daemon=True).start()
+                threading.Thread(
+                    target=self.connector.close_position, args=(pos,), daemon=True
+                ).start()
 
     def _apply_independent_tsl(self, pos, context):
         tactic_str = self.get_trade_tactic(pos.ticket)
@@ -746,15 +779,21 @@ class TradeManager:
 
         # [NEW V4.4] ONE-TIME BE: Bỏ qua BE/BE_CASH nếu SL đã được khoá an toàn
         one_time_be = tsl_cfg.get("ONE_TIME_BE", False)
-        sl_better_than_entry = (is_buy and pos.sl >= pos.price_open) or (not is_buy and pos.sl > 0 and pos.sl <= pos.price_open)
+        sl_better_than_entry = (is_buy and pos.sl >= pos.price_open) or (
+            not is_buy and pos.sl > 0 and pos.sl <= pos.price_open
+        )
         if one_time_be and sl_better_than_entry:
-            if "BE" in active_modes: active_modes.remove("BE")
-            if "BE_CASH" in active_modes: active_modes.remove("BE_CASH")
+            if "BE" in active_modes:
+                active_modes.remove("BE")
+            if "BE_CASH" in active_modes:
+                active_modes.remove("BE_CASH")
 
         # [NEW V4.4] 1. BE_HARD_CASH (Nâng cấp thành Thang cuốn cuốn chiếu Lãi Thực Tế)
         if "BE_CASH" in active_modes:
             be_type = tsl_cfg.get("BE_CASH_TYPE", "USD")  # USD, PERCENT, POINT
-            be_val = float(tsl_cfg.get("BE_VALUE", 5.0))  # Sử dụng BE_VALUE làm Bước nhảy (Step)
+            be_val = float(
+                tsl_cfg.get("BE_VALUE", 5.0)
+            )  # Sử dụng BE_VALUE làm Bước nhảy (Step)
 
             profit_usd = pos.profit + pos.swap + getattr(pos, "commission", 0.0)
             acc = self.connector.get_account_info()
@@ -774,20 +813,24 @@ class TradeManager:
                 total_fee = abs(getattr(pos, "commission", 0.0)) + (
                     sym_info.spread * point * pos.volume * sym_info.trade_contract_size
                 )
-                
+
                 # Tính xem lợi nhuận gộp (Profit) hiện tại đã đạt được bao nhiêu "Bậc thang"
                 steps_achieved = math.floor(profit_usd / step_usd)
 
                 if steps_achieved >= 1:
                     # Bậc 1: Khóa $0. Bậc 2: Khóa $5. Bậc n: Khóa (n-1)*Step
                     locked_profit_usd = (steps_achieved - 1) * step_usd
-                    
+
                     # Quy đổi lợi nhuận USD muốn khóa ra khoảng cách giá (Price Distance)
-                    lock_dist_price = locked_profit_usd / (pos.volume * sym_info.trade_contract_size)
-                    
+                    lock_dist_price = locked_profit_usd / (
+                        pos.volume * sym_info.trade_contract_size
+                    )
+
                     # Mốc hòa vốn cơ sở (Đã cộng phí)
-                    breakeven_dist = total_fee / (pos.volume * sym_info.trade_contract_size)
-                    
+                    breakeven_dist = total_fee / (
+                        pos.volume * sym_info.trade_contract_size
+                    )
+
                     if is_buy:
                         base_be_price = pos.price_open + breakeven_dist
                         lock_price = base_be_price + lock_dist_price
@@ -796,10 +839,10 @@ class TradeManager:
                         lock_price = base_be_price - lock_dist_price
 
                     candidates.append((lock_price, f"CASH Bậc {steps_achieved}"))
-                
+
                 # Tính Milestone hiển thị lên UI để chờ bậc tiếp theo
                 next_step = steps_achieved + 1
-                next_target_usd = (next_step * step_usd)
+                next_target_usd = next_step * step_usd
                 milestones.append(
                     (
                         next_target_usd - profit_usd,
@@ -809,7 +852,12 @@ class TradeManager:
 
         # [NEW V4.4] 2. PSAR TRAILING
         if "PSAR_TRAIL" in active_modes and context:
-            psar_val = context.get("psar") 
+            trail_group = tsl_cfg.get("PSAR_GROUP", "G2")
+            if "DYNAMIC" in trail_group:
+                market_mode = context.get("market_mode", "ANY")
+                trail_group = "G1" if market_mode in ["TREND", "BREAKOUT"] else "G2"
+
+            psar_val = context.get(f"psar_{trail_group}", context.get("psar"))
             if psar_val:
                 candidates.append((psar_val, f"PSAR ➔ {psar_val:.2f}"))
                 milestones.append((0, f"PSAR Đợi ➔ {psar_val:.2f}"))
@@ -903,7 +951,7 @@ class TradeManager:
             trail_group = tsl_cfg.get("SWING_GROUP", "G2")
             market_mode = context.get("market_mode", "ANY")
             is_trending = market_mode in ["TREND", "BREAKOUT"]
-            if trail_group == "DYNAMIC":
+            if "DYNAMIC" in trail_group:
                 trail_group = "G1" if is_trending else "G2"
 
             sh = context.get(f"swing_high_{trail_group}")
