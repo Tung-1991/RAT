@@ -239,10 +239,14 @@ class DataEngine:
         except Exception:
             pass
 
+        # [FIX V4.4] Đồng bộ thông số Lookback/Period với cấu hình Indicator thay vì hardcode
+        swing_lookback = int(inds_config.get("swing_point", {}).get("params", {}).get("lookback", 50))
+        atr_period = int(inds_config.get("atr", {}).get("params", {}).get("period", 14))
+
         for grp in ["G0", "G1", "G2", "G3"]:
             df_grp = dfs[grp]
-            sh, sl = self._calc_swings(df_grp, lookback=15)
-            atr = self._calc_atr(df_grp, period=14)
+            sh, sl = self._calc_swings(df_grp, lookback=swing_lookback)
+            atr = self._calc_atr(df_grp, period=atr_period)
             
             context[f"swing_high_{grp}"] = float(sh)
             context[f"swing_low_{grp}"] = float(sl)
@@ -275,10 +279,13 @@ class DataEngine:
             return None, None, None
 
         current_price = float(df_entry['close'].iloc[-1])
-        atr_entry = self._calc_atr(df_entry, period=14)
-        atr_trend = self._calc_atr(df_trend, period=14)
-        swing_h_entry, swing_l_entry = self._calc_swings(df_entry, lookback=15)
-        swing_h_trend, swing_l_trend = self._calc_swings(df_trend, lookback=15)
+        swing_lookback = int(inds_config.get("swing_point", {}).get("params", {}).get("lookback", 50))
+        atr_period = int(inds_config.get("atr", {}).get("params", {}).get("period", 14))
+
+        atr_entry = self._calc_atr(df_entry, period=atr_period)
+        atr_trend = self._calc_atr(df_trend, period=atr_period)
+        swing_h_entry, swing_l_entry = self._calc_swings(df_entry, lookback=swing_lookback)
+        swing_h_trend, swing_l_trend = self._calc_swings(df_trend, lookback=swing_lookback)
         
         wave_up_dist = swing_h_trend - swing_l_trend
         fibo_618_support = swing_h_trend - (wave_up_dist * 0.618)

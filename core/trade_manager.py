@@ -55,6 +55,10 @@ class TradeManager:
             else:
                 logger.info(msg)
 
+    def set_exit_reason(self, ticket, reason):
+        self.state["exit_reasons"][str(ticket)] = reason
+        save_state(self.state)
+
     def _get_brain_settings(self):
         now = time.time()
         if now - self.last_brain_read > 5:
@@ -655,7 +659,7 @@ class TradeManager:
                                     if ord.tp > 0: last_tp = ord.tp
                                     if last_sl > 0 and last_tp > 0: break
                                     
-                            fee = total_fee_cost
+                            fee = -total_fee_cost
 
                             append_trade_log(
                                 ticket,
@@ -1122,9 +1126,6 @@ class TradeManager:
             )
             if abs(target_sl - current_sl) > (point / 2):
                 self.connector.modify_position(pos.ticket, target_sl, pos.tp)
-                self.state["exit_reasons"][str(pos.ticket)] = (
-                    f"Hit_TSL_{action_rule}"  # Track TSL hit
-                )
                 return f"{action_rule} Đã kéo ➔ {target_sl:.2f}"
 
         if milestones:

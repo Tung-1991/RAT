@@ -91,6 +91,7 @@ class StandaloneBotDaemon:
                 "symbol": symbol,
                 "signal_class": signal_class,
                 "context": context,
+                "market_mode": context.get("market_mode", "ANY"),
             }
         )
         logger.debug(f"Đã phát tín hiệu {action} cho {symbol} ({signal_class})")

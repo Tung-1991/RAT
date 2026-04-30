@@ -1035,6 +1035,9 @@ class BotUI(ctk.CTk):
                     "manual_daily_loss_count": 0,
                     "losing_streak": 0,
                     "cooldown_until": 0.0,
+                    "bot_last_entry_times": {},
+                    "bot_last_fail_times": {},
+                    "last_close_times": {},
                     "current_session_id": datetime.now().strftime("%Y%m%d_%H%M%S"),
                 }
             )
@@ -1059,6 +1062,7 @@ class BotUI(ctk.CTk):
                 None,
             )
             if p:
+                self.trade_mgr.set_exit_reason(p.ticket, "Manual_Close")
                 threading.Thread(
                     target=lambda: self.connector.close_position(p)
                 ).start()
@@ -1081,6 +1085,7 @@ class BotUI(ctk.CTk):
                 None,
             )
             if p:
+                self.trade_mgr.set_exit_reason(p.ticket, "Manual_Close")
                 threading.Thread(
                     target=lambda: self.connector.close_position(p)
                 ).start()
@@ -1104,6 +1109,7 @@ class BotUI(ctk.CTk):
                     None,
                 )
                 if p:
+                    self.trade_mgr.set_exit_reason(p.ticket, "Manual_Close")
                     threading.Thread(
                         target=lambda: self.connector.close_position(p)
                     ).start()
