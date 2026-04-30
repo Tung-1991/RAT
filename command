@@ -11,6 +11,10 @@ cd /d "C:\Users\Administrator\Downloads\RAT"
 :: Xoá thư mục data nếu tồn tại
 if exist "data" rd /s /q "data"
 
+:: Quét và xoá toàn bộ thư mục __pycache__ (trong root, core, signals...)
+echo [INFO] Dang don dep cac thu muc __pycache__...
+for /d /r . %%d in (__pycache__) do @if exist "%%d" rd /s /q "%%d"
+
 :: Cập nhật code từ Git
 echo [INFO] Dang kiem tra va cap nhat code tu Git...
 git fetch origin
