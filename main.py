@@ -567,73 +567,24 @@ class BotUI(ctk.CTk):
             self.lbl_head_sl.configure(text=f"STOPLOSS ({sl_pct_display}%)")
             self.lbl_head_tp.configure(text=f"TARGET ({tp_r_display}R)")
 
+            # --- ĐOẠN CẦN THAY THẾ BẮT ĐẦU TỪ ĐÂY ---
             try:
                 mlot = float(self.var_manual_lot.get() or 0)
+                msl = float(self.var_manual_sl.get() or 0)
+                mtp = float(self.var_manual_tp.get() or 0)
             except:
-                mlot = 0.0
+                mlot, msl, mtp = 0.0, 0.0, 0.0
 
-            f_lot = mlot if mlot > 0 else 0
-            # --- [V4.3] TÍNH TOÁN LOT PREVIEW CHÍNH XÁC ---
-            if f_lot == 0:
-                risk_usd = acc["equity"] * (current_risk_pct / 100)
-                sl_dist = cur_price * (params["SL_PERCENT"] / 100)
+            use_swing_sl = params.get("USE_SWING_SL", False)
 
-                # Tính phí nếu Preset bật STRICT_RISK
-                strict_fee = 0.0
-                if params.get("STRICT_RISK", False):
-                    comm_rate = self.get_fee_config(sym)
-                    spread_cost_per_lot = (tick.ask - tick.bid) * c_size
-                    strict_fee = comm_rate + spread_cost_per_lot
-
-                if sl_dist > 0:
-                    # Mức lỗ trên 1 lot (Profit âm)
-                    loss_per_lot = sl_dist * c_size
-                    # Lot = Risk / (Lỗ do giá + Phí sàn)
-                    raw_calc = risk_usd / (loss_per_lot + strict_fee)
-                    f_lot = round(raw_calc / config.LOT_STEP) * config.LOT_STEP
-
-            if f_lot < config.MIN_LOT_SIZE:
-                self.lbl_prev_lot.configure(
-                    text=f"LOT: KHÔNG HỢP LỆ (Min {config.MIN_LOT_SIZE})",
-                    text_color=COL_RED,
-                )
-                f_lot = config.MIN_LOT_SIZE
-            else:
-                f_lot = min(f_lot, config.MAX_LOT_SIZE)
-                self.lbl_prev_lot.configure(
-                    text=f"{'(TAY)' if mlot > 0 else '(TỰ ĐỘNG)'} VOL: {f_lot:.2f}",
-                    text_color="white" if mlot == 0 else "#FFD700",
-                )
-
-            comm_rate = self.get_fee_config(sym)
-            comm_total = comm_rate * f_lot
-            spread_cost = (tick.ask - tick.bid) * f_lot * c_size
-
-            acc_type = self.cbo_account_type.get()
-            if acc_type in ["PRO", "STANDARD"]:
-                self.lbl_fee_info.configure(
-                    text=f"Chi phí (Spread): -${spread_cost:.2f}"
-                )
-            else:
-                self.lbl_fee_info.configure(text=f"Chi phí (Comm): -${comm_total:.2f}")
-
-            try:
-                msl, mtp = (
-                    float(self.var_manual_sl.get() or 0),
-                    float(self.var_manual_tp.get() or 0),
-                )
-            except:
-                msl, mtp = 0, 0
-
-            # --- [KAISER FIX]: ĐỒNG BỘ LOGIC SL VỚI BOT ---
-            # Nếu không có SL tay, ưu tiên tính SL theo kỹ thuật (Swing + ATR) giống Bot
-            brain = self.trade_mgr._get_brain_settings()
-            risk_tsl = brain.get("risk_tsl", {})
-            
-            # Tính SL kỹ thuật (nếu có context)
+            # 1. TÍNH TOÁN TECH SL (NẾU BẬT OPTION SWING POINT)
             tech_sl_dist = 0
-            if sym_ctx:
+            p_sl_tech = 0
+            if use_swing_sl and sym_ctx:
+                brain = self.trade_mgr._get_brain_settings()
+                risk_tsl = brain.get("risk_tsl", {})
                 sl_group = risk_tsl.get("base_sl", "G2")
+                
                 if "DYNAMIC" in sl_group:
                     market_mode = sym_ctx.get("market_mode", "ANY")
                     sl_group = "G1" if market_mode in ["TREND", "BREAKOUT"] else "G2"
@@ -648,32 +599,61 @@ class BotUI(ctk.CTk):
                     p_sl_tech = (sl - buffer) if d == "BUY" else (sh + buffer)
                     tech_sl_dist = abs(cur_price - p_sl_tech)
 
-            # Logic chọn SL Dist cho Preview:
-            # 1. Ưu tiên SL tay
-            # 2. Nếu không có SL tay và đang bật AUTO hoặc context có sẵn -> Dùng SL kỹ thuật
-            # 3. Fallback -> Dùng SL % của Preset
+            # 2. XÁC ĐỊNH SL MỤC TIÊU VÀ KHOẢNG CÁCH THỰC TẾ
             if msl > 0:
                 p_sl = msl
-            elif tech_sl_dist > 0:
-                p_sl = (cur_price - tech_sl_dist) if d == "BUY" else (cur_price + tech_sl_dist)
+                active_sl_dist = abs(cur_price - p_sl)
+            elif use_swing_sl and tech_sl_dist > 0:
+                p_sl = p_sl_tech
+                active_sl_dist = tech_sl_dist
             else:
-                auto_sl_dist = cur_price * (params["SL_PERCENT"] / 100)
-                p_sl = (cur_price - auto_sl_dist) if d == "BUY" else (cur_price + auto_sl_dist)
-            p_tp = (
-                mtp
-                if mtp > 0
-                else (
-                    cur_price + abs(cur_price - p_sl) * params["TP_RR_RATIO"]
-                    if d == "BUY"
-                    else cur_price - abs(cur_price - p_sl) * params["TP_RR_RATIO"]
-                )
+                active_sl_dist = cur_price * (params["SL_PERCENT"] / 100)
+                p_sl = (cur_price - active_sl_dist) if d == "BUY" else (cur_price + active_sl_dist)
+
+            # 3. XÁC ĐỊNH LỢI NHUẬN MỤC TIÊU (TP)
+            p_tp = mtp if mtp > 0 else (
+                cur_price + (active_sl_dist * params["TP_RR_RATIO"]) if d == "BUY" else cur_price - (active_sl_dist * params["TP_RR_RATIO"])
             )
 
+            # 4. TÍNH TOÁN LOT PREVIEW DỰA TRÊN active_sl_dist
+            f_lot = mlot if mlot > 0 else 0
+            if f_lot == 0 and active_sl_dist > 0:
+                risk_usd = acc["equity"] * (current_risk_pct / 100)
+                strict_fee = 0.0
+                if params.get("STRICT_RISK", False):
+                    comm_rate = self.get_fee_config(sym)
+                    spread_cost_per_lot = (tick.ask - tick.bid) * c_size
+                    strict_fee = comm_rate + spread_cost_per_lot
+
+                loss_per_lot = active_sl_dist * c_size
+                if (loss_per_lot + strict_fee) > 0:
+                    raw_calc = risk_usd / (loss_per_lot + strict_fee)
+                    f_lot = round(raw_calc / config.LOT_STEP) * config.LOT_STEP
+
+            if f_lot < config.MIN_LOT_SIZE:
+                self.lbl_prev_lot.configure(text=f"LOT: KHÔNG HỢP LỆ (Min {config.MIN_LOT_SIZE})", text_color=COL_RED)
+                f_lot = config.MIN_LOT_SIZE
+            else:
+                f_lot = min(f_lot, config.MAX_LOT_SIZE)
+                self.lbl_prev_lot.configure(
+                    text=f"{'(TAY)' if mlot > 0 else '(TỰ ĐỘNG)'} VOL: {f_lot:.2f}",
+                    text_color="white" if mlot == 0 else "#FFD700",
+                )
+
+            # Hiển thị phí (Giữ nguyên)
+            comm_rate = self.get_fee_config(sym)
+            comm_total = comm_rate * f_lot
+            spread_cost = (tick.ask - tick.bid) * f_lot * c_size
+            acc_type = self.cbo_account_type.get()
+            if acc_type in ["PRO", "STANDARD"]:
+                self.lbl_fee_info.configure(text=f"Chi phí (Spread): -${spread_cost:.2f}")
+            else:
+                self.lbl_fee_info.configure(text=f"Chi phí (Comm): -${comm_total:.2f}")
+
+            # 5. HIỂN THỊ RỦI RO LÊN GIAO DIỆN
             is_valid_sl = True
-            if d == "BUY" and p_sl >= cur_price:
-                is_valid_sl = False
-            if d == "SELL" and p_sl <= cur_price:
-                is_valid_sl = False
+            if d == "BUY" and p_sl >= cur_price: is_valid_sl = False
+            if d == "SELL" and p_sl <= cur_price: is_valid_sl = False
 
             if is_valid_sl:
                 self.lbl_prev_sl.configure(text=f"{p_sl:.2f}", text_color=COL_RED)
@@ -980,12 +960,16 @@ class BotUI(ctk.CTk):
                 )
                 self.log_message(f"🧠 Auto-Math SL: {ms:.2f}", error=False)
 
+        # Truyền thêm biến target_sym_ctx vào execute_manual_trade
+        target_sym_ctx = self.latest_market_context.get(s, {})
+
         def run_trade_thread():
             result = self.trade_mgr.execute_manual_trade(
                 d,
                 p,
                 s,
                 self.var_strict_mode.get(),
+                target_sym_ctx,   # <--- Đã thêm biến này
                 ml,
                 mt,
                 ms,

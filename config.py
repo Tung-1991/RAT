@@ -85,18 +85,21 @@ PRESETS = {
         "SL_PERCENT": 0.4,
         "TP_RR_RATIO": 1.5,
         "RISK_PERCENT": 0.3,
+        "USE_SWING_SL": False,
     },
     "SAFE": {
         "DESC": "An toàn",
         "SL_PERCENT": 0.8,
         "TP_RR_RATIO": 1.2,
         "RISK_PERCENT": 0.2,
+        "USE_SWING_SL": False,
     },
     "BREAKOUT": {
         "DESC": "Săn trend lớn",
         "SL_PERCENT": 1.0,
         "TP_RR_RATIO": 3.0,
         "RISK_PERCENT": 0.5,
+        "USE_SWING_SL": False,
     },
 }
 

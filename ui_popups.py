@@ -561,6 +561,18 @@ def open_preset_config_popup(app):
     )
     chk_strict.pack(pady=(5, 10))
 
+    # --- THÊM MỚI TỪ ĐÂY ---
+    var_swing_sl = ctk.BooleanVar(value=data.get("USE_SWING_SL", False))
+    chk_swing_sl = ctk.CTkCheckBox(
+        top,
+        text="Dùng SL theo cấu trúc SwingPoint (Giống Bot)",
+        variable=var_swing_sl,
+        text_color="#29B6F6",
+        font=("Roboto", 12, "bold"),
+    )
+    chk_swing_sl.pack(pady=(0, 10))
+    # --- KẾT THÚC THÊM MỚI ---
+
     def live(*args):
         try:
             r, s, t = (
@@ -594,6 +606,7 @@ def open_preset_config_popup(app):
                 "SL_PERCENT": float(e_sl.get()),
                 "TP_RR_RATIO": float(e_tp.get()),
                 "STRICT_RISK": var_strict.get(),
+                "USE_SWING_SL": var_swing_sl.get(), # Lưu biến mới
             }
         )
         app.save_settings()

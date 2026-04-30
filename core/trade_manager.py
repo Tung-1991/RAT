@@ -442,6 +442,7 @@ class TradeManager:
         preset_name,
         symbol,
         strict_mode,
+        context,        # <--- Thêm biến context vào khai báo
         manual_lot=0.0,
         manual_tp=0.0,
         manual_sl=0.0,
@@ -460,6 +461,8 @@ class TradeManager:
         params = getattr(config, "PRESETS", {}).get(
             preset_name, {"SL_PERCENT": 0.4, "TP_RR_RATIO": 1.5, "RISK_PERCENT": 0.3}
         )
+        use_swing_sl = params.get("USE_SWING_SL", False) # Đọc cấu hình
+
         tick = mt5.symbol_info_tick(symbol)
         sym_info = mt5.symbol_info(symbol)
         if not tick or not sym_info:
@@ -469,20 +472,37 @@ class TradeManager:
         equity = acc_info["equity"]
         order_type = mt5.ORDER_TYPE_BUY if direction == "BUY" else mt5.ORDER_TYPE_SELL
 
+        # --- TÍNH TOÁN SL CHÍNH XÁC ---
         if manual_sl > 0:
+            sl_price = manual_sl
             sl_distance = abs(price - manual_sl)
+        elif use_swing_sl and context:
+            brain = self._get_brain_settings()
+            risk_tsl = brain.get("risk_tsl", {})
+            sl_group = risk_tsl.get("base_sl", "G2")
+            if "DYNAMIC" in sl_group:
+                market_mode = context.get("market_mode", "ANY")
+                sl_group = "G1" if market_mode in ["TREND", "BREAKOUT"] else "G2"
+
+            sh = context.get(f"swing_high_{sl_group}")
+            sl_val = context.get(f"swing_low_{sl_group}")
+            atr_val = context.get(f"atr_{sl_group}")
+
+            if sh and sl_val and atr_val:
+                sl_mult = float(risk_tsl.get("sl_atr_multiplier", getattr(config, "sl_atr_multiplier", 0.2)))
+                buffer = atr_val * sl_mult
+                sl_price = (sl_val - buffer) if direction == "BUY" else (sh + buffer)
+                sl_distance = abs(price - sl_price)
+            else:
+                return "ERR_NO_SWING_DATA"
         else:
             sl_distance = price * (params.get("SL_PERCENT", 0.5) / 100.0)
+            sl_price = price - sl_distance if direction == "BUY" else price + sl_distance
 
         if sl_distance <= 0:
             return "ERR_CALC_SL_ZERO"
 
         risk_pct = params.get("RISK_PERCENT", 0.3)
-        sl_price = (
-            manual_sl
-            if manual_sl > 0
-            else (price - sl_distance if direction == "BUY" else price + sl_distance)
-        )
 
         if manual_lot > 0:
             lot_size = manual_lot
@@ -648,9 +668,23 @@ class TradeManager:
                             pnl_sign = "+" if real_pnl >= 0 else ""
 
                             # [NEW V4.4] Lấy lý do thoát lệnh từ Tracker và lưu Cooldown
-                            exit_reason = self.state.get("exit_reasons", {}).get(
-                                s_ticket, "Closed"
-                            )
+                            exit_reason = self.state.get("exit_reasons", {}).get(s_ticket)
+                            if not exit_reason:
+                                deal_reason = getattr(d_out, "reason", -1)
+                                if deal_reason == mt5.DEAL_REASON_SL:
+                                    last_rule = self.state.get("last_tsl_rules", {}).get(s_ticket)
+                                    exit_reason = f"SL_{last_rule}" if last_rule else "Hit_SL"
+                                elif deal_reason == mt5.DEAL_REASON_TP:
+                                    exit_reason = "Hit_TP"
+                                elif deal_reason == mt5.DEAL_REASON_SO:
+                                    exit_reason = "Stop_Out"
+                                elif deal_reason == mt5.DEAL_REASON_CLIENT:
+                                    exit_reason = "Manual_MT5"
+                                elif deal_reason == mt5.DEAL_REASON_EXPERT:
+                                    exit_reason = "Bot_Close"
+                                else:
+                                    exit_reason = "Closed"
+
                             self.state["last_close_times"][d_out.symbol] = time.time()
 
                             current_session = self.state.get("current_session_id", "LEGACY")
@@ -705,6 +739,7 @@ class TradeManager:
                         "initial_r_dist",
                         "exit_reasons",
                         "initial_costs",
+                        "last_tsl_rules",
                     ]:
                         if s_ticket in self.state.get(key, {}):
                             del self.state[key][s_ticket]
@@ -1133,6 +1168,11 @@ class TradeManager:
             )
             if abs(target_sl - current_sl) > (point / 2):
                 self.connector.modify_position(pos.ticket, target_sl, pos.tp)
+                # [NEW] Lưu quy tắc dời SL để tracking lý do đóng lệnh sau này
+                if "last_tsl_rules" not in self.state:
+                    self.state["last_tsl_rules"] = {}
+                self.state["last_tsl_rules"][str(pos.ticket)] = action_rule
+                save_state(self.state)
                 return f"{action_rule} Đã kéo ➔ {target_sl:.2f}"
 
         if milestones:
