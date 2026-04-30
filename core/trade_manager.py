@@ -215,9 +215,13 @@ class TradeManager:
         if atr_key not in context or swing_l_key not in context or swing_h_key not in context:
             return f"SAFEGUARD_FAIL|No_Data|Mất dữ liệu Swing/ATR của {sl_group}. Từ chối vào lệnh."
 
-        buffer_atr = context.get(atr_key)
+        atr_val = context.get(atr_key)
         swing_l = context.get(swing_l_key)
         swing_h = context.get(swing_h_key)
+
+        # [KAISER FIX]: Sử dụng Multiplier từ Brain (Mặc định 0.2 nếu không có)
+        sl_mult = float(risk_tsl.get("sl_atr_multiplier", getattr(config, "sl_atr_multiplier", 0.2)))
+        buffer_atr = atr_val * sl_mult
 
         sl_price = swing_l - buffer_atr if direction == "BUY" else swing_h + buffer_atr
         sl_distance = abs(current_price - sl_price)
@@ -1066,7 +1070,10 @@ class TradeManager:
             atr = context.get(f"atr_{trail_group}", 0)
 
             if sh is not None and sl is not None and atr:
-                trail_buf = getattr(config, "trail_atr_buffer", 0.2)
+                brain = self._get_brain_settings()
+                risk_tsl = brain.get("risk_tsl", {})
+                trail_buf = float(risk_tsl.get("sl_atr_multiplier", getattr(config, "sl_atr_multiplier", 0.2)))
+                
                 tsl_mode = tsl_cfg.get("TSL_LOGIC_MODE", "STATIC")
                 is_trending = context.get("market_mode", "TREND") in [
                     "TREND",

@@ -53,6 +53,7 @@ class BotStrategyUI(ctk.CTkToplevel):
             "risk_tsl": {
                 "base_risk": getattr(config, "BOT_RISK_PERCENT", 0.3),
                 "base_sl": "G2",
+                "sl_atr_multiplier": getattr(config, "sl_atr_multiplier", 0.2),
                 "tsl_mode": getattr(config, "TSL_LOGIC_MODE", "STATIC"),
                 "bot_tsl": getattr(config, "BOT_DEFAULT_TSL", "BE+STEP_R+SWING"),
                 "mode_multipliers": {
@@ -505,6 +506,20 @@ class BotStrategyUI(ctk.CTkToplevel):
             width=140,
         ).pack(side="left", padx=15)
 
+        # [NEW] ATR Multiplier cho Bot SL
+        f_sl_mult = ctk.CTkFrame(self.tab_risk, fg_color="transparent")
+        f_sl_mult.pack(fill="x", padx=20, pady=5)
+        ctk.CTkLabel(
+            f_sl_mult,
+            text="SL ATR MULTIPLIER:",
+            font=("Roboto", 13, "bold"),
+            text_color="#29B6F6",
+        ).pack(side="left")
+        self.var_sl_mult = ctk.StringVar(value=str(risk_data.get("sl_atr_multiplier", 0.2)))
+        ctk.CTkEntry(
+            f_sl_mult, textvariable=self.var_sl_mult, width=80, justify="center"
+        ).pack(side="left", padx=15)
+
         ctk.CTkLabel(
             self.tab_risk,
             text="BOT TSL TACTICS:",
@@ -699,6 +714,7 @@ class BotStrategyUI(ctk.CTkToplevel):
         new_risk_tsl = {
             "base_risk": float(self.var_base_risk.get() or 0.3),
             "base_sl": self.var_base_sl.get(),
+            "sl_atr_multiplier": float(self.var_sl_mult.get() or 0.2), # [NEW]
             "tsl_mode": self.var_tsl_mode.get(),
             "bot_tsl": bot_tsl_str,
             "mode_multipliers": {

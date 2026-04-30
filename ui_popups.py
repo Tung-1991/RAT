@@ -954,7 +954,8 @@ def open_edit_popup(app, ticket):
         atr_val = ctx.get(f"atr_{group}")
 
         if val and str(val) != "--" and atr_val:
-            mult = getattr(config, "sl_atr_multiplier", 0.2)
+            brain = app.trade_mgr._get_brain_settings()
+            mult = float(brain.get("risk_tsl", {}).get("sl_atr_multiplier", getattr(config, "sl_atr_multiplier", 0.2)))
             calc_sl = (
                 float(val) - (float(atr_val) * mult)
                 if is_buy

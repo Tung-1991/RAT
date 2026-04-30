@@ -625,14 +625,40 @@ class BotUI(ctk.CTk):
             except:
                 msl, mtp = 0, 0
 
-            auto_sl_dist = cur_price * (params["SL_PERCENT"] / 100)
-            p_sl = (
-                msl
-                if msl > 0
-                else (
-                    cur_price - auto_sl_dist if d == "BUY" else cur_price + auto_sl_dist
-                )
-            )
+            # --- [KAISER FIX]: ĐỒNG BỘ LOGIC SL VỚI BOT ---
+            # Nếu không có SL tay, ưu tiên tính SL theo kỹ thuật (Swing + ATR) giống Bot
+            brain = self.trade_mgr._get_brain_settings()
+            risk_tsl = brain.get("risk_tsl", {})
+            
+            # Tính SL kỹ thuật (nếu có context)
+            tech_sl_dist = 0
+            if sym_ctx:
+                sl_group = risk_tsl.get("base_sl", "G2")
+                if "DYNAMIC" in sl_group:
+                    market_mode = sym_ctx.get("market_mode", "ANY")
+                    sl_group = "G1" if market_mode in ["TREND", "BREAKOUT"] else "G2"
+                
+                sh = sym_ctx.get(f"swing_high_{sl_group}")
+                sl = sym_ctx.get(f"swing_low_{sl_group}")
+                atr_val = sym_ctx.get(f"atr_{sl_group}")
+                
+                if sh and sl and atr_val:
+                    sl_mult = float(risk_tsl.get("sl_atr_multiplier", getattr(config, "sl_atr_multiplier", 0.2)))
+                    buffer = atr_val * sl_mult
+                    p_sl_tech = (sl - buffer) if d == "BUY" else (sh + buffer)
+                    tech_sl_dist = abs(cur_price - p_sl_tech)
+
+            # Logic chọn SL Dist cho Preview:
+            # 1. Ưu tiên SL tay
+            # 2. Nếu không có SL tay và đang bật AUTO hoặc context có sẵn -> Dùng SL kỹ thuật
+            # 3. Fallback -> Dùng SL % của Preset
+            if msl > 0:
+                p_sl = msl
+            elif tech_sl_dist > 0:
+                p_sl = (cur_price - tech_sl_dist) if d == "BUY" else (cur_price + tech_sl_dist)
+            else:
+                auto_sl_dist = cur_price * (params["SL_PERCENT"] / 100)
+                p_sl = (cur_price - auto_sl_dist) if d == "BUY" else (cur_price + auto_sl_dist)
             p_tp = (
                 mtp
                 if mtp > 0
@@ -773,7 +799,7 @@ class BotUI(ctk.CTk):
                         sym_ctx.get(f"atr_{trail_group}", "--"),
                     )
                     if sh != "--" and sl != "--" and atr_val != "--":
-                        t_buf = getattr(config, "trail_atr_buffer", 0.2)
+                        t_buf = float(brain.get("risk_tsl", {}).get("sl_atr_multiplier", getattr(config, "sl_atr_multiplier", 0.2)))
                         swing_sl = (
                             float(sl) - (t_buf * float(atr_val))
                             if is_buy
@@ -945,7 +971,8 @@ class BotUI(ctk.CTk):
             atr_val = target_sym_ctx.get("atr_entry", target_sym_ctx.get("atr"))
 
             if sl_val and atr_val:
-                sl_mult = getattr(config, "sl_atr_multiplier", 0.2)
+                brain = self.trade_mgr._get_brain_settings()
+                sl_mult = float(brain.get("risk_tsl", {}).get("sl_atr_multiplier", getattr(config, "sl_atr_multiplier", 0.2)))
                 ms = (
                     float(sl_val) - (float(atr_val) * sl_mult)
                     if d == "BUY"
