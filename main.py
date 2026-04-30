@@ -873,6 +873,7 @@ class BotUI(ctk.CTk):
                 if stt_extras:
                     stt_txt += f" | +{'/'.join(stt_extras)}"
 
+            net_pnl = p.profit + p.commission + p.swap
             values_data = (
                 display_ticket,
                 time_str,
@@ -880,7 +881,7 @@ class BotUI(ctk.CTk):
                 targets_str,
                 fee_str,
                 rr_str,
-                f"${p.profit:.2f}",
+                f"${net_pnl:.2f}",
                 stt_txt,
                 "❌",
             )
