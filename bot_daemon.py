@@ -249,10 +249,10 @@ class StandaloneBotDaemon:
                 market_mode = context.get("market_mode", "ANY")
                 sl_group = "G1" if market_mode in ["TREND", "BREAKOUT"] else "G2"
             
-            atr_val = context.get(f"atr_{sl_group}", context.get("atr", context.get("atr_entry", 0.0005)))
-            
-            if atr_val == 0:
-                atr_val = 0.0005
+            atr_val = context.get(f"atr_{sl_group}", 0)
+            # NẾU MẤT DATA ATR -> BỎ QUA KHÔNG NHỒI LỆNH ĐỂ CHỐNG SPAM
+            if not atr_val or atr_val <= 0:
+                continue
 
             pos_list.sort(key=lambda x: x.time)
             first_pos = pos_list[0]

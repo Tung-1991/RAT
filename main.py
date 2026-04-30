@@ -997,13 +997,20 @@ class BotUI(ctk.CTk):
             widget.configure(state="disabled")
 
     def reset_daily_stats(self):
-        if messagebox.askyesno("Xác nhận", "Reset thống kê ngày?"):
+        if messagebox.askyesno("Xác nhận", "Reset thống kê hôm nay?"):
             self.trade_mgr.state.update(
                 {
                     "pnl_today": 0.0,
                     "trades_today_count": 0,
                     "daily_loss_count": 0,
                     "daily_history": [],
+                    # [HOT-FIX KAISER]: Thêm các dòng dưới đây để reset não Bot
+                    "bot_pnl_today": 0.0,
+                    "bot_trades_today": 0,
+                    "bot_daily_loss_count": 0,
+                    "manual_pnl_today": 0.0,
+                    "manual_trades_today": 0,
+                    "manual_daily_loss_count": 0,
                 }
             )
             save_state(self.trade_mgr.state)

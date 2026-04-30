@@ -158,14 +158,25 @@ class TradeManager:
         if "DYNAMIC" in sl_group:
             sl_group = "G1" if market_mode in ["TREND", "BREAKOUT"] else "G2"
 
-        buffer_atr = context.get(f"atr_{sl_group}", 0.0005)
-        swing_l = context.get(f"swing_low_{sl_group}", current_price)
-        swing_h = context.get(f"swing_high_{sl_group}", current_price)
+        atr_key = f"atr_{sl_group}"
+        swing_l_key = f"swing_low_{sl_group}"
+        swing_h_key = f"swing_high_{sl_group}"
+
+        # CHỐT CHẶN 1: Bẫy lỗi mất Data
+        if atr_key not in context or swing_l_key not in context or swing_h_key not in context:
+            return f"SAFEGUARD_FAIL|No_Data|Mất dữ liệu Swing/ATR của {sl_group}. Từ chối vào lệnh."
+
+        buffer_atr = context.get(atr_key)
+        swing_l = context.get(swing_l_key)
+        swing_h = context.get(swing_h_key)
 
         sl_price = swing_l - buffer_atr if direction == "BUY" else swing_h + buffer_atr
         sl_distance = abs(current_price - sl_price)
-        if sl_distance <= 0:
-            sl_distance = buffer_atr * 2
+
+        # CHỐT CHẶN 2: Bẫy lỗi SL cực hẹp (Nhỏ hơn 0.05% giá trị tài sản)
+        min_safe_dist = current_price * 0.0005 
+        if sl_distance < min_safe_dist:
+            return f"SAFEGUARD_FAIL|SL_Too_Tight|Khoảng cách SL quá hẹp ({sl_distance:.5f}). Từ chối để chống nổ Lot."
 
         parent_pos = None
         bot_magic = getattr(config, "BOT_MAGIC_NUMBER", 9999)
@@ -254,7 +265,8 @@ class TradeManager:
             sl_price = parent_pos.sl
         else:
             if safeguard_cfg.get("BOT_USE_TP", False):
-                reward_ratio = getattr(config, "REWARD_RATIO", 1.5)
+                # Lấy đúng tên biến BOT_TP_RR_RATIO
+                reward_ratio = getattr(config, "BOT_TP_RR_RATIO", 1.5)
                 tp_price = (
                     current_price + (sl_distance * reward_ratio)
                     if direction == "BUY"
