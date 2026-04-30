@@ -589,6 +589,15 @@ class TradeManager:
 
                             self.state["pnl_today"] += real_pnl
 
+                            # [NEW] Cộng dồn fee phiên: Spread (ước tính) + |Commission| + |Swap|
+                            close_tick = mt5.symbol_info_tick(d_out.symbol)
+                            close_sym = mt5.symbol_info(d_out.symbol)
+                            spread_cost = 0.0
+                            if close_tick and close_sym:
+                                spread_cost = (close_tick.ask - close_tick.bid) * d_out.volume * close_sym.trade_contract_size
+                            total_fee_cost = spread_cost + abs(d_out.commission) + abs(d_out.swap)
+                            self.state["fee_today"] = self.state.get("fee_today", 0.0) + total_fee_cost
+
                             if real_pnl < 0:
                                 self.state["daily_loss_count"] += 1
 
@@ -635,7 +644,7 @@ class TradeManager:
                                     if ord.tp > 0: last_tp = ord.tp
                                     if last_sl > 0 and last_tp > 0: break
                                     
-                            fee = d_out.commission + d_out.swap
+                            fee = total_fee_cost
 
                             append_trade_log(
                                 ticket,

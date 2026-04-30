@@ -71,6 +71,11 @@ def setup_left_panel(app, parent):
         command=app.reset_daily_stats,
     ).pack(side="left", padx=2)
 
+    app.lbl_fee_today = ctk.CTkLabel(
+        f_pnl, text="FEE: -$0.00", font=FONT_FEE, text_color="gray"
+    )
+    app.lbl_fee_today.pack(side="left", padx=(8, 0))
+
     app.lbl_brain_status = ctk.CTkLabel(
         f_top_2,
         text="🧠 BRAIN: CHỜ...",

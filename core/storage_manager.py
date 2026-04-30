@@ -85,6 +85,7 @@ def load_state() -> Dict[str, Any]:
     default_state = {
         "date": get_today_str(),
         "pnl_today": 0.0,
+        "fee_today": 0.0,
         "starting_balance": 0.0,
         "trades_today_count": 0,
         "losing_streak": 0,
@@ -129,6 +130,7 @@ def load_state() -> Dict[str, Any]:
             if "bot_trades_today" not in state: state["bot_trades_today"] = 0
             if "bot_daily_loss_count" not in state: state["bot_daily_loss_count"] = 0
             if "daily_loss_count" not in state: state["daily_loss_count"] = 0    
+            if "fee_today" not in state: state["fee_today"] = 0.0
 
             current_date = get_today_str()
             saved_date = state.get("date")
@@ -157,6 +159,7 @@ def load_state() -> Dict[str, Any]:
                 state["manual_pnl_today"] = 0.0
                 state["manual_trades_today"] = 0
                 state["manual_daily_loss_count"] = 0
+                state["fee_today"] = 0.0
                 
                 # Khởi tạo session mới cho ngày mới
                 state["current_session_id"] = datetime.now().strftime("%Y%m%d_%H%M%S")

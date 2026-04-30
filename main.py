@@ -534,6 +534,7 @@ class BotUI(ctk.CTk):
             text=f"PNL: ${pnl:.2f}",
             text_color=COL_GREEN if pnl >= 0 else COL_RED,
         )
+        # FEE label sẽ được cập nhật sau vòng lặp positions (cần data lệnh đang mở)
 
         cur_price, c_size, point = 0.0, 1.0, 0.00001
         if tick:
@@ -789,6 +790,7 @@ class BotUI(ctk.CTk):
         existing_items = self.tree.get_children()
         current_tickets_on_chart = []
         child_to_parent = self.trade_mgr.state.get("child_to_parent", {})
+        open_fee_total = 0.0  # [NEW] Tổng fee từ lệnh đang mở
 
         for p in positions:
             ticket_str = str(p.ticket)
@@ -803,6 +805,9 @@ class BotUI(ctk.CTk):
             spread_cost_usd = current_spread * p.volume * p_c_size
             comm_rate = self.get_fee_config(p.symbol)
             comm_total_usd = comm_rate * p.volume
+
+            # [NEW] Cộng fee lệnh đang mở vào tổng (spread + commission + |swap|)
+            open_fee_total += spread_cost_usd + comm_total_usd + abs(swap_val)
 
             acc_type = self.cbo_account_type.get()
             if acc_type in ["PRO", "STANDARD"]:
@@ -902,6 +907,13 @@ class BotUI(ctk.CTk):
         for item in existing_items:
             if item not in current_tickets_on_chart:
                 self.tree.delete(item)
+
+        # [NEW] Cập nhật FEE label = fee đã đóng (state) + fee lệnh đang mở (real-time)
+        total_fee = state.get("fee_today", 0.0) + open_fee_total
+        self.lbl_fee_today.configure(
+            text=f"FEE: -${total_fee:.2f}",
+            text_color="#FFD700" if total_fee > 0 else "gray",
+        )
 
     def on_click_trade(self):
         d, s, p, t = (
@@ -1012,6 +1024,7 @@ class BotUI(ctk.CTk):
             self.trade_mgr.state.update(
                 {
                     "pnl_today": 0.0,
+                    "fee_today": 0.0,
                     "trades_today_count": 0,
                     "daily_loss_count": 0,
                     "bot_pnl_today": 0.0,
