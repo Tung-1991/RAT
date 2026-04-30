@@ -595,7 +595,23 @@ class TradeManager:
                             spread_cost = 0.0
                             if close_tick and close_sym:
                                 spread_cost = (close_tick.ask - close_tick.bid) * d_out.volume * close_sym.trade_contract_size
-                            total_fee_cost = spread_cost + abs(d_out.commission) + abs(d_out.swap)
+                                
+                            deal_in = [d for d in deals if d.entry == mt5.DEAL_ENTRY_IN]
+                            entry_price = deal_in[0].price if deal_in else 0.0
+                            in_comm = abs(deal_in[0].commission) if deal_in else 0.0
+                            
+                            actual_comm = abs(d_out.commission) + in_comm
+                            
+                            if actual_comm == 0.0 and account_type not in ["PRO", "STANDARD"]:
+                                comm_rate = getattr(config, "COMMISSION_RATES", {}).get(
+                                    d_out.symbol,
+                                    getattr(config, "ACCOUNT_TYPES_CONFIG", {})
+                                    .get(account_type, {})
+                                    .get("COMMISSION_PER_LOT", 7.0),
+                                )
+                                actual_comm = comm_rate * d_out.volume
+                                
+                            total_fee_cost = spread_cost + actual_comm + abs(d_out.swap)
                             self.state["fee_today"] = self.state.get("fee_today", 0.0) + total_fee_cost
 
                             if real_pnl < 0:
@@ -631,11 +647,6 @@ class TradeManager:
 
                             current_session = self.state.get("current_session_id", "LEGACY")
                             
-                            entry_price = 0.0
-                            deal_in = [d for d in deals if d.entry == mt5.DEAL_ENTRY_IN]
-                            if deal_in:
-                                entry_price = deal_in[0].price
-                                
                             last_sl, last_tp = 0.0, 0.0
                             orders = mt5.history_orders_get(position=ticket)
                             if orders:

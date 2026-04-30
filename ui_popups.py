@@ -1103,6 +1103,8 @@ def show_history_popup(app):
     csv_path = "data/trade_history_master.csv"
     
     def load_data():
+        if not tr.winfo_exists():
+            return
         for i in tr.get_children():
             tr.delete(i)
             
