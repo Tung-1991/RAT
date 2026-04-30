@@ -28,17 +28,18 @@ def get_today_str():
         return prev_day.strftime("%Y-%m-%d")
     return now.strftime("%Y-%m-%d")
 
-def append_trade_log(ticket, symbol, type_str, volume, entry_price, sl, tp, fee, pnl, close_reason, market_mode="ANY", trigger_signal="UNK", session_id="LEGACY"):
+def append_trade_log(ticket, symbol, type_str, volume, entry_price, sl, tp, fee, pnl, close_reason, market_mode="ANY", trigger_signal="UNK", session_id="LEGACY", open_time_str=""):
     file_exists = os.path.isfile(MASTER_LOG_FILE)
     try:
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S") 
+        time_display = f"{open_time_str[11:]} -> {now_str[11:]}" if open_time_str else now_str
         with open(MASTER_LOG_FILE, mode='a', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
             if not file_exists:
                 # [NEW V5] Thêm cột Entry, SL, TP, Fee
                 writer.writerow(["Time", "Ticket", "Symbol", "Type", "Vol", "Entry", "SL", "TP", "Fee", "PnL ($)", "Reason", "Market Mode", "Trigger", "Session_ID"])
             writer.writerow([
-                now_str, ticket, symbol, type_str, volume, 
+                time_display, ticket, symbol, type_str, volume, 
                 f"{entry_price:.5f}", f"{sl:.5f}", f"{tp:.5f}", f"{fee:.2f}", 
                 f"{pnl:.2f}", close_reason, market_mode, trigger_signal, session_id
             ])

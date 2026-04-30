@@ -628,6 +628,10 @@ class TradeManager:
                             entry_price = deal_in[0].price if deal_in else 0.0
                             in_comm = abs(deal_in[0].commission) if deal_in else 0.0
                             
+                            from datetime import datetime
+                            open_time_s = deal_in[0].time if deal_in else 0
+                            open_time_str = datetime.fromtimestamp(open_time_s).strftime("%Y-%m-%d %H:%M:%S") if open_time_s > 0 else ""
+                            
                             actual_comm = abs(d_out.commission) + in_comm
                             
                             if actual_comm == 0.0 and account_type not in ["PRO", "STANDARD"]:
@@ -710,7 +714,8 @@ class TradeManager:
                                 fee,
                                 real_pnl,
                                 exit_reason,
-                                session_id=current_session
+                                session_id=current_session,
+                                open_time_str=open_time_str
                             )
                             log_target = "bot" if is_bot else "manual"
                             self.log(
@@ -934,38 +939,47 @@ class TradeManager:
             if "BE_CASH" in active_modes:
                 active_modes.remove("BE_CASH")
 
-        # [NEW V4.4] 1. BE_HARD_CASH (Nâng cấp thành Thang cuốn cuốn chiếu Lãi Thực Tế)
+        # [NEW V4.4] 1. BE_HARD_CASH (2 Giai đoạn: Trigger BE -> Trailing Step)
         if "BE_CASH" in active_modes:
             be_type = tsl_cfg.get("BE_CASH_TYPE", "USD")  # USD, PERCENT, POINT
-            be_val = float(
-                tsl_cfg.get("BE_VALUE", 5.0)
-            )  # Sử dụng BE_VALUE làm Bước nhảy (Step)
+            trigger_val = float(tsl_cfg.get("BE_TRIGGER", 10.0))
+            step_val = float(tsl_cfg.get("BE_VALUE", 20.0))
 
             profit_usd = pos.profit + pos.swap + getattr(pos, "commission", 0.0)
             acc = self.connector.get_account_info()
             bal = acc["balance"] if acc else 1000
 
-            # Tính toán Bước nhảy (Step Value) quy đổi ra USD
-            step_usd = 0
+            # Quy đổi Trigger và Step ra USD
+            trigger_usd, step_usd = 0, 0
             if be_type == "USD":
-                step_usd = be_val
+                trigger_usd, step_usd = trigger_val, step_val
             elif be_type == "PERCENT":
-                step_usd = bal * (be_val / 100.0)
+                trigger_usd, step_usd = bal * (trigger_val / 100.0), bal * (step_val / 100.0)
             elif be_type == "POINT":
-                step_usd = be_val * point * pos.volume * sym_info.trade_contract_size
+                mult = point * pos.volume * sym_info.trade_contract_size
+                trigger_usd, step_usd = trigger_val * mult, step_val * mult
 
-            if step_usd > 0:
+            if trigger_usd > 0:
                 # Tính tổng phí hao hụt (Commission + Spread) để cắt hòa vốn không bị âm
                 total_fee = abs(getattr(pos, "commission", 0.0)) + (
                     sym_info.spread * point * pos.volume * sym_info.trade_contract_size
                 )
 
-                # Tính xem lợi nhuận gộp (Profit) hiện tại đã đạt được bao nhiêu "Bậc thang"
-                steps_achieved = math.floor(profit_usd / step_usd)
-
-                if steps_achieved >= 1:
-                    # Bậc 1: Khóa $0. Bậc 2: Khóa $5. Bậc n: Khóa (n-1)*Step
-                    locked_profit_usd = (steps_achieved - 1) * step_usd
+                if profit_usd >= trigger_usd:
+                    locked_profit_usd = 0 # Giai đoạn 1: Mới đạt Trigger -> Khóa BE ($0)
+                    
+                    # Giai đoạn 2: Tính thêm các bước Trailing (Step)
+                    extra_profit = profit_usd - trigger_usd
+                    steps = math.floor(extra_profit / step_usd) if step_usd > 0 else 0
+                    
+                    cash_strat = tsl_cfg.get("BE_CASH_STRAT", "TRAILING (Gap)")
+                    if steps >= 1:
+                        if cash_strat == "LOCK (Tight)":
+                            locked_profit_usd = trigger_usd + (steps * step_usd)
+                        else:
+                            locked_profit_usd = trigger_usd + ((steps - 1) * step_usd)
+                    elif cash_strat == "LOCK (Tight)":
+                        locked_profit_usd = trigger_usd
 
                     # Quy đổi lợi nhuận USD muốn khóa ra khoảng cách giá (Price Distance)
                     lock_dist_price = locked_profit_usd / (
@@ -984,29 +998,32 @@ class TradeManager:
                         base_be_price = pos.price_open - breakeven_dist
                         lock_price = base_be_price - lock_dist_price
 
-                    candidates.append((lock_price, f"CASH Bậc {steps_achieved}"))
+                    candidates.append((lock_price, f"CASH Step {steps}"))
 
-                # Tính Milestone hiển thị lên UI để chờ bậc tiếp theo
-                next_step = steps_achieved + 1
-                next_target_usd = next_step * step_usd
-                milestones.append(
-                    (
-                        next_target_usd - profit_usd,
-                        f"BE_CASH Đợi Bậc {next_step} (${next_target_usd:.2f})",
-                    )
-                )
+                # Tính Milestone hiển thị lên UI
+                if profit_usd < trigger_usd:
+                    milestones.append((trigger_usd - profit_usd, f"CASH Đợi Trig (${trigger_usd:.2f})"))
+                else:
+                    extra_profit = profit_usd - trigger_usd
+                    steps = math.floor(extra_profit / step_usd) if step_usd > 0 else 0
+                    next_target_usd = trigger_usd + (steps + 1) * step_usd
+                    milestones.append((next_target_usd - profit_usd, f"CASH Đợi Step {steps+1} (${next_target_usd:.2f})"))
 
         # [NEW V4.4] 2. PSAR TRAILING
         if "PSAR_TRAIL" in active_modes and context:
-            trail_group = tsl_cfg.get("PSAR_GROUP", "G2")
-            if "DYNAMIC" in trail_group:
-                market_mode = context.get("market_mode", "ANY")
-                trail_group = "G1" if market_mode in ["TREND", "BREAKOUT"] else "G2"
-
-            psar_val = context.get(f"psar_{trail_group}", context.get("psar"))
-            if psar_val:
-                candidates.append((psar_val, f"PSAR ➔ {psar_val:.2f}"))
-                milestones.append((0, f"PSAR Đợi ➔ {psar_val:.2f}"))
+            psar_min_rr = float(tsl_cfg.get("PSAR_MIN_RR", 0.0))
+            if psar_min_rr > 0 and curr_r < psar_min_rr:
+                milestones.append((abs(psar_min_rr - curr_r), f"PSAR Đợi Đủ {psar_min_rr}R"))
+            else:
+                trail_group = tsl_cfg.get("PSAR_GROUP", "G2")
+                if "DYNAMIC" in trail_group:
+                    market_mode = context.get("market_mode", "ANY")
+                    trail_group = "G1" if market_mode in ["TREND", "BREAKOUT"] else "G2"
+    
+                psar_val = context.get(f"psar_{trail_group}", context.get("psar"))
+                if psar_val:
+                    candidates.append((psar_val, f"PSAR ➔ {psar_val:.2f}"))
+                    milestones.append((0, f"PSAR Đợi ➔ {psar_val:.2f}"))
 
         if "BE" in active_modes:
             trig_r = tsl_cfg.get("BE_OFFSET_RR", 0.8)

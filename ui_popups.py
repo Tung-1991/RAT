@@ -715,9 +715,15 @@ def open_tsl_popup(app):
     cbo_cash_type.set(config.TSL_CONFIG.get("BE_CASH_TYPE", "USD"))
     cbo_cash_type.pack(side="left", padx=5)
 
+    ctk.CTkLabel(f_cash_r1, text="Trig:").pack(side="left", padx=2)
+    e_cash_trig = ctk.CTkEntry(f_cash_r1, width=50)
+    e_cash_trig.insert(0, str(config.TSL_CONFIG.get("BE_TRIGGER", 10.0)))
+    e_cash_trig.pack(side="left", padx=2)
+
+    ctk.CTkLabel(f_cash_r1, text="Step:").pack(side="left", padx=2)
     e_cash_val = ctk.CTkEntry(f_cash_r1, width=50)
-    e_cash_val.insert(0, str(config.TSL_CONFIG.get("BE_VALUE", 5.0)))
-    e_cash_val.pack(side="left", padx=5)
+    e_cash_val.insert(0, str(config.TSL_CONFIG.get("BE_VALUE", 20.0)))
+    e_cash_val.pack(side="left", padx=2)
 
     cbo_cash_strat = ctk.CTkOptionMenu(
         f_cash_r1, values=["TRAILING (Gap)", "LOCK (Tight)"], width=110
@@ -749,6 +755,13 @@ def open_tsl_popup(app):
     ctk.CTkLabel(f_psar_row2, text="Step:").pack(side="left")
     ctk.CTkLabel(f_psar_row2, text="Max:").pack(side="right")
 
+    f_psar_row3 = ctk.CTkFrame(f_psar, fg_color="transparent")
+    f_psar_row3.pack(fill="x", pady=2)
+    e_psar_min_rr = ctk.CTkEntry(f_psar_row3, width=60)
+    e_psar_min_rr.insert(0, str(config.TSL_CONFIG.get("PSAR_MIN_RR", 0.0)))
+    e_psar_min_rr.pack(side="left", padx=5)
+    ctk.CTkLabel(f_psar_row3, text="Min RR kích hoạt:").pack(side="left")
+
     f_anti = sec(tab_adv, "7. ANTI CASH (Cắt lỗ cứng)")
     f_anti.pack(fill="x", padx=15)
     
@@ -769,6 +782,7 @@ def open_tsl_popup(app):
             config.TSL_CONFIG.update(
                 {
                     "BE_CASH_TYPE": cbo_cash_type.get(),
+                    "BE_TRIGGER": float(e_cash_trig.get()),
                     "BE_VALUE": float(e_cash_val.get()),
                     "BE_CASH_STRAT": cbo_cash_strat.get(),
                     "BE_MODE": cbo_be.get(),
@@ -788,6 +802,7 @@ def open_tsl_popup(app):
                     "PSAR_GROUP": cbo_psar_grp.get(),
                     "PSAR_STEP": float(e_psar_step.get()),
                     "PSAR_MAX": float(e_psar_max.get()),
+                    "PSAR_MIN_RR": float(e_psar_min_rr.get()),
                     "ANTI_CASH_USD": float(e_anti_usd.get()),
                     "ANTI_CASH_TIME": int(e_anti_time.get()),
                 }
@@ -1103,11 +1118,16 @@ def show_history_popup(app):
     # [NEW V5] Mở rộng số cột để hiển thị thêm Entry, SL, TP, Fee
     cols = ("Time", "Ticket", "Symbol", "Type", "Vol", "Entry", "SL", "TP", "Fee", "PnL ($)", "Reason")
     tr = ttk.Treeview(top, columns=cols, show="tree headings")
+    
+    xscrollbar = ttk.Scrollbar(top, orient="horizontal", command=tr.xview)
+    xscrollbar.pack(side="bottom", fill="x")
+    tr.configure(xscrollcommand=xscrollbar.set)
+    
     tr.pack(fill="both", expand=True)
 
     # Cột Tree (chứa Session Name)
-    tr.column("#0", width=220, anchor="w")
-    tr.heading("#0", text="Session / Thời gian")
+    tr.column("#0", width=160, anchor="w")
+    tr.heading("#0", text="Session")
 
     widths = [140, 90, 80, 80, 60, 80, 80, 80, 60, 80, 120]
     for c, w in zip(cols, widths):
