@@ -67,6 +67,51 @@ class TradeManager:
                 pass
         return self.brain_settings
 
+    def check_and_trigger_cooldown(self):
+        brain = self._get_brain_settings()
+        safeguard_cfg = brain.get("bot_safeguard", {})
+        
+        max_loss_pct = float(safeguard_cfg.get("MAX_DAILY_LOSS_PERCENT", 2.5))
+        max_trades = int(safeguard_cfg.get("MAX_TRADES_PER_DAY", 30))
+        max_streak = int(safeguard_cfg.get("MAX_LOSING_STREAK", 3))
+        cooldown_hours = float(safeguard_cfg.get("GLOBAL_COOLDOWN_HOURS", 4.0))
+        
+        start_bal = self.state.get("starting_balance", 0)
+        pnl = self.state.get("bot_pnl_today", 0.0)
+        loss_pct = (pnl / start_bal * 100) if start_bal > 0 else 0
+        
+        trades = self.state.get("bot_trades_today", 0)
+        losses = self.state.get("bot_daily_loss_count", 0)
+        
+        triggered = False
+        reason = ""
+        
+        if loss_pct <= -max_loss_pct:
+            triggered = True
+            reason = f"Chạm Max Loss ({loss_pct:.2f}% / {max_loss_pct}%)"
+        elif trades >= max_trades:
+            triggered = True
+            reason = f"Chạm Max Trades ({trades}/{max_trades})"
+        elif losses >= max_streak:
+            triggered = True
+            reason = f"Chạm Max Streak ({losses}/{max_streak})"
+            
+        if triggered:
+            from core.storage_manager import reset_bot_session
+            cooldown_until = time.time() + (cooldown_hours * 3600)
+            
+            # Đóng tất cả các lệnh bot đang chạy nếu có cấu hình CLOSE_ALL_ON_COOLDOWN (tùy chọn)
+            # Ở đây ta chỉ reset cache và chặn mở lệnh mới. Lệnh cũ vẫn chạy.
+            
+            reset_bot_session(f"Hit Limit: {reason}")
+            
+            # Cập nhật lại state sau khi reset
+            self.state = load_state()
+            self.state["cooldown_until"] = cooldown_until
+            save_state(self.state)
+            
+            self.log(f"🛑 [SAFEGUARD] {reason}. Bot bước vào Global Cooldown trong {cooldown_hours} giờ.", target="bot")
+
     # ====================================================================================
     # [NEW V4.4] HÀM CẮT LỆNH KHI CÓ TÍN HIỆU ĐẢO CHIỀU (REVERSE SIGNAL)
     # ====================================================================================
@@ -340,6 +385,7 @@ class TradeManager:
                     self.state.get("trades_today_count", 0) + 1
                 )
                 save_state(self.state)
+                self.check_and_trigger_cooldown()
 
             return "SUCCESS"
 
@@ -574,13 +620,35 @@ class TradeManager:
                             )
                             self.state["last_close_times"][d_out.symbol] = time.time()
 
+                            current_session = self.state.get("current_session_id", "LEGACY")
+                            
+                            entry_price = 0.0
+                            deal_in = [d for d in deals if d.entry == mt5.DEAL_ENTRY_IN]
+                            if deal_in:
+                                entry_price = deal_in[0].price
+                                
+                            last_sl, last_tp = 0.0, 0.0
+                            orders = mt5.history_orders_get(position=ticket)
+                            if orders:
+                                for ord in reversed(orders):
+                                    if ord.sl > 0: last_sl = ord.sl
+                                    if ord.tp > 0: last_tp = ord.tp
+                                    if last_sl > 0 and last_tp > 0: break
+                                    
+                            fee = d_out.commission + d_out.swap
+
                             append_trade_log(
                                 ticket,
                                 d_out.symbol,
                                 pos_type_str,
                                 d_out.volume,
+                                entry_price,
+                                last_sl,
+                                last_tp,
+                                fee,
                                 real_pnl,
                                 exit_reason,
+                                session_id=current_session
                             )
                             log_target = "bot" if is_bot else "manual"
                             self.log(
@@ -598,6 +666,9 @@ class TradeManager:
                                 update_last_dca_pca_close_time(
                                     d_out.symbol, time.time()
                                 )
+
+                            if is_bot:
+                                self.check_and_trigger_cooldown()
 
                     if ticket in self.state["active_trades"]:
                         self.state["active_trades"].remove(ticket)

@@ -213,6 +213,38 @@ def open_bot_setting_popup(app):
         font=FONT_BOLD,
         text_color="#FFB300",
     ).pack(pady=(5, 5))
+
+    # --- [NEW] LIVE PREVIEW ---
+    from core.storage_manager import load_state
+    import time
+    st = load_state()
+    start_bal = st.get("starting_balance", 0)
+    pnl = st.get("bot_pnl_today", 0.0)
+    loss_pct = (pnl / start_bal * 100) if start_bal > 0 else 0
+    trades = st.get("bot_trades_today", 0)
+    losses = st.get("bot_daily_loss_count", 0)
+    cooldown_until = st.get("cooldown_until", 0.0)
+    
+    f_preview = ctk.CTkFrame(tab_core, fg_color="#1E1E1E", corner_radius=8)
+    f_preview.pack(fill="x", padx=15, pady=(0, 10))
+    
+    cooldown_str = "Sẵn sàng"
+    now = time.time()
+    if now < cooldown_until:
+        rem = int((cooldown_until - now) / 60)
+        cooldown_str = f"BỊ CHẶN ({rem} phút)"
+        
+    preview_text = f"Lỗ: {loss_pct:.2f}% | Lệnh: {trades} | Thua: {losses} | Cooldown: {cooldown_str}"
+    
+    ctk.CTkLabel(
+        f_preview, text="LIVE PREVIEW:", font=("Roboto", 12, "bold"), text_color="#00E676"
+    ).pack(side="left", padx=10, pady=8)
+    
+    lbl_preview = ctk.CTkLabel(
+        f_preview, text=preview_text, font=("Consolas", 12, "bold"), text_color="white"
+    )
+    lbl_preview.pack(side="left", padx=10, pady=8)
+
     f_safety = ctk.CTkFrame(tab_core, fg_color="#2b2b2b", corner_radius=8)
     f_safety.pack(fill="x", padx=15, pady=5)
     f_safety.columnconfigure((0, 2), weight=1)
@@ -400,6 +432,14 @@ def open_bot_setting_popup(app):
     e_post_close.insert(0, str(safe_cfg.get("POST_CLOSE_COOLDOWN", 0)))
     e_post_close.grid(row=7, column=3, sticky="w", padx=10, pady=8)
 
+    # [NEW] Global Cooldown (Chặn toàn bộ Bot khi chạm Safeguard)
+    ctk.CTkLabel(f_safety, text="Global Cooldown (Giờ):").grid(
+        row=8, column=0, sticky="w", padx=10, pady=8
+    )
+    e_global_cooldown = ctk.CTkEntry(f_safety, width=70, justify="center")
+    e_global_cooldown.insert(0, str(safe_cfg.get("GLOBAL_COOLDOWN_HOURS", 4.0)))
+    e_global_cooldown.grid(row=8, column=1, sticky="w", padx=10, pady=8)
+
     # Đã chuyển Watchlist lên đầu
 
     def save():
@@ -434,6 +474,7 @@ def open_bot_setting_popup(app):
                 "BOT_USE_TP": var_bot_use_tp.get(),
                 "STRICT_MIN_LOT": var_strict_min_lot.get(),
                 "POST_CLOSE_COOLDOWN": int(e_post_close.get()),
+                "GLOBAL_COOLDOWN_HOURS": float(e_global_cooldown.get()),
             })
             
             existing_data["BOT_ACTIVE_SYMBOLS"] = [
@@ -1040,29 +1081,130 @@ def open_edit_popup(app, ticket):
 
 def show_history_popup(app):
     top = ctk.CTkToplevel(app)
-    top.title("Lịch sử Giao dịch")
-    top.geometry("850x500")
-    top.attributes("-topmost", True)  # Ép luôn nổi trên cùng
-    top.focus_force()  # Tự động bắt trỏ chuột khi mở
-    cols = ("Time", "Ticket", "Symbol", "Type", "Vol", "PnL ($)", "Reason")
-    tr = ttk.Treeview(top, columns=cols, show="headings")
+    top.title("Lịch sử Giao dịch (Nhóm theo Phiên)")
+    top.geometry("900x550")
+    top.attributes("-topmost", True)
+    top.focus_force()
+    
+    # [NEW V5] Mở rộng số cột để hiển thị thêm Entry, SL, TP, Fee
+    cols = ("Time", "Ticket", "Symbol", "Type", "Vol", "Entry", "SL", "TP", "Fee", "PnL ($)", "Reason")
+    tr = ttk.Treeview(top, columns=cols, show="tree headings")
     tr.pack(fill="both", expand=True)
 
-    widths = [160, 100, 100, 80, 80, 100, 150]
+    # Cột Tree (chứa Session Name)
+    tr.column("#0", width=220, anchor="w")
+    tr.heading("#0", text="Session / Thời gian")
+
+    widths = [140, 90, 80, 80, 60, 80, 80, 80, 60, 80, 120]
     for c, w in zip(cols, widths):
         tr.heading(c, text=c)
         tr.column(c, width=w, anchor="center")
 
     csv_path = "data/trade_history_master.csv"
-    if os.path.exists(csv_path):
+    
+    def load_data():
+        for i in tr.get_children():
+            tr.delete(i)
+            
+        if not os.path.exists(csv_path):
+            return
+
+        sessions = {}
         try:
             with open(csv_path, mode="r", encoding="utf-8") as f:
                 reader = csv.reader(f)
-                next(reader, None)  # Bỏ qua dòng tiêu đề
+                header = next(reader, None)
+                if not header: return
+                
                 records = list(reader)
-                # Đọc ngược từ dưới lên để lệnh mới nhất nằm trên cùng
-                for row in reversed(records):
-                    if len(row) >= 7:
-                        tr.insert("", "end", values=row)
+                for row in records:
+                    if len(row) < 14: continue # Format mới có 14 cột
+                    # row format: [Time, Ticket, Symbol, Type, Vol, Entry, SL, TP, Fee, PnL, Reason, Market Mode, Trigger, Session_ID]
+                    session_id = row[13]
+                    
+                    if session_id not in sessions:
+                        sessions[session_id] = []
+                    sessions[session_id].append(row)
+                    
+            # Hiển thị Session mới nhất lên trên
+            sorted_sessions = sorted(sessions.keys(), reverse=True)
+            
+            for sid in sorted_sessions:
+                group_rows = sessions[sid]
+                
+                # Tính toán Thống kê Session
+                wins = 0
+                total_trades = 0
+                buy_count = 0
+                sell_count = 0
+                total_pnl = 0.0
+                total_fee = 0.0
+                
+                for r in group_rows:
+                    if len(r) >= 14:
+                        pnl_val = float(r[9]) if r[9].replace('.','',1).replace('-','',1).isdigit() else 0.0
+                        fee_val = float(r[8]) if r[8].replace('.','',1).replace('-','',1).isdigit() else 0.0
+                        total_pnl += pnl_val
+                        total_fee += fee_val
+                        
+                        if pnl_val > 0: wins += 1
+                        total_trades += 1
+                        
+                        if r[3] == "BUY": buy_count += 1
+                        elif r[3] == "SELL": sell_count += 1
+                
+                winrate = (wins / total_trades * 100) if total_trades > 0 else 0
+                
+                # Thêm Node Cha (Session)
+                node_text = f"Phiên: {sid}" if sid != "LEGACY" else "Phiên Cũ (Legacy)"
+                
+                # Hiển thị tóm tắt trên node cha
+                type_str = f"B:{buy_count} | S:{sell_count}"
+                win_str = f"W: {winrate:.1f}%"
+                fee_str = f"${total_fee:.2f}"
+                pnl_str = f"${total_pnl:.2f}"
+                
+                parent_id = tr.insert("", "end", text=node_text, values=("", "", "", type_str, win_str, "", "", "", fee_str, pnl_str, ""))
+                
+                # Sắp xếp các lệnh trong phiên từ mới -> cũ
+                for row in reversed(group_rows):
+                    if len(row) >= 14:
+                        tr.insert(parent_id, "end", text="", values=(row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10]))
+                
+                # Tự động mở rộng phiên mới nhất
+                if sid == sorted_sessions[0]:
+                    tr.item(parent_id, open=True)
+
         except Exception as e:
             pass
+
+    load_data()
+
+    # Thêm Context Menu để xóa Session
+    def on_right_click(event):
+        row_id = tr.identify_row(event.y)
+        if not row_id: return
+        
+        tr.selection_set(row_id)
+        
+        # Kiểm tra xem có phải là Node cha (Session) không
+        parent_node = tr.parent(row_id)
+        if parent_node == "":  # Đây là node cha
+            session_text = tr.item(row_id, "text")
+            session_id = session_text.replace("Phiên: ", "").replace("Phiên Cũ (Legacy)", "LEGACY")
+            
+            menu = tk.Menu(top, tearoff=0, font=("Roboto", 11))
+            menu.add_command(
+                label=f"🗑 Xóa Log Phiên [{session_id}]",
+                command=lambda: delete_session(session_id)
+            )
+            menu.post(event.x_root, event.y_root)
+
+    def delete_session(session_id):
+        if messagebox.askyesno("Cảnh báo", f"Bạn có chắc muốn XÓA VĨNH VIỄN toàn bộ nhật ký của Phiên [{session_id}] không?"):
+            from core.storage_manager import delete_session_log
+            delete_session_log(session_id)
+            app.log_message(f"🗑 Đã dọn dẹp log của phiên {session_id}.", target="manual")
+            load_data()  # Reload lại Treeview
+
+    tr.bind("<Button-3>", on_right_click)

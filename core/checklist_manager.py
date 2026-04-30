@@ -209,6 +209,21 @@ class ChecklistManager:
                 ],
             }
 
+        cooldown_until = state.get("cooldown_until", 0.0)
+        now = time.time()
+        if now < cooldown_until:
+            rem_minutes = int((cooldown_until - now) / 60)
+            return {
+                "passed": False,
+                "checks": [
+                    {
+                        "name": "Global Cooldown",
+                        "status": "FAIL",
+                        "msg": f"Bot bị chặn. Mở lại sau {rem_minutes} phút"
+                    }
+                ]
+            }
+
         if not account_info:
             return {
                 "passed": False,

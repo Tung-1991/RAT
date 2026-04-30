@@ -11,23 +11,61 @@ BRAIN_FILE = "data/brain_settings.json"
 HISTORY_FILE = "data/trade_history_log.csv" 
 MASTER_LOG_FILE = "data/trade_history_master.csv"
 
+def get_reset_hour():
+    try:
+        bs = load_brain_settings()
+        if "bot_safeguard" in bs and "RESET_HOUR" in bs["bot_safeguard"]:
+            return int(bs["bot_safeguard"]["RESET_HOUR"])
+    except:
+        pass
+    return getattr(config, "RESET_HOUR", 6)
+
 def get_today_str():
     now = datetime.now()
-    if now.hour < config.RESET_HOUR:
+    reset_hour = get_reset_hour()
+    if now.hour < reset_hour:
         prev_day = now - timedelta(days=1)
         return prev_day.strftime("%Y-%m-%d")
     return now.strftime("%Y-%m-%d")
 
-def append_trade_log(ticket, symbol, type_str, volume, pnl, close_reason, market_mode="ANY", trigger_signal="UNK"):
+def append_trade_log(ticket, symbol, type_str, volume, entry_price, sl, tp, fee, pnl, close_reason, market_mode="ANY", trigger_signal="UNK", session_id="LEGACY"):
     file_exists = os.path.isfile(MASTER_LOG_FILE)
     try:
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S") 
         with open(MASTER_LOG_FILE, mode='a', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
             if not file_exists:
-                # [NEW V4.4] Thêm cột Market Mode và Trigger vào file CSV
-                writer.writerow(["Time", "Ticket", "Symbol", "Type", "Vol", "PnL ($)", "Reason", "Market Mode", "Trigger"])
-            writer.writerow([now_str, ticket, symbol, type_str, volume, f"{pnl:.2f}", close_reason, market_mode, trigger_signal])
+                # [NEW V5] Thêm cột Entry, SL, TP, Fee
+                writer.writerow(["Time", "Ticket", "Symbol", "Type", "Vol", "Entry", "SL", "TP", "Fee", "PnL ($)", "Reason", "Market Mode", "Trigger", "Session_ID"])
+            writer.writerow([
+                now_str, ticket, symbol, type_str, volume, 
+                f"{entry_price:.5f}", f"{sl:.5f}", f"{tp:.5f}", f"{fee:.2f}", 
+                f"{pnl:.2f}", close_reason, market_mode, trigger_signal, session_id
+            ])
+    except:
+        pass
+
+def delete_session_log(session_id: str):
+    """Xóa tất cả các lệnh thuộc một Session cụ thể khỏi CSV"""
+    if not os.path.exists(MASTER_LOG_FILE):
+        return
+    try:
+        rows = []
+        with open(MASTER_LOG_FILE, mode='r', encoding='utf-8') as f:
+            reader = csv.reader(f)
+            header = next(reader, None)
+            if header:
+                rows.append(header)
+                for row in reader:
+                    # Nếu có Session_ID (cột cuối) và nó khớp thì bỏ qua (xóa)
+                    # Support cả format cũ (10 cột) và mới (14 cột)
+                    if len(row) >= 10 and row[-1] == session_id:
+                        continue
+                    rows.append(row)
+        
+        with open(MASTER_LOG_FILE, mode='w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            writer.writerows(rows)
     except:
         pass
 
@@ -62,7 +100,9 @@ def load_state() -> Dict[str, Any]:
         "bot_last_entry_times": {},
         "exit_reasons": {},          # [NEW V4.4] Tracking lý do đóng lệnh
         "last_close_times": {},      # [NEW V4.4] Tracking thời gian đóng lệnh cho Cooldown
-        "last_dca_pca_close_time": {} # [NEW V4.4] Tracking DCA/PCA Cooldown
+        "last_dca_pca_close_time": {}, # [NEW V4.4] Tracking DCA/PCA Cooldown
+        "current_session_id": datetime.now().strftime("%Y%m%d_%H%M%S"),
+        "cooldown_until": 0.0
     }
     
     os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
@@ -118,6 +158,15 @@ def load_state() -> Dict[str, Any]:
                 state["manual_trades_today"] = 0
                 state["manual_daily_loss_count"] = 0
                 
+                # Khởi tạo session mới cho ngày mới
+                state["current_session_id"] = datetime.now().strftime("%Y%m%d_%H%M%S")
+                state["cooldown_until"] = 0.0
+
+            if "current_session_id" not in state:
+                state["current_session_id"] = datetime.now().strftime("%Y%m%d_%H%M%S")
+            if "cooldown_until" not in state:
+                state["cooldown_until"] = 0.0
+                
         return state
     except:
         return default_state
@@ -128,6 +177,22 @@ def save_state(state: Dict[str, Any]):
             json.dump(state, f, indent=4)
     except:
         pass
+
+def reset_bot_session(reason="Manual"):
+    """Dọn dẹp cache bot hiện hành và tạo Session_ID mới"""
+    state = load_state()
+    # Save session tổng kết (nếu cần thiết)
+    
+    # Đặt lại cache của bot
+    state["bot_pnl_today"] = 0.0
+    state["bot_trades_today"] = 0
+    state["bot_daily_loss_count"] = 0
+    state["losing_streak"] = 0
+    state["cooldown_until"] = 0.0
+    
+    # Tạo Session_ID mới
+    state["current_session_id"] = datetime.now().strftime("%Y%m%d_%H%M%S")
+    save_state(state)
 
 def get_last_dca_pca_close_time(symbol: str) -> float:
     state = load_state()
