@@ -611,9 +611,33 @@ class BotUI(ctk.CTk):
                 p_sl = (cur_price - active_sl_dist) if d == "BUY" else (cur_price + active_sl_dist)
 
             # 3. XÁC ĐỊNH LỢI NHUẬN MỤC TIÊU (TP)
-            p_tp = mtp if mtp > 0 else (
-                cur_price + (active_sl_dist * params["TP_RR_RATIO"]) if d == "BUY" else cur_price - (active_sl_dist * params["TP_RR_RATIO"])
-            )
+            use_swing_tp = params.get("USE_SWING_TP", False)
+            p_tp_tech = 0
+            if use_swing_tp and sym_ctx:
+                brain = self.trade_mgr._get_brain_settings()
+                risk_tsl = brain.get("risk_tsl", {})
+                tp_group = risk_tsl.get("base_sl", "G2")
+                if "DYNAMIC" in tp_group:
+                    market_mode = sym_ctx.get("market_mode", "ANY")
+                    tp_group = "G1" if market_mode in ["TREND", "BREAKOUT"] else "G2"
+                
+                sh = sym_ctx.get(f"swing_high_{tp_group}")
+                sl_val = sym_ctx.get(f"swing_low_{tp_group}")
+                atr_val = sym_ctx.get(f"atr_{tp_group}")
+                
+                if sh and sl_val and atr_val:
+                    tp_mult = float(risk_tsl.get("sl_atr_multiplier", getattr(config, "sl_atr_multiplier", 0.2)))
+                    buffer = atr_val * tp_mult
+                    p_tp_tech = (sh - buffer) if d == "BUY" else (sl_val + buffer)
+
+            if mtp > 0:
+                p_tp = mtp
+            elif use_swing_tp and p_tp_tech > 0:
+                p_tp = p_tp_tech
+            else:
+                p_tp = (
+                    cur_price + (active_sl_dist * params["TP_RR_RATIO"]) if d == "BUY" else cur_price - (active_sl_dist * params["TP_RR_RATIO"])
+                )
 
             # 4. TÍNH TOÁN LOT PREVIEW DỰA TRÊN active_sl_dist
             f_lot = mlot if mlot > 0 else 0
@@ -1161,6 +1185,21 @@ class BotUI(ctk.CTk):
                     label=f"📝 Sửa lệnh #{ticket}",
                     command=lambda: self.open_edit_popup(ticket),
                 )
+                
+                def clear_tp():
+                    try:
+                        pos = next((p for p in self.connector.get_all_open_positions() if p.ticket == ticket), None)
+                        if pos:
+                            self.connector.modify_position(ticket, sl=pos.sl, tp=0.0)
+                            self.log_message(f"✂️ Đã gỡ bỏ TP (thả rông) cho lệnh #{ticket}")
+                    except Exception as e:
+                        self.log_message(f"Lỗi xóa TP: {e}")
+
+                menu.add_command(
+                    label=f"✂️ Xóa bỏ TP (Thả rông)",
+                    command=clear_tp,
+                )
+                
                 menu.add_command(
                     label=f"🔄 Đảo Chiều Tự Cắt: {rev_status}",
                     command=toggle_rev,

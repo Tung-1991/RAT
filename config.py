@@ -86,6 +86,7 @@ PRESETS = {
         "TP_RR_RATIO": 1.5,
         "RISK_PERCENT": 0.3,
         "USE_SWING_SL": False,
+        "USE_SWING_TP": False,
     },
     "SAFE": {
         "DESC": "An toàn",
@@ -93,6 +94,7 @@ PRESETS = {
         "TP_RR_RATIO": 1.2,
         "RISK_PERCENT": 0.2,
         "USE_SWING_SL": False,
+        "USE_SWING_TP": False,
     },
     "BREAKOUT": {
         "DESC": "Săn trend lớn",
@@ -100,6 +102,7 @@ PRESETS = {
         "TP_RR_RATIO": 3.0,
         "RISK_PERCENT": 0.5,
         "USE_SWING_SL": False,
+        "USE_SWING_TP": False,
     },
 }
 
@@ -135,6 +138,7 @@ BOT_SAFEGUARD = {
     "DCA_PCA_SCAN_INTERVAL": 2.0,
     "LOG_COOLDOWN_MINUTES": 60.0,
     "BOT_USE_TP": True,
+    "BOT_TP_RR_RATIO": 1.5,          # [NEW] Rầu thưởng khi dùng TP theo R (fallback nếu không dùng SwingPoint)
     "STRICT_MIN_LOT": False,  # [NEW V4.4] Chặn Lot < Min_Vol
     "POST_CLOSE_COOLDOWN": 0,  # [NEW V4.4] Thời gian nghỉ nến sau SL (Giây)
     "CLOSE_ON_REVERSE_MIN_TIME": 180,  # [NEW V4.4] Min Hold Time cho REVERSE_CLOSE

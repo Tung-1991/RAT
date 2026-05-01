@@ -321,9 +321,14 @@ class TradeManager:
             tp_price = parent_pos.tp
             sl_price = parent_pos.sl
         else:
-            if safeguard_cfg.get("BOT_USE_TP", False):
-                # Lấy đúng tên biến BOT_TP_RR_RATIO
-                reward_ratio = getattr(config, "BOT_TP_RR_RATIO", 1.5)
+            use_swing_tp = safeguard_cfg.get("BOT_USE_SWING_TP", False)
+            use_rr_tp = safeguard_cfg.get("BOT_USE_RR_TP", True)
+
+            if use_swing_tp and context and swing_h and swing_l and atr_val:
+                tp_price = (swing_h - buffer_atr) if direction == "BUY" else (swing_l + buffer_atr)
+            elif use_rr_tp:
+                # Đọc từ JSON (safeguard_cfg) → fallback config
+                reward_ratio = float(safeguard_cfg.get("BOT_TP_RR_RATIO", getattr(config, "BOT_TP_RR_RATIO", 1.5)))
                 tp_price = (
                     current_price + (sl_distance * reward_ratio)
                     if direction == "BUY"
@@ -548,8 +553,32 @@ class TradeManager:
         if max_lot_cap > 0:
             lot_size = min(lot_size, max_lot_cap)
 
+        use_swing_tp = params.get("USE_SWING_TP", False)
+
         if manual_tp > 0:
             tp_price = manual_tp
+        elif use_swing_tp and context:
+            brain = self._get_brain_settings()
+            risk_tsl = brain.get("risk_tsl", {})
+            tp_group = risk_tsl.get("base_sl", "G2")
+            if "DYNAMIC" in tp_group:
+                market_mode = context.get("market_mode", "ANY")
+                tp_group = "G1" if market_mode in ["TREND", "BREAKOUT"] else "G2"
+
+            sh = context.get(f"swing_high_{tp_group}")
+            sl_val = context.get(f"swing_low_{tp_group}")
+            atr_val = context.get(f"atr_{tp_group}")
+
+            if sh and sl_val and atr_val:
+                tp_mult = float(risk_tsl.get("sl_atr_multiplier", getattr(config, "sl_atr_multiplier", 0.2)))
+                buffer = atr_val * tp_mult
+                tp_price = (sh - buffer) if direction == "BUY" else (sl_val + buffer)
+            else:
+                tp_price = (
+                    price + (abs(price - sl_price) * params.get("TP_RR_RATIO", 1.5))
+                    if direction == "BUY"
+                    else price - (abs(price - sl_price) * params.get("TP_RR_RATIO", 1.5))
+                )
         else:
             tp_price = (
                 price + (abs(price - sl_price) * params.get("TP_RR_RATIO", 1.5))

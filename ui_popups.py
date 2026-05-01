@@ -217,6 +217,7 @@ def open_bot_setting_popup(app):
     # --- [NEW] LIVE PREVIEW ---
     from core.storage_manager import load_state
     import time
+
     st = load_state()
     start_bal = st.get("starting_balance", 0)
     pnl = st.get("bot_pnl_today", 0.0)
@@ -224,22 +225,25 @@ def open_bot_setting_popup(app):
     trades = st.get("bot_trades_today", 0)
     losses = st.get("bot_daily_loss_count", 0)
     cooldown_until = st.get("cooldown_until", 0.0)
-    
+
     f_preview = ctk.CTkFrame(tab_core, fg_color="#1E1E1E", corner_radius=8)
     f_preview.pack(fill="x", padx=15, pady=(0, 10))
-    
+
     cooldown_str = "Sẵn sàng"
     now = time.time()
     if now < cooldown_until:
         rem = int((cooldown_until - now) / 60)
         cooldown_str = f"BỊ CHẶN ({rem} phút)"
-        
+
     preview_text = f"Lỗ: {loss_pct:.2f}% | Lệnh: {trades} | Thua: {losses} | Cooldown: {cooldown_str}"
-    
+
     ctk.CTkLabel(
-        f_preview, text="LIVE PREVIEW:", font=("Roboto", 12, "bold"), text_color="#00E676"
+        f_preview,
+        text="LIVE PREVIEW:",
+        font=("Roboto", 12, "bold"),
+        text_color="#00E676",
     ).pack(side="left", padx=10, pady=8)
-    
+
     lbl_preview = ctk.CTkLabel(
         f_preview, text=preview_text, font=("Consolas", 12, "bold"), text_color="white"
     )
@@ -405,14 +409,28 @@ def open_bot_setting_popup(app):
     e_log_cooldown.insert(0, str(safe_cfg.get("LOG_COOLDOWN_MINUTES", 60)))
     e_log_cooldown.grid(row=6, column=1, sticky="w", padx=10, pady=8)
 
-    # [NEW] Bot Use TP Toggle
-    var_bot_use_tp = ctk.BooleanVar(
-        value=safe_cfg.get("BOT_USE_TP", config.BOT_SAFEGUARD.get("BOT_USE_TP", True))
+    # [NEW] Bot Use TP Toggle: SwingPoint
+    var_bot_use_swing_tp = ctk.BooleanVar(
+        value=safe_cfg.get("BOT_USE_SWING_TP", config.BOT_SAFEGUARD.get("BOT_USE_SWING_TP", False))
     )
-    chk_bot_use_tp = ctk.CTkCheckBox(
-        f_safety, text="Bot Dùng Cứng TP (Preset RR)", variable=var_bot_use_tp
+    chk_bot_use_swing_tp = ctk.CTkCheckBox(
+        f_safety, text="Bot Dùng TP (SwingPoint)", variable=var_bot_use_swing_tp
     )
-    chk_bot_use_tp.grid(row=6, column=2, columnspan=2, sticky="w", padx=10, pady=8)
+    chk_bot_use_swing_tp.grid(row=6, column=2, sticky="w", padx=10, pady=8)
+
+    var_bot_use_rr_tp = ctk.BooleanVar(
+        value=safe_cfg.get("BOT_USE_RR_TP", config.BOT_SAFEGUARD.get("BOT_USE_RR_TP", True))
+    )
+    chk_bot_use_rr_tp = ctk.CTkCheckBox(
+        f_safety, text="Bot Dùng TP (R Tỷ lệ):", variable=var_bot_use_rr_tp
+    )
+    chk_bot_use_rr_tp.grid(row=7, column=2, sticky="w", padx=10, pady=8)
+
+    e_bot_tp_rr = ctk.CTkEntry(f_safety, width=70, justify="center")
+    e_bot_tp_rr.insert(
+        0, str(safe_cfg.get("BOT_TP_RR_RATIO", config.BOT_SAFEGUARD.get("BOT_TP_RR_RATIO", 1.5)))
+    )
+    e_bot_tp_rr.grid(row=7, column=3, sticky="w", padx=10, pady=8)
 
     # [NEW V4.4] Strict Min Lot Rejection & Post-Close Cooldown
     var_strict_min_lot = ctk.BooleanVar(value=safe_cfg.get("STRICT_MIN_LOT", False))
@@ -427,10 +445,10 @@ def open_bot_setting_popup(app):
 
     ctk.CTkLabel(
         f_safety, text="Nghỉ Sau Đóng Lệnh (Giây):", text_color="#FFB300"
-    ).grid(row=7, column=2, sticky="w", padx=10, pady=8)
+    ).grid(row=8, column=2, sticky="w", padx=10, pady=8)
     e_post_close = ctk.CTkEntry(f_safety, width=70, justify="center")
     e_post_close.insert(0, str(safe_cfg.get("POST_CLOSE_COOLDOWN", 0)))
-    e_post_close.grid(row=7, column=3, sticky="w", padx=10, pady=8)
+    e_post_close.grid(row=8, column=3, sticky="w", padx=10, pady=8)
 
     # [NEW] Global Cooldown (Chặn toàn bộ Bot khi chạm Safeguard)
     ctk.CTkLabel(f_safety, text="Global Cooldown (Giờ):").grid(
@@ -445,6 +463,7 @@ def open_bot_setting_popup(app):
     def save():
         try:
             import json, os
+
             cfg_path = "data/brain_settings.json"
             existing_data = {}
             if os.path.exists(cfg_path):
@@ -454,29 +473,33 @@ def open_bot_setting_popup(app):
             # [FIX TRIỆT ĐỂ]: Sử dụng .update() để không làm mất các biến từ Sandbox (như CLOSE_ON_REVERSE)
             if "bot_safeguard" not in existing_data:
                 existing_data["bot_safeguard"] = {}
-                
-            existing_data["bot_safeguard"].update({
-                "MAX_DAILY_LOSS_PERCENT": float(e_max_loss.get()),
-                "MAX_OPEN_POSITIONS": int(e_max_open.get()),
-                "MAX_TRADES_PER_DAY": int(e_max_trades.get()),
-                "MAX_LOSING_STREAK": int(e_max_streak.get()),
-                "LOSS_COUNT_MODE": cbo_loss_mode.get(),
-                "COOLDOWN_MINUTES": int(e_cooldown.get()),
-                "NUM_H1_BARS": int(e_num_h1.get()),
-                "NUM_M15_BARS": int(e_num_m15.get()),
-                "CHECK_PING": var_check_ping.get(),
-                "MAX_PING_MS": int(e_max_ping.get()),
-                "CHECK_SPREAD": var_check_spread.get(),
-                "MAX_SPREAD_POINTS": int(e_max_spread.get()),
-                "DAEMON_LOOP_DELAY": float(e_daemon_loop.get()),
-                "DCA_PCA_SCAN_INTERVAL": float(e_scan_delay.get()),
-                "LOG_COOLDOWN_MINUTES": float(e_log_cooldown.get()),
-                "BOT_USE_TP": var_bot_use_tp.get(),
-                "STRICT_MIN_LOT": var_strict_min_lot.get(),
-                "POST_CLOSE_COOLDOWN": int(e_post_close.get()),
-                "GLOBAL_COOLDOWN_HOURS": float(e_global_cooldown.get()),
-            })
-            
+
+            existing_data["bot_safeguard"].update(
+                {
+                    "MAX_DAILY_LOSS_PERCENT": float(e_max_loss.get()),
+                    "MAX_OPEN_POSITIONS": int(e_max_open.get()),
+                    "MAX_TRADES_PER_DAY": int(e_max_trades.get()),
+                    "MAX_LOSING_STREAK": int(e_max_streak.get()),
+                    "LOSS_COUNT_MODE": cbo_loss_mode.get(),
+                    "COOLDOWN_MINUTES": int(e_cooldown.get()),
+                    "NUM_H1_BARS": int(e_num_h1.get()),
+                    "NUM_M15_BARS": int(e_num_m15.get()),
+                    "CHECK_PING": var_check_ping.get(),
+                    "MAX_PING_MS": int(e_max_ping.get()),
+                    "CHECK_SPREAD": var_check_spread.get(),
+                    "MAX_SPREAD_POINTS": int(e_max_spread.get()),
+                    "DAEMON_LOOP_DELAY": float(e_daemon_loop.get()),
+                    "DCA_PCA_SCAN_INTERVAL": float(e_scan_delay.get()),
+                    "LOG_COOLDOWN_MINUTES": float(e_log_cooldown.get()),
+                    "BOT_USE_SWING_TP": var_bot_use_swing_tp.get(),
+                    "BOT_USE_RR_TP": var_bot_use_rr_tp.get(),
+                    "BOT_TP_RR_RATIO": float(e_bot_tp_rr.get()),
+                    "STRICT_MIN_LOT": var_strict_min_lot.get(),
+                    "POST_CLOSE_COOLDOWN": int(e_post_close.get()),
+                    "GLOBAL_COOLDOWN_HOURS": float(e_global_cooldown.get()),
+                }
+            )
+
             existing_data["BOT_ACTIVE_SYMBOLS"] = [
                 coin for coin, var in app.bot_coin_vars.items() if var.get()
             ]
@@ -489,7 +512,9 @@ def open_bot_setting_popup(app):
             if hasattr(app, "reload_config_from_json"):
                 app.reload_config_from_json()
 
-            app.log_message("✅ Đã cập nhật Bot Safeguard (Cập nhật gia tăng).", target="bot")
+            app.log_message(
+                "✅ Đã cập nhật Bot Safeguard (Cập nhật gia tăng).", target="bot"
+            )
             top.destroy()
         except Exception as e:
             messagebox.showerror("Lỗi", f"Lỗi lưu cấu hình: {e}")
@@ -571,6 +596,16 @@ def open_preset_config_popup(app):
         font=("Roboto", 12, "bold"),
     )
     chk_swing_sl.pack(pady=(0, 10))
+
+    var_swing_tp = ctk.BooleanVar(value=data.get("USE_SWING_TP", False))
+    chk_swing_tp = ctk.CTkCheckBox(
+        top,
+        text="Dùng TP theo cấu trúc SwingPoint (Giống Bot)",
+        variable=var_swing_tp,
+        text_color="#66BB6A",
+        font=("Roboto", 12, "bold"),
+    )
+    chk_swing_tp.pack(pady=(0, 10))
     # --- KẾT THÚC THÊM MỚI ---
 
     def live(*args):
@@ -606,7 +641,8 @@ def open_preset_config_popup(app):
                 "SL_PERCENT": float(e_sl.get()),
                 "TP_RR_RATIO": float(e_tp.get()),
                 "STRICT_RISK": var_strict.get(),
-                "USE_SWING_SL": var_swing_sl.get(), # Lưu biến mới
+                "USE_SWING_SL": var_swing_sl.get(),  # Lưu biến mới
+                "USE_SWING_TP": var_swing_tp.get(),
             }
         )
         app.save_settings()
@@ -696,14 +732,16 @@ def open_tsl_popup(app):
     # ================= TAB 2: ADVANCED =================
     f_swing_man = sec(tab_adv, "4. MANUAL SWING (Bám nến)")
     f_swing_man.pack(fill="x", padx=15)
-    cbo_swing_grp = ctk.CTkOptionMenu(f_swing_man, values=["G0", "G1", "G2", "G3", "DYNAMIC-G1/G2"], width=100)
+    cbo_swing_grp = ctk.CTkOptionMenu(
+        f_swing_man, values=["G0", "G1", "G2", "G3", "DYNAMIC-G1/G2"], width=100
+    )
     cbo_swing_grp.set(config.TSL_CONFIG.get("SWING_GROUP", "G2"))
     cbo_swing_grp.pack(side="right")
     ctk.CTkLabel(f_swing_man, text="Group Theo Dõi:").pack(side="left")
 
     f_cash = sec(tab_adv, "5. BE HARD CASH (Thang cuốn USD/Point/%)")
     f_cash.pack(fill="x", padx=15)
-    
+
     f_cash_r1 = ctk.CTkFrame(f_cash, fg_color="transparent")
     f_cash_r1.pack(fill="x")
     f_cash_r2 = ctk.CTkFrame(f_cash, fg_color="transparent")
@@ -732,14 +770,18 @@ def open_tsl_popup(app):
     cbo_cash_strat.pack(side="left", padx=5)
 
     var_be_one_time = ctk.BooleanVar(value=config.TSL_CONFIG.get("ONE_TIME_BE", False))
-    ctk.CTkCheckBox(f_cash_r2, text="One-Time (Chỉ khóa mốc 1)", variable=var_be_one_time, width=60).pack(side="left", padx=5)
+    ctk.CTkCheckBox(
+        f_cash_r2, text="One-Time (Chỉ khóa mốc 1)", variable=var_be_one_time, width=60
+    ).pack(side="left", padx=5)
 
     f_psar = sec(tab_adv, "6. PSAR TRAILING (Đuổi chấm)")
     f_psar.pack(fill="x", padx=15)
-    
+
     f_psar_row1 = ctk.CTkFrame(f_psar, fg_color="transparent")
     f_psar_row1.pack(fill="x", pady=2)
-    cbo_psar_grp = ctk.CTkOptionMenu(f_psar_row1, values=["G0", "G1", "G2", "G3", "DYNAMIC-G1/G2"], width=80)
+    cbo_psar_grp = ctk.CTkOptionMenu(
+        f_psar_row1, values=["G0", "G1", "G2", "G3", "DYNAMIC-G1/G2"], width=80
+    )
     cbo_psar_grp.set(config.TSL_CONFIG.get("PSAR_GROUP", "G2"))
     cbo_psar_grp.pack(side="right")
     ctk.CTkLabel(f_psar_row1, text="Group:").pack(side="left")
@@ -764,21 +806,25 @@ def open_tsl_popup(app):
 
     f_anti = sec(tab_adv, "7. ANTI CASH (Cắt lỗ cứng)")
     f_anti.pack(fill="x", padx=15)
-    
+
     f_anti_row = ctk.CTkFrame(f_anti, fg_color="transparent")
     f_anti_row.pack(fill="x", pady=2)
     e_anti_usd = ctk.CTkEntry(f_anti_row, width=60)
     e_anti_usd.insert(0, str(config.TSL_CONFIG.get("ANTI_CASH_USD", 10.0)))
     e_anti_usd.pack(side="left", padx=5)
     ctk.CTkLabel(f_anti_row, text="Hard Stop (USD):").pack(side="left")
-    
+
     e_anti_time = ctk.CTkEntry(f_anti_row, width=60)
     e_anti_time.insert(0, str(config.TSL_CONFIG.get("ANTI_CASH_TIME", 60)))
     e_anti_time.pack(side="right", padx=5)
     ctk.CTkLabel(f_anti_row, text="Time Cut (s):").pack(side="right")
 
-    var_anti_time_en = ctk.BooleanVar(value=config.TSL_CONFIG.get("ANTI_CASH_TIME_ENABLE", True))
-    ctk.CTkCheckBox(f_anti_row, text="Dùng Time", variable=var_anti_time_en, width=50).pack(side="right", padx=15)
+    var_anti_time_en = ctk.BooleanVar(
+        value=config.TSL_CONFIG.get("ANTI_CASH_TIME_ENABLE", True)
+    )
+    ctk.CTkCheckBox(
+        f_anti_row, text="Dùng Time", variable=var_anti_time_en, width=50
+    ).pack(side="right", padx=15)
 
     def save():
         try:
@@ -887,7 +933,7 @@ def open_edit_popup(app, ticket):
         "STEP": "STEP_R" in cur_t,
         "SWING": "SWING" in cur_t,
         "REV_C": "REV_C" in cur_t,  # [FIX] Nút Close on Reverse
-        "ANTI_CASH": "ANTI_CASH" in cur_t, # [NEW]
+        "ANTI_CASH": "ANTI_CASH" in cur_t,  # [NEW]
     }
 
     def live_edit(*args):
@@ -939,6 +985,10 @@ def open_edit_popup(app, ticket):
                         )
                     if states["PSAR"]:
                         preview_txts.append("PSAR TRAIL")
+                    if states["REV_C"]:
+                        preview_txts.append("Close on Reverse")
+                    if states["ANTI_CASH"]:
+                        preview_txts.append("Anti-Cash")
 
                     if preview_txts:
                         lbl_tactic_preview.configure(
@@ -987,7 +1037,11 @@ def open_edit_popup(app, ticket):
 
         if val and str(val) != "--" and atr_val:
             brain = app.trade_mgr._get_brain_settings()
-            mult = float(brain.get("risk_tsl", {}).get("sl_atr_multiplier", getattr(config, "sl_atr_multiplier", 0.2)))
+            mult = float(
+                brain.get("risk_tsl", {}).get(
+                    "sl_atr_multiplier", getattr(config, "sl_atr_multiplier", 0.2)
+                )
+            )
             calc_sl = (
                 float(val) - (float(atr_val) * mult)
                 if is_buy
@@ -1035,13 +1089,37 @@ def open_edit_popup(app, ticket):
         e_tp.insert(0, "0.0")
         live_edit()
 
-    ctk.CTkButton(
-        f_ast, text="Lấy Preset TP", width=120, fg_color="#2E7D32", command=do_tp
-    ).pack(side="left", padx=5)
+    def do_swing_tp():
+        ctx = app.latest_market_context.get(pos.symbol, {})
+        group = var_sl_group.get()
+        if "DYNAMIC" in group:
+            mode = ctx.get("market_mode", "ANY")
+            group = "G1" if mode in ["TREND", "BREAKOUT"] else "G2"
+        
+        val = ctx.get(f"swing_high_{group}" if is_buy else f"swing_low_{group}")
+        atr_val = ctx.get(f"atr_{group}")
+        
+        if val and str(val) != "--" and atr_val:
+            brain = app.trade_mgr._get_brain_settings()
+            mult = float(brain.get("risk_tsl", {}).get("sl_atr_multiplier", 0.2))
+            calc_tp = float(val) - (float(atr_val) * mult) if is_buy else float(val) + (float(atr_val) * mult)
+            e_tp.delete(0, "end")
+            e_tp.insert(0, f"{calc_tp:.5f}")
+            live_edit()
+        else:
+            messagebox.showwarning("Lỗi", "Không có dữ liệu Swing TP")
 
     ctk.CTkButton(
-        f_ast, text="Bỏ TP (Vô cực)", width=120, fg_color="#455A64", command=do_clear_tp
-    ).pack(side="right", padx=5)
+        f_ast, text="Lấy Preset TP", width=105, fg_color="#2E7D32", command=do_tp
+    ).pack(side="left", padx=2)
+
+    ctk.CTkButton(
+        f_ast, text="Lấy Swing TP", width=105, fg_color="#66BB6A", command=do_swing_tp
+    ).pack(side="left", padx=2)
+
+    ctk.CTkButton(
+        f_ast, text="Bỏ TP (Vô cực)", width=105, fg_color="#455A64", command=do_clear_tp
+    ).pack(side="right", padx=2)
 
     f_chk = ctk.CTkFrame(top, fg_color="transparent")
     f_chk.pack()
@@ -1067,10 +1145,11 @@ def open_edit_popup(app, ticket):
         live_edit()  # Cập nhật lại Preview ngay khi toggle
 
     for k in states:
+        display_name = "A_CASH" if k == "ANTI_CASH" else k
         btns[k] = ctk.CTkButton(
             f_t,
-            text=k,
-            width=50,
+            text=display_name,
+            width=52,
             fg_color=COL_BLUE_ACCENT if states[k] else COL_GRAY_BTN,
             command=lambda x=k: tog(x),
         )
@@ -1118,15 +1197,27 @@ def show_history_popup(app):
     top.geometry("900x550")
     top.attributes("-topmost", True)
     top.focus_force()
-    
+
     # [NEW V5] Mở rộng số cột để hiển thị thêm Entry, SL, TP, Fee
-    cols = ("Time", "Ticket", "Symbol", "Type", "Vol", "Entry", "SL", "TP", "Fee", "PnL ($)", "Reason")
+    cols = (
+        "Time",
+        "Ticket",
+        "Symbol",
+        "Type",
+        "Vol",
+        "Entry",
+        "SL",
+        "TP",
+        "Fee",
+        "PnL ($)",
+        "Reason",
+    )
     tr = ttk.Treeview(top, columns=cols, show="tree headings")
-    
+
     xscrollbar = ttk.Scrollbar(top, orient="horizontal", command=tr.xview)
     xscrollbar.pack(side="bottom", fill="x")
     tr.configure(xscrollcommand=xscrollbar.set)
-    
+
     tr.pack(fill="both", expand=True)
 
     # Cột Tree (chứa Session Name)
@@ -1139,13 +1230,13 @@ def show_history_popup(app):
         tr.column(c, width=w, anchor="center")
 
     csv_path = "data/trade_history_master.csv"
-    
+
     def load_data():
         if not tr.winfo_exists():
             return
         for i in tr.get_children():
             tr.delete(i)
-            
+
         if not os.path.exists(csv_path):
             return
 
@@ -1154,24 +1245,26 @@ def show_history_popup(app):
             with open(csv_path, mode="r", encoding="utf-8") as f:
                 reader = csv.reader(f)
                 header = next(reader, None)
-                if not header: return
-                
+                if not header:
+                    return
+
                 records = list(reader)
                 for row in records:
-                    if len(row) < 14: continue # Format mới có 14 cột
+                    if len(row) < 14:
+                        continue  # Format mới có 14 cột
                     # row format: [Time, Ticket, Symbol, Type, Vol, Entry, SL, TP, Fee, PnL, Reason, Market Mode, Trigger, Session_ID]
                     session_id = row[13]
-                    
+
                     if session_id not in sessions:
                         sessions[session_id] = []
                     sessions[session_id].append(row)
-                    
+
             # Hiển thị Session mới nhất lên trên
             sorted_sessions = sorted(sessions.keys(), reverse=True)
-            
+
             for sid in sorted_sessions:
                 group_rows = sessions[sid]
-                
+
                 # Tính toán Thống kê Session
                 wins = 0
                 total_trades = 0
@@ -1179,38 +1272,83 @@ def show_history_popup(app):
                 sell_count = 0
                 total_pnl = 0.0
                 total_fee = 0.0
-                
+
                 for r in group_rows:
                     if len(r) >= 14:
-                        pnl_val = float(r[9]) if r[9].replace('.','',1).replace('-','',1).isdigit() else 0.0
-                        fee_val = float(r[8]) if r[8].replace('.','',1).replace('-','',1).isdigit() else 0.0
+                        pnl_val = (
+                            float(r[9])
+                            if r[9].replace(".", "", 1).replace("-", "", 1).isdigit()
+                            else 0.0
+                        )
+                        fee_val = (
+                            float(r[8])
+                            if r[8].replace(".", "", 1).replace("-", "", 1).isdigit()
+                            else 0.0
+                        )
                         total_pnl += pnl_val
                         total_fee += fee_val
-                        
-                        if pnl_val > 0: wins += 1
+
+                        if pnl_val > 0:
+                            wins += 1
                         total_trades += 1
-                        
-                        if r[3] == "BUY": buy_count += 1
-                        elif r[3] == "SELL": sell_count += 1
-                
+
+                        if r[3] == "BUY":
+                            buy_count += 1
+                        elif r[3] == "SELL":
+                            sell_count += 1
+
                 winrate = (wins / total_trades * 100) if total_trades > 0 else 0
-                
+
                 # Thêm Node Cha (Session)
                 node_text = f"Phiên: {sid}" if sid != "LEGACY" else "Phiên Cũ (Legacy)"
-                
+
                 # Hiển thị tóm tắt trên node cha
                 type_str = f"B:{buy_count} | S:{sell_count}"
                 win_str = f"W: {winrate:.1f}%"
                 fee_str = f"${total_fee:.2f}"
                 pnl_str = f"${total_pnl:.2f}"
-                
-                parent_id = tr.insert("", "end", text=node_text, values=("", "", "", type_str, win_str, "", "", "", fee_str, pnl_str, ""))
-                
+
+                parent_id = tr.insert(
+                    "",
+                    "end",
+                    text=node_text,
+                    values=(
+                        "",
+                        "",
+                        "",
+                        type_str,
+                        win_str,
+                        "",
+                        "",
+                        "",
+                        fee_str,
+                        pnl_str,
+                        "",
+                    ),
+                )
+
                 # Sắp xếp các lệnh trong phiên từ mới -> cũ
                 for row in reversed(group_rows):
                     if len(row) >= 14:
-                        tr.insert(parent_id, "end", text="", values=(row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10]))
-                
+                        tr.insert(
+                            parent_id,
+                            "end",
+                            text="",
+                            values=(
+                                row[0],
+                                row[1],
+                                row[2],
+                                row[3],
+                                row[4],
+                                row[5],
+                                row[6],
+                                row[7],
+                                row[8],
+                                row[9],
+                                row[10],
+                            ),
+                        )
+
                 # Tự động mở rộng phiên mới nhất
                 if sid == sorted_sessions[0]:
                     tr.item(parent_id, open=True)
@@ -1223,28 +1361,37 @@ def show_history_popup(app):
     # Thêm Context Menu để xóa Session
     def on_right_click(event):
         row_id = tr.identify_row(event.y)
-        if not row_id: return
-        
+        if not row_id:
+            return
+
         tr.selection_set(row_id)
-        
+
         # Kiểm tra xem có phải là Node cha (Session) không
         parent_node = tr.parent(row_id)
         if parent_node == "":  # Đây là node cha
             session_text = tr.item(row_id, "text")
-            session_id = session_text.replace("Phiên: ", "").replace("Phiên Cũ (Legacy)", "LEGACY")
-            
+            session_id = session_text.replace("Phiên: ", "").replace(
+                "Phiên Cũ (Legacy)", "LEGACY"
+            )
+
             menu = tk.Menu(top, tearoff=0, font=("Roboto", 11))
             menu.add_command(
                 label=f"🗑 Xóa Log Phiên [{session_id}]",
-                command=lambda: delete_session(session_id)
+                command=lambda: delete_session(session_id),
             )
             menu.post(event.x_root, event.y_root)
 
     def delete_session(session_id):
-        if messagebox.askyesno("Cảnh báo", f"Bạn có chắc muốn XÓA VĨNH VIỄN toàn bộ nhật ký của Phiên [{session_id}] không?"):
+        if messagebox.askyesno(
+            "Cảnh báo",
+            f"Bạn có chắc muốn XÓA VĨNH VIỄN toàn bộ nhật ký của Phiên [{session_id}] không?",
+        ):
             from core.storage_manager import delete_session_log
+
             delete_session_log(session_id)
-            app.log_message(f"🗑 Đã dọn dẹp log của phiên {session_id}.", target="manual")
+            app.log_message(
+                f"🗑 Đã dọn dẹp log của phiên {session_id}.", target="manual"
+            )
             load_data()  # Reload lại Treeview
 
     tr.bind("<Button-3>", on_right_click)
