@@ -139,6 +139,7 @@ BOT_SAFEGUARD = {
     "POST_CLOSE_COOLDOWN": 0,  # [NEW V4.4] Thời gian nghỉ nến sau SL (Giây)
     "CLOSE_ON_REVERSE_MIN_TIME": 180,  # [NEW V4.4] Min Hold Time cho REVERSE_CLOSE
     "DCA_PCA_COOLDOWN_SECONDS": 300,  # [NEW V4.4] Khoảng nghỉ giữa 2 lần nhồi (Giây)
+    "MIN_PNL_REVERSE": 0.0,         # Lọc PnL cho Rev_C
 }
 
 # ==============================================================================
@@ -160,6 +161,7 @@ TSL_CONFIG = {
     "PSAR_MAX": 0.2,
     "ANTI_CASH_USD": 10.0,  # [NEW V4.4] Ngưỡng cắt lỗ USD cứng
     "ANTI_CASH_TIME": 3600,  # [NEW V4.4] Thời gian âm tối đa (giây) - 1 Giờ
+    "ANTI_CASH_TIME_ENABLE": True,  # Bật/tắt Time Cut
 }
 
 # ==============================================================================

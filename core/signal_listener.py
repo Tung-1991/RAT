@@ -135,7 +135,7 @@ class SignalListener:
                     if "REVERSE_CLOSE" in tactic:
                         hold_time = time.time() - p.time
 
-                        # Đọc thông số chống nhiễu (Min Hold Time)
+                        # Đọc thông số chống nhiễu (Min Hold Time + Min PnL)
                         try:
                             cpath = os.path.join(
                                 getattr(config, "DATA_DIR", "data"),
@@ -148,12 +148,16 @@ class SignalListener:
                                         "CLOSE_ON_REVERSE_MIN_TIME", 180
                                     )
                                 )
+                                min_pnl_rev = float(b_set.get("bot_safeguard", {}).get("MIN_PNL_REVERSE", 0.0))
                         except Exception:
                             min_hold = 180.0
+                            min_pnl_rev = 0.0
 
-                        if hold_time >= min_hold:
+                        profit_usd = p.profit + p.swap + getattr(p, "commission", 0.0)
+
+                        if hold_time >= min_hold and profit_usd >= min_pnl_rev:
                             self.log_ui(
-                                f"🔄 [REVERSE TACTIC] Tín hiệu {action} -> Tự động chém lệnh ngược #{p.ticket} (Đã giữ: {hold_time:.0f}s)",
+                                f"  [REVERSE TACTIC] Đảo chiều {action} | PnL: ${profit_usd:.2f} -> Đóng lệnh #{p.ticket}",
                                 False,
                             )
 

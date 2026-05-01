@@ -777,6 +777,9 @@ def open_tsl_popup(app):
     e_anti_time.pack(side="right", padx=5)
     ctk.CTkLabel(f_anti_row, text="Time Cut (s):").pack(side="right")
 
+    var_anti_time_en = ctk.BooleanVar(value=config.TSL_CONFIG.get("ANTI_CASH_TIME_ENABLE", True))
+    ctk.CTkCheckBox(f_anti_row, text="Dùng Time", variable=var_anti_time_en, width=50).pack(side="right", padx=15)
+
     def save():
         try:
             config.TSL_CONFIG.update(
@@ -805,6 +808,7 @@ def open_tsl_popup(app):
                     "PSAR_MIN_RR": float(e_psar_min_rr.get()),
                     "ANTI_CASH_USD": float(e_anti_usd.get()),
                     "ANTI_CASH_TIME": int(e_anti_time.get()),
+                    "ANTI_CASH_TIME_ENABLE": var_anti_time_en.get(),
                 }
             )
             app.save_settings()

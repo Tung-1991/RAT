@@ -121,6 +121,9 @@ class TradeManager:
     # ====================================================================================
     def close_opposite_positions(self, symbol, new_direction, min_hold_time=180):
         bot_magic = getattr(config, "BOT_MAGIC_NUMBER", 9999)
+        safe_cfg = self._get_brain_settings().get("bot_safeguard", {})
+        min_pnl_rev = float(safe_cfg.get("MIN_PNL_REVERSE", 0.0))
+
         positions = [
             p
             for p in self.connector.get_all_open_positions()
@@ -136,9 +139,10 @@ class TradeManager:
         for p in positions:
             if p.type == opposite_type:
                 hold_time = now - p.time
-                if hold_time >= min_hold_time:
+                profit_usd = p.profit + p.swap + getattr(p, "commission", 0.0)
+                if hold_time >= min_hold_time and profit_usd >= min_pnl_rev:
                     self.log(
-                        f"🔄 [REVERSE] Tín hiệu đảo chiều ({new_direction})! Cắt lệnh #{p.ticket} (Hold: {hold_time:.0f}s)",
+                        f"  [REVERSE] Tín hiệu đảo chiều ({new_direction}) | PnL: ${profit_usd:.2f}! Cắt lệnh #{p.ticket} (Hold: {hold_time:.0f}s)",
                         target="bot",
                     )
                     self.state["exit_reasons"][str(p.ticket)] = (
@@ -154,7 +158,7 @@ class TradeManager:
                     closed_count += 1
                 else:
                     self.log(
-                        f"⏳ [REVERSE] Bỏ qua cắt đảo chiều lệnh #{p.ticket} do chưa đủ Min Hold Time ({hold_time:.0f}s < {min_hold_time}s)",
+                        f"⏳ [REVERSE] Bỏ qua cắt đảo chiều lệnh #{p.ticket} do chưa đủ điều kiện (Hold: {hold_time:.0f}s, PnL: ${profit_usd:.2f})",
                         target="bot",
                     )
 
@@ -855,17 +859,19 @@ class TradeManager:
             ).start()
             return
 
-        # Option 2: Time & Drawdown Cut
-        hold_time = time.time() - pos.time
-        if hold_time > time_cut_s and profit_usd < 0:
-            self.log(
-                f"⏳ [ANTI CASH] Quá Min Hold Time ({time_cut_s}s) và đang âm! Cắt lỗ lệnh #{pos.ticket}",
-                target="bot",
-            )
-            self.state["exit_reasons"][str(pos.ticket)] = "Anti_Cash_Time_Cut"
-            threading.Thread(
-                target=self.connector.close_position, args=(pos,), daemon=True
-            ).start()
+        # Option 2: Time & Drawdown Cut (Chỉ chạy nếu Enable)
+        time_enable = tsl_cfg.get("ANTI_CASH_TIME_ENABLE", True)
+        if time_enable:
+            hold_time = time.time() - pos.time
+            if hold_time > time_cut_s and profit_usd < 0:
+                self.log(
+                    f"  [ANTI CASH] Quá Min Hold Time ({time_cut_s}s) và đang âm! Cắt lệnh #{pos.ticket}",
+                    target="bot",
+                )
+                self.state["exit_reasons"][str(pos.ticket)] = "Anti_Cash_Time_Cut"
+                threading.Thread(
+                    target=self.connector.close_position, args=(pos,), daemon=True
+                ).start()
 
     def _check_recovery(self, pos, context):
         """[NEW V4.4] Close on Reverse (REV_C) logic"""
@@ -882,14 +888,16 @@ class TradeManager:
             is_reversed = True
 
         if is_reversed:
-            # Check Min Hold Time từ config bot_safeguard
             safe_cfg = self._get_brain_settings().get("bot_safeguard", {})
             min_hold = float(safe_cfg.get("CLOSE_ON_REVERSE_MIN_TIME", 180))
-            hold_time = time.time() - pos.time
+            min_pnl_rev = float(safe_cfg.get("MIN_PNL_REVERSE", 0.0))
 
-            if hold_time >= min_hold:
+            hold_time = time.time() - pos.time
+            profit_usd = pos.profit + pos.swap + getattr(pos, "commission", 0.0)
+
+            if hold_time >= min_hold and profit_usd >= min_pnl_rev:
                 self.log(
-                    f"🔄 [RECOVERY] Đảo chiều Signal ({'SELL' if is_buy else 'BUY'})! Đóng lệnh #{pos.ticket}",
+                    f"  [RECOVERY] Đảo chiều Signal ({'SELL' if is_buy else 'BUY'}) | PnL: ${profit_usd:.2f}! Đóng lệnh #{pos.ticket}",
                     target="bot",
                 )
                 self.state["exit_reasons"][str(pos.ticket)] = "Recovery_Close"

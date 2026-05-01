@@ -470,6 +470,14 @@ class BotStrategyUI(ctk.CTkToplevel):
         ctk.CTkEntry(
             f_rev_time, textvariable=self.var_rev_time, width=60, justify="center"
         ).pack(side="left", padx=5)
+
+        ctk.CTkLabel(f_rev_time, text="Min PnL ($):").pack(side="left", padx=(15, 0))
+        self.var_min_pnl_rev = ctk.StringVar(
+            value=str(safe_cfg.get("MIN_PNL_REVERSE", 0.0))
+        )
+        ctk.CTkEntry(
+            f_rev_time, textvariable=self.var_min_pnl_rev, width=60, justify="center"
+        ).pack(side="left", padx=5)
         # -------------------------------------------------------------
 
         f_base = ctk.CTkFrame(self.tab_risk, fg_color="transparent")
@@ -782,6 +790,7 @@ class BotStrategyUI(ctk.CTkToplevel):
             existing_data["bot_safeguard"]["CLOSE_ON_REVERSE_MIN_TIME"] = (
                 self.temp_rev_time
             )
+            existing_data["bot_safeguard"]["MIN_PNL_REVERSE"] = float(self.var_min_pnl_rev.get() or 0.0)
 
             with open(BRAIN_SETTINGS_PATH, "w", encoding="utf-8") as f:
                 json.dump(existing_data, f, indent=4)
