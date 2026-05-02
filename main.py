@@ -21,6 +21,27 @@ from core.checklist_manager import ChecklistManager
 from core.trade_manager import TradeManager
 from core.storage_manager import load_state, save_state
 from core.signal_listener import SignalListener
+import traceback
+
+def handle_exception(exc_type, exc_value, exc_traceback):
+    if issubclass(exc_type, KeyboardInterrupt):
+        sys.__excepthook__(exc_type, exc_value, exc_traceback)
+        return
+
+    logger = logging.getLogger("ExnessBot")
+    error_msg = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
+    logger.critical(f"💥 TOÀN BỘ HỆ THỐNG CRASH:\n{error_msg}")
+    
+    try:
+        os.makedirs("data/logs", exist_ok=True)
+        with open("data/logs/CRASH_REPORT.log", "a", encoding="utf-8") as f:
+            f.write(f"\n--- CRASH AT {datetime.now()} ---\n")
+            f.write(error_msg)
+            f.write("-" * 50 + "\n")
+    except:
+        pass
+
+sys.excepthook = handle_exception
 
 import ui_panels
 import ui_popups
@@ -1221,5 +1242,10 @@ if __name__ == "__main__":
     try:
         app = BotUI()
         app.mainloop()
+    except Exception as e:
+        logger = logging.getLogger("ExnessBot")
+        logger.critical(f"💥 Lỗi nghiêm trọng tại Main Loop: {e}")
+        traceback.print_exc()
+        sys.exit(1)
     except KeyboardInterrupt:
         sys.exit(0)

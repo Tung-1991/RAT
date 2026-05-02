@@ -136,26 +136,33 @@ class SignalListener:
                         hold_time = time.time() - p.time
 
                         # Đọc thông số chống nhiễu (Min Hold Time + Min PnL)
+                        min_hold = 180.0
+                        b_set = {}
                         try:
-                            cpath = os.path.join(
-                                getattr(config, "DATA_DIR", "data"),
-                                "brain_settings.json",
-                            )
-                            with open(cpath, "r", encoding="utf-8") as cf:
-                                b_set = json.load(cf)
-                                min_hold = float(
-                                    b_set.get("bot_safeguard", {}).get(
-                                        "CLOSE_ON_REVERSE_MIN_TIME", 180
-                                    )
-                                )
-                                min_pnl_rev = float(b_set.get("bot_safeguard", {}).get("MIN_PNL_REVERSE", 0.0))
+                            cpath = os.path.join(getattr(config, "DATA_DIR", "data"), "brain_settings.json")
+                            if os.path.exists(cpath):
+                                with open(cpath, "r", encoding="utf-8") as cf:
+                                    b_set = json.load(cf)
+                                    min_hold = float(b_set.get("bot_safeguard", {}).get("CLOSE_ON_REVERSE_MIN_TIME", 180))
                         except Exception:
-                            min_hold = 180.0
-                            min_pnl_rev = 0.0
+                            pass
 
                         profit_usd = p.profit + p.swap + getattr(p, "commission", 0.0)
 
-                        if hold_time >= min_hold and profit_usd >= min_pnl_rev:
+                        # [NEW V4.4] REFINED PNL CHECK
+                        pnl_ok = True
+                        if b_set.get("bot_safeguard", {}).get("CLOSE_ON_REVERSE_USE_PNL", True):
+                            min_profit = float(b_set.get("bot_safeguard", {}).get("REV_CLOSE_MIN_PROFIT", 0.0))
+                            max_loss = float(b_set.get("bot_safeguard", {}).get("REV_CLOSE_MAX_LOSS", 0.0))
+
+                            if profit_usd >= 0:
+                                if min_profit > 0 and profit_usd < min_profit:
+                                    pnl_ok = False
+                            else:
+                                if max_loss != 0 and profit_usd < max_loss:
+                                    pnl_ok = False
+
+                        if hold_time >= min_hold and pnl_ok:
                             self.log_ui(
                                 f"  [REVERSE TACTIC] Đảo chiều {action} | PnL: ${profit_usd:.2f} -> Đóng lệnh #{p.ticket}",
                                 False,
@@ -174,8 +181,9 @@ class SignalListener:
                                 daemon=True,
                             ).start()
                         else:
+                            reason = "HoldTime" if hold_time < min_hold else "PnL_Filter"
                             self.log_ui(
-                                f"⏳ [REVERSE TACTIC] Tín hiệu {action} nhưng giữ lệnh #{p.ticket} (Chưa đủ {min_hold}s chống nhiễu)",
+                                f"⏳ [REVERSE TACTIC] Tín hiệu {action} nhưng giữ lệnh #{p.ticket} ({reason} | PnL: ${profit_usd:.2f})",
                                 False,
                             )
         except Exception as e:

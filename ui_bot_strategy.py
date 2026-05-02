@@ -471,12 +471,30 @@ class BotStrategyUI(ctk.CTkToplevel):
             f_rev_time, textvariable=self.var_rev_time, width=60, justify="center"
         ).pack(side="left", padx=5)
 
-        ctk.CTkLabel(f_rev_time, text="Min PnL ($):").pack(side="left", padx=(15, 0))
-        self.var_min_pnl_rev = ctk.StringVar(
-            value=str(safe_cfg.get("MIN_PNL_REVERSE", 0.0))
+        self.var_close_rev_pnl = ctk.BooleanVar(
+            value=safe_cfg.get("CLOSE_ON_REVERSE_USE_PNL", True)
+        )
+        ctk.CTkCheckBox(
+            f_rev_time,
+            text="Use PnL Check",
+            variable=self.var_close_rev_pnl,
+            font=("Roboto", 12),
+        ).pack(side="left", padx=(15, 5))
+
+        ctk.CTkLabel(f_rev_time, text="Min Profit ($):").pack(side="left")
+        self.var_rev_profit = ctk.StringVar(
+            value=str(safe_cfg.get("REV_CLOSE_MIN_PROFIT", 0.0))
         )
         ctk.CTkEntry(
-            f_rev_time, textvariable=self.var_min_pnl_rev, width=60, justify="center"
+            f_rev_time, textvariable=self.var_rev_profit, width=50, justify="center"
+        ).pack(side="left", padx=5)
+
+        ctk.CTkLabel(f_rev_time, text="Max Loss ($):").pack(side="left", padx=(10, 0))
+        self.var_rev_loss = ctk.StringVar(
+            value=str(safe_cfg.get("REV_CLOSE_MAX_LOSS", 0.0))
+        )
+        ctk.CTkEntry(
+            f_rev_time, textvariable=self.var_rev_loss, width=50, justify="center"
         ).pack(side="left", padx=5)
         # -------------------------------------------------------------
 
@@ -790,7 +808,9 @@ class BotStrategyUI(ctk.CTkToplevel):
             existing_data["bot_safeguard"]["CLOSE_ON_REVERSE_MIN_TIME"] = (
                 self.temp_rev_time
             )
-            existing_data["bot_safeguard"]["MIN_PNL_REVERSE"] = float(self.var_min_pnl_rev.get() or 0.0)
+            existing_data["bot_safeguard"]["CLOSE_ON_REVERSE_USE_PNL"] = self.var_close_rev_pnl.get()
+            existing_data["bot_safeguard"]["REV_CLOSE_MIN_PROFIT"] = float(self.var_rev_profit.get() or 0.0)
+            existing_data["bot_safeguard"]["REV_CLOSE_MAX_LOSS"] = float(self.var_rev_loss.get() or 0.0)
 
             with open(BRAIN_SETTINGS_PATH, "w", encoding="utf-8") as f:
                 json.dump(existing_data, f, indent=4)

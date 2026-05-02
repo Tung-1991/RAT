@@ -122,7 +122,7 @@ class TradeManager:
     def close_opposite_positions(self, symbol, new_direction, min_hold_time=180):
         bot_magic = getattr(config, "BOT_MAGIC_NUMBER", 9999)
         safe_cfg = self._get_brain_settings().get("bot_safeguard", {})
-        min_pnl_rev = float(safe_cfg.get("MIN_PNL_REVERSE", 0.0))
+
 
         positions = [
             p
@@ -140,7 +140,21 @@ class TradeManager:
             if p.type == opposite_type:
                 hold_time = now - p.time
                 profit_usd = p.profit + p.swap + getattr(p, "commission", 0.0)
-                if hold_time >= min_hold_time and profit_usd >= min_pnl_rev:
+
+                # [NEW V4.4] REFINED PNL CHECK
+                pnl_ok = True
+                if safe_cfg.get("CLOSE_ON_REVERSE_USE_PNL", True):
+                    min_profit = float(safe_cfg.get("REV_CLOSE_MIN_PROFIT", 0.0))
+                    max_loss = float(safe_cfg.get("REV_CLOSE_MAX_LOSS", 0.0))
+
+                    if profit_usd >= 0:
+                        if min_profit > 0 and profit_usd < min_profit:
+                            pnl_ok = False
+                    else:
+                        if max_loss != 0 and profit_usd < max_loss: # Ví dụ: -15 < -10 -> False
+                            pnl_ok = False
+
+                if hold_time >= min_hold_time and pnl_ok:
                     self.log(
                         f"  [REVERSE] Tín hiệu đảo chiều ({new_direction}) | PnL: ${profit_usd:.2f}! Cắt lệnh #{p.ticket} (Hold: {hold_time:.0f}s)",
                         target="bot",
@@ -157,8 +171,9 @@ class TradeManager:
                     ).start()
                     closed_count += 1
                 else:
+                    reason = "HoldTime" if hold_time < min_hold_time else "PnL_Filter"
                     self.log(
-                        f"⏳ [REVERSE] Bỏ qua cắt đảo chiều lệnh #{p.ticket} do chưa đủ điều kiện (Hold: {hold_time:.0f}s, PnL: ${profit_usd:.2f})",
+                        f"⏳ [REVERSE] Bỏ qua cắt đảo chiều lệnh #{p.ticket} ({reason} | Hold: {hold_time:.0f}s, PnL: ${profit_usd:.2f})",
                         target="bot",
                     )
 
@@ -712,7 +727,12 @@ class TradeManager:
                                     last_rule = self.state.get("last_tsl_rules", {}).get(s_ticket)
                                     exit_reason = f"SL_{last_rule}" if last_rule else "Hit_SL"
                                 elif deal_reason == mt5.DEAL_REASON_TP:
-                                    exit_reason = "Hit_TP"
+                                    # [NEW] Kiểm tra nếu là lệnh thuộc rổ DCA/PCA
+                                    is_basket = (
+                                        s_ticket in self.state.get("child_to_parent", {}) or 
+                                        s_ticket in self.state.get("parent_baskets", {})
+                                    )
+                                    exit_reason = "Basket_TP" if is_basket else "Hit_TP"
                                 elif deal_reason == mt5.DEAL_REASON_SO:
                                     exit_reason = "Stop_Out"
                                 elif deal_reason == mt5.DEAL_REASON_CLIENT:

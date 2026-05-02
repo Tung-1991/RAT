@@ -143,7 +143,9 @@ BOT_SAFEGUARD = {
     "POST_CLOSE_COOLDOWN": 0,  # [NEW V4.4] Thời gian nghỉ nến sau SL (Giây)
     "CLOSE_ON_REVERSE_MIN_TIME": 180,  # [NEW V4.4] Min Hold Time cho REVERSE_CLOSE
     "DCA_PCA_COOLDOWN_SECONDS": 300,  # [NEW V4.4] Khoảng nghỉ giữa 2 lần nhồi (Giây)
-    "MIN_PNL_REVERSE": 0.0,         # Lọc PnL cho Rev_C
+    "CLOSE_ON_REVERSE_USE_PNL": True, # [NEW V4.4] Bật/Tắt kiểm tra PnL khi đảo chiều
+    "REV_CLOSE_MIN_PROFIT": 0.0,      # Chỉ đảo khi lãi ít nhất X (0 = ko tính)
+    "REV_CLOSE_MAX_LOSS": 0.0,        # Chỉ đảo khi lỗ ko quá Y (âm, ví dụ -10, 0 = ko tính)
 }
 
 # ==============================================================================
