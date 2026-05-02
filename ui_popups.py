@@ -1321,7 +1321,9 @@ def show_history_popup(app):
         tr.heading(c, text=c)
         tr.column(c, width=w, anchor="center")
 
-    csv_path = "data/trade_history_master.csv"
+    from core.storage_manager import MASTER_LOG_FILE
+    csv_path = MASTER_LOG_FILE
+
 
     def load_data():
         if not tr.winfo_exists():
