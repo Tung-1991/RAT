@@ -5,35 +5,44 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process
 
 ###
 @echo off
+setlocal enabledelayedexpansion
+
 :: Di chuyển vào thư mục dự án
 cd /d "C:\Users\Administrator\Downloads\RAT"
 
-:: Xử lý thư mục data: Giữ lại file và các thư mục chỉ định
+:: --- QUY TRÌNH RESET SESSION & DỌN DẸP THÔNG MINH ---
 if exist "data" (
-    echo [INFO] Dang bao ton du lieu, logs va templates...
-    if exist "temp_hold" rd /s /q "temp_hold"
-    mkdir "temp_hold"
+    echo [INFO] Dang tu dong Reset Session cho tat ca cac Account...
     
-    :: Di chuyển các file lẻ
-    if exist "data\brain_settings.json" move "data\brain_settings.json" "temp_hold\" >nul
-    if exist "data\trade_history_master.csv" move "data\trade_history_master.csv" "temp_hold\" >nul
-    
-    :: Di chuyển các thư mục (logs và templates)
-    if exist "data\logs" move "data\logs" "temp_hold\" >nul
-    if exist "data\templates" move "data\templates" "temp_hold\" >nul
-    
-    :: Xoá sạch các file/thư mục rác còn lại trong data
-    rd /s /q "data"
-    
-    :: Khôi phục lại cấu trúc ban đầu
-    mkdir "data"
-    move "temp_hold\*" "data\" >nul
-    
-    :: Dọn dẹp thư mục tạm
-    rd /s /q "temp_hold"
+    :: Quét qua từng thư mục ID Account
+    for /d %%d in ("data\*") do (
+        set "dirname=%%~nxd"
+        
+        :: Bỏ qua thư mục hệ thống
+        if /i "!dirname!" neq "logs" if /i "!dirname!" neq "templates" (
+            pushd "%%d"
+            
+            :: 1. XOÁ CÁC FILE TRẠNG THÁI (Để Reset Safeguard/Daily Stats)
+            if exist "bot_state.json" del /q "bot_state.json"
+            if exist "live_signals.json" del /q "live_signals.json"
+            if exist "current_signal_state.json" del /q "current_signal_state.json"
+            
+            :: 2. XOÁ CÁC FILE TẠM (.tmp, .bak, .log)
+            del /q *.tmp >nul 2>&1
+            del /q *.bak >nul 2>&1
+            
+            :: 3. GIỮ LẠI (Bằng cách không xoá): 
+            :: - brain_settings.json (Cấu hình Mẹ)
+            :: - symbol_overrides.json (Cấu hình Con)
+            :: - *.csv (Lịch sử giao dịch)
+            
+            popd
+            echo [SUCCESS] Da Reset trang thai cho Account: !dirname!
+        )
+    )
 )
 
-:: Quét và xoá toàn bộ thư mục __pycache__
+:: Quét và xoá __pycache__
 echo [INFO] Dang don dep cac thu muc __pycache__...
 for /d /r . %%d in (__pycache__) do @if exist "%%d" rd /s /q "%%d"
 
@@ -42,13 +51,9 @@ echo [INFO] Dang kiem tra va cap nhat code tu Git...
 git fetch origin
 git reset --hard origin/main
 
-:: Kích hoạt môi trường ảo
-echo [INFO] Dang kich hoat moi truong ao...
+:: Khởi chạy Bot
+echo [INFO] Dang khoi chay Bot...
 call ratvenv\Scripts\activate.bat
-
-:: Khởi chạy file Python
-echo [INFO] Bot dang khoi chay...
 python main.py
 
-:: Giữ cửa sổ CMD
 pause
