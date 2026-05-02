@@ -7,38 +7,42 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process
 @echo off
 setlocal enabledelayedexpansion
 
-:: Di chuyển vào thư mục dự án
-cd /d "C:\Users\Administrator\Downloads\RAT"
+:: 1. Chuyển vào thư mục chứa chính file script này (đảm bảo đường dẫn tương đối đúng)
+cd /d "%~dp0"
 
 :: --- QUY TRÌNH RESET SESSION & DỌN DẸP THÔNG MINH ---
 if exist "data" (
     echo [INFO] Dang tu dong Reset Session cho tat ca cac Account...
     
-    :: Quét qua từng thư mục ID Account
+    :: Quét qua từng thư mục con trong data
     for /d %%d in ("data\*") do (
+        set "dirpath=%%~fd"
         set "dirname=%%~nxd"
         
-        :: Bỏ qua thư mục hệ thống
-        if /i "!dirname!" neq "logs" if /i "!dirname!" neq "templates" (
-            pushd "%%d"
-            
-            :: 1. XOÁ CÁC FILE TRẠNG THÁI (Để Reset Safeguard/Daily Stats)
+        :: Kiểm tra bỏ qua thư mục hệ thống (Dùng nhãn để chắc chắn)
+        if /i "!dirname!"=="logs" goto :continue
+        if /i "!dirname!"=="templates" goto :continue
+        
+        :: Thực hiện dọn dẹp cho Account ID
+        pushd "!dirpath!" >nul 2>&1
+        if !errorlevel! equ 0 (
+            :: A. XOÁ CÁC FILE TRẠNG THÁI (Reset Safeguard)
             if exist "bot_state.json" del /q "bot_state.json"
             if exist "live_signals.json" del /q "live_signals.json"
             if exist "current_signal_state.json" del /q "current_signal_state.json"
             
-            :: 2. XOÁ CÁC FILE TẠM (.tmp, .bak, .log)
+            :: B. XOÁ FILE TẠM
             del /q *.tmp >nul 2>&1
             del /q *.bak >nul 2>&1
             
-            :: 3. GIỮ LẠI (Bằng cách không xoá): 
-            :: - brain_settings.json (Cấu hình Mẹ)
-            :: - symbol_overrides.json (Cấu hình Con)
-            :: - *.csv (Lịch sử giao dịch)
-            
             popd
             echo [SUCCESS] Da Reset trang thai cho Account: !dirname!
+        ) else (
+            echo [ERROR] Khong the truy cap vao Account: !dirname!
         )
+
+        :continue
+        nop
     )
 )
 
@@ -53,6 +57,7 @@ git reset --hard origin/main
 
 :: Khởi chạy Bot
 echo [INFO] Dang khoi chay Bot...
+:: [LƯU Ý] Nếu chạy trên CMD, dùng dòng dưới. Nếu chạy PowerShell thì bỏ .bat
 call ratvenv\Scripts\activate.bat
 python main.py
 
