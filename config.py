@@ -353,7 +353,10 @@ SANDBOX_CONFIG = {
             "is_trend": True,
             "macro_role": "BREAKOUT",
             "active_modes": ["ANY"],
-            "params": {},
+            "params": {
+                "lookback": 1,
+                "buffer_points": 0.0
+            },
             "trigger_mode": "STRICT_CLOSE",
         },
     },
