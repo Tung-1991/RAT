@@ -131,6 +131,20 @@ class StandaloneBotDaemon:
 
         while self.running:
             try:
+                acc_info = self.connector.get_account_info()
+                if acc_info is None:
+                    self.connector._is_connected = False
+                    self.connector.connect()
+                    acc_info = self.connector.get_account_info()
+                    
+                if acc_info:
+                    import core.storage_manager as storage_manager
+                    current_acc_id = str(acc_info['login'])
+                    if current_acc_id != storage_manager._active_account_id:
+                        storage_manager.set_active_account(current_acc_id)
+                        update_daemon_paths(current_acc_id)
+                        logger.info(f"🔄 Daemon phát hiện đổi MT5 sang {current_acc_id}. Đã cập nhật Workspace.")
+                        
                 live_cfg = self._read_live_config()
                 bot_active = live_cfg.get(
                     "BOT_ACTIVE",

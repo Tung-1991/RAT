@@ -16,11 +16,13 @@ SYMBOL_OVERRIDES_FILE = "data/symbol_overrides.json"
 SYSTEM_META_FILE = "data/system_meta.json"
 
 _active_account_dir = "data"
+_active_account_id = None
 
 def set_active_account(account_id: str):
-    global _active_account_dir
+    global _active_account_dir, _active_account_id
     global STATE_FILE, BRAIN_FILE, HISTORY_FILE, MASTER_LOG_FILE, SYMBOL_OVERRIDES_FILE, SYSTEM_META_FILE
     
+    _active_account_id = str(account_id)
     _active_account_dir = os.path.join("data", str(account_id))
     os.makedirs(_active_account_dir, exist_ok=True)
     

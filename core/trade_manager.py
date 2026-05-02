@@ -279,6 +279,10 @@ class TradeManager:
         sym_cfgs = brain.get("symbol_configs", {}).get(symbol, {})
         fixed_lot = float(sym_cfgs.get("fixed_lot", 0.0))
         strict_min_lot = safeguard_cfg.get("STRICT_MIN_LOT", False)
+        
+        vol_min = sym_info.volume_min if sym_info else getattr(config, "MIN_LOT_SIZE", 0.01)
+        vol_max = sym_info.volume_max if sym_info else getattr(config, "MAX_LOT_SIZE", 200.0)
+        vol_step = sym_info.volume_step if sym_info else getattr(config, "LOT_STEP", 0.01)
 
         if parent_pos and signal_class in ["DCA", "PCA"]:
             cfg_key = "dca_config" if signal_class == "DCA" else "pca_config"
@@ -286,10 +290,8 @@ class TradeManager:
                 cfg_key, getattr(config, f"{signal_class}_CONFIG", {})
             ).get("STEP_MULTIPLIER", 1.5)
             raw_lot = parent_pos.volume * mult
-            lot_size = round(raw_lot / getattr(config, "LOT_STEP", 0.01)) * getattr(
-                config, "LOT_STEP", 0.01
-            )
-            lot_size = max(config.MIN_LOT_SIZE, min(lot_size, config.MAX_LOT_SIZE))
+            lot_size = round(raw_lot / vol_step) * vol_step
+            lot_size = max(vol_min, min(lot_size, vol_max))
 
         elif fixed_lot > 0:
             lot_size = fixed_lot

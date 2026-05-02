@@ -34,8 +34,7 @@ class BotStrategyUI(ctk.CTkToplevel):
         self.title(title_str)
         self.geometry("1150x800")
         self.attributes("-topmost", True)
-        if master:
-            self.transient(master)  # Luôn nổi trên UI gọi nó
+        self.resizable(True, True)  # Khôi phục tính năng co giãn/phóng to
         if symbol:
             self.grab_set()         # Modal: Khóa UI mẹ khi đang chỉnh UI con
         self.focus_force()

@@ -453,9 +453,40 @@ class BotUI(ctk.CTk):
                 self.tsl_states_map.update(new_map)
 
                 acc = self.connector.get_account_info()
-                tick = mt5.symbol_info_tick(sym)
                 
                 import core.storage_manager as storage_manager
+                
+                # [FIX V6.9.5] Nếu mất kết nối hoặc đang Swap tài khoản trên MT5 -> Ép reconnect
+                if acc is None:
+                    self.connector._is_connected = False
+                    self.connector.connect()
+                    acc = self.connector.get_account_info()
+                    
+                if acc:
+                    current_acc_id = str(acc['login'])
+                    if current_acc_id != storage_manager._active_account_id:
+                        storage_manager.set_active_account(current_acc_id)
+                        self.log_message(f"🔄 MT5 ĐỔI TÀI KHOẢN SANG {current_acc_id}. ĐANG TỰ ĐỘNG CHUYỂN SINH WORKSPACE...", target="bot")
+                        
+                        # Cập nhật biến global
+                        global TSL_SETTINGS_FILE, PRESETS_FILE, BRAIN_SETTINGS_FILE
+                        TSL_SETTINGS_FILE = os.path.join(storage_manager._active_account_dir, "tsl_settings.json")
+                        PRESETS_FILE = os.path.join(storage_manager._active_account_dir, "presets_config.json")
+                        BRAIN_SETTINGS_FILE = storage_manager.BRAIN_FILE
+                        
+                        # Reset State
+                        self.trade_mgr.state = {
+                            "starting_balance": 0, "pnl_today": 0.0, "trades_today_count": 0,
+                            "manual_daily_loss_count": 0, "bot_pnl_today": 0.0,
+                            "bot_trades_today": 0, "bot_daily_loss_count": 0,
+                            "trade_tactics": {}, "cooldown_until": 0.0,
+                            "bot_last_entry_times": {}, "last_close_times": {}
+                        }
+                        
+                        # Reload config trên UI thread
+                        self.after(100, self.load_settings)
+
+                tick = mt5.symbol_info_tick(sym)
                 magics = storage_manager.get_magic_numbers()
                 bot_magic = magics.get("bot_magic", 9999)
                 manual_magic = magics.get("manual_magic", 8888)
@@ -478,8 +509,10 @@ class BotUI(ctk.CTk):
                     sym,
                     pos,
                 )
-            except:
-                pass
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                print(f"[BG_LOOP ERROR] {e}")
             time.sleep(config.LOOP_SLEEP_SECONDS)
 
     def update_ui(self, acc, state, check_res, tick, preset, sym, positions):
@@ -582,6 +615,7 @@ class BotUI(ctk.CTk):
         # FEE label sẽ được cập nhật sau vòng lặp positions (cần data lệnh đang mở)
 
         cur_price, c_size, point = 0.0, 1.0, 0.00001
+        vol_min, vol_max, vol_step = config.MIN_LOT_SIZE, config.MAX_LOT_SIZE, getattr(config, "LOT_STEP", 0.01)
         if tick:
             cur_price = tick.ask if d == "BUY" else tick.bid
             self.lbl_dashboard_price.configure(
@@ -592,6 +626,7 @@ class BotUI(ctk.CTk):
             s_info = mt5.symbol_info(sym)
             if s_info:
                 c_size, point = s_info.trade_contract_size, s_info.point
+                vol_min, vol_max, vol_step = s_info.volume_min, s_info.volume_max, s_info.volume_step
 
         for item in check_res["checks"]:
             name, stt, msg = item["name"], item["status"], item["msg"]
@@ -697,13 +732,13 @@ class BotUI(ctk.CTk):
                 loss_per_lot = active_sl_dist * c_size
                 if (loss_per_lot + strict_fee) > 0:
                     raw_calc = risk_usd / (loss_per_lot + strict_fee)
-                    f_lot = round(raw_calc / config.LOT_STEP) * config.LOT_STEP
+                    f_lot = round(raw_calc / vol_step) * vol_step
 
-            if f_lot < config.MIN_LOT_SIZE:
-                self.lbl_prev_lot.configure(text=f"LOT: KHÔNG HỢP LỆ (Min {config.MIN_LOT_SIZE})", text_color=COL_RED)
-                f_lot = config.MIN_LOT_SIZE
+            if f_lot < vol_min:
+                self.lbl_prev_lot.configure(text=f"LOT: KHÔNG HỢP LỆ (Min {vol_min})", text_color=COL_RED)
+                f_lot = vol_min
             else:
-                f_lot = min(f_lot, config.MAX_LOT_SIZE)
+                f_lot = min(f_lot, vol_max)
                 self.lbl_prev_lot.configure(
                     text=f"{'(TAY)' if mlot > 0 else '(TỰ ĐỘNG)'} VOL: {f_lot:.2f}",
                     text_color="white" if mlot == 0 else "#FFD700",

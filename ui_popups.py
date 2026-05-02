@@ -670,7 +670,7 @@ def open_tsl_popup(app, override_symbol=None):
     top.title(title)
     top.geometry("450x700")
     top.attributes("-topmost", True)
-    top.transient(app)  # Đảm bảo luôn nổi trên app chính
+    top.resizable(True, True)  # Khôi phục tính năng co giãn/phóng to
     if override_symbol:
         top.grab_set()  # Modal: Không cho chạm vào UI mẹ khi đang chỉnh UI con
 
