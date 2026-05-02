@@ -24,12 +24,12 @@ COIN_LIST = [
 DEFAULT_SYMBOL = "ETHUSD"
 BOT_ACTIVE_SYMBOLS = ["ETHUSD"]
 
-MANUAL_MAGIC_NUMBER = 8888
-BOT_MAGIC_NUMBER = 9999
+# MANUAL_MAGIC_NUMBER = 8888  # [DEPRECATED] Quản lý động qua system_meta.json
+# BOT_MAGIC_NUMBER = 9999     # [DEPRECATED] Quản lý động qua system_meta.json
 
 LOOP_SLEEP_SECONDS = 0.25
 RESET_HOUR = 6
-DATA_DIR = "data"
+# DATA_DIR = "data"           # [DEPRECATED] Quản lý động qua storage_manager
 STRICT_MODE_DEFAULT = True
 MAX_PING_MS = 150
 MAX_SPREAD_POINTS = 150

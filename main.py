@@ -49,6 +49,8 @@ import ui_popups
 # [V3.0] Import giao diện Strategy Sandbox
 from ui_bot_strategy import BotStrategyUI
 
+# [V6.9.4] Paths giờ được đọc động từ storage_manager sau khi set_active_account
+# Khai báo tạm thời, sẽ được cập nhật trong __init__ sau khi biết Account ID
 TSL_SETTINGS_FILE = "data/tsl_settings.json"
 PRESETS_FILE = "data/presets_config.json"
 BRAIN_SETTINGS_FILE = "data/brain_settings.json"
@@ -129,11 +131,29 @@ class BotUI(ctk.CTk):
 
         self.daemon_process = None
 
+        # [MODIFIED V6.9.4] Kết nối MT5 TRƯỚC để lấy ID -> Setup Workspace -> Mới Load Setting
+        self.connector = ExnessConnector()
+        self.connector.connect()
+        
+        acc_info = self.connector.get_account_info()
+        if acc_info:
+            import core.storage_manager as storage_manager
+            storage_manager.set_active_account(acc_info['login'])
+            
+            # [V6.9.4] Cập nhật lại đường dẫn file cho đúng thư mục workspace
+            global TSL_SETTINGS_FILE, PRESETS_FILE, BRAIN_SETTINGS_FILE
+            acc_dir = storage_manager._active_account_dir
+            TSL_SETTINGS_FILE = os.path.join(acc_dir, "tsl_settings.json")
+            PRESETS_FILE = os.path.join(acc_dir, "presets_config.json")
+            BRAIN_SETTINGS_FILE = os.path.join(acc_dir, "brain_settings.json")
+            
+            self.log_message(f"✅ Đã tải Workspace cho tài khoản: {acc_info['login']}")
+        else:
+            self.log_message("⚠️ Không thể xác định Account ID. Dùng Workspace mặc định.", error=True)
+
         self.load_settings()
         setattr(config, "UI_ACTIVE_SYMBOL", config.DEFAULT_SYMBOL)
 
-        self.connector = ExnessConnector()
-        self.connector.connect()
         self.checklist_mgr = ChecklistManager(self.connector)
         self.trade_mgr = TradeManager(
             self.connector, self.checklist_mgr, log_callback=self.log_message
@@ -199,7 +219,7 @@ class BotUI(ctk.CTk):
         sys.exit(0)
 
     def _save_brain_live_config(self):
-        os.makedirs("data", exist_ok=True)
+        os.makedirs(os.path.dirname(BRAIN_SETTINGS_FILE), exist_ok=True)
 
         # 1. Đọc dữ liệu JSON hiện tại (để giữ lại cấu hình Sandbox)
         existing_data = {}
@@ -400,7 +420,7 @@ class BotUI(ctk.CTk):
 
     def save_settings(self):
         try:
-            os.makedirs("data", exist_ok=True)
+            os.makedirs(os.path.dirname(TSL_SETTINGS_FILE), exist_ok=True)
             with open(TSL_SETTINGS_FILE, "w") as f:
                 json.dump(config.TSL_CONFIG, f, indent=4)
             with open(PRESETS_FILE, "w") as f:
@@ -434,8 +454,12 @@ class BotUI(ctk.CTk):
 
                 acc = self.connector.get_account_info()
                 tick = mt5.symbol_info_tick(sym)
-                bot_magic = getattr(config, "BOT_MAGIC_NUMBER", 9999)
-                manual_magic = getattr(config, "MANUAL_MAGIC_NUMBER", 8888)
+                
+                import core.storage_manager as storage_manager
+                magics = storage_manager.get_magic_numbers()
+                bot_magic = magics.get("bot_magic", 9999)
+                manual_magic = magics.get("manual_magic", 8888)
+                
                 pos = [
                     p
                     for p in self.connector.get_all_open_positions()

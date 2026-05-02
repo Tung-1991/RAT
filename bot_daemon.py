@@ -19,14 +19,19 @@ from core.logger_setup import setup_logging  # [NEW V4.3] Import hệ thống Lo
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] [DAEMON] %(message)s")
 logger = logging.getLogger("BotDaemon")
 
-SIGNAL_FILE = os.path.join(getattr(config, "DATA_DIR", "data"), "live_signals.json")
+SIGNAL_FILE = "data/live_signals.json"
 SIGNAL_FILE_TMP = SIGNAL_FILE + ".tmp"
-BRAIN_SETTINGS_FILE = os.path.join(
-    getattr(config, "DATA_DIR", "data"), "brain_settings.json"
-)
-DEBUG_STATE_FILE = os.path.join(
-    getattr(config, "DATA_DIR", "data"), "current_signal_state.json"
-)
+BRAIN_SETTINGS_FILE = "data/brain_settings.json"
+DEBUG_STATE_FILE = "data/current_signal_state.json"
+
+def update_daemon_paths(account_id: str):
+    global SIGNAL_FILE, SIGNAL_FILE_TMP, BRAIN_SETTINGS_FILE, DEBUG_STATE_FILE
+    base_dir = os.path.join("data", str(account_id))
+    os.makedirs(base_dir, exist_ok=True)
+    SIGNAL_FILE = os.path.join(base_dir, "live_signals.json")
+    SIGNAL_FILE_TMP = SIGNAL_FILE + ".tmp"
+    BRAIN_SETTINGS_FILE = os.path.join(base_dir, "brain_settings.json")
+    DEBUG_STATE_FILE = os.path.join(base_dir, "current_signal_state.json")
 
 
 class StandaloneBotDaemon:
@@ -35,6 +40,14 @@ class StandaloneBotDaemon:
         self.connector = ExnessConnector()
         if not self.connector.connect():
             logger.error("Không thể kết nối MT5. Daemon sẽ dừng.")
+            return
+
+        acc_info = self.connector.get_account_info()
+        if acc_info:
+            import core.storage_manager as storage_manager
+            storage_manager.set_active_account(acc_info['login'])
+            update_daemon_paths(acc_info['login'])
+            logger.info(f"✅ Daemon đã thiết lập Workspace cho tài khoản: {acc_info['login']}")
 
         self.dca_pca_interval = 2
         self.last_dca_pca_scan = 0
@@ -212,7 +225,9 @@ class StandaloneBotDaemon:
         if not positions:
             return
 
-        bot_magic = getattr(config, "BOT_MAGIC_NUMBER", 9999)
+        import core.storage_manager as storage_manager
+        magics = storage_manager.get_magic_numbers()
+        bot_magic = magics.get("bot_magic", 9999)
         bot_positions = {}
         for pos in positions:
             if pos.magic == bot_magic:

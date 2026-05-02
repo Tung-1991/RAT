@@ -331,7 +331,8 @@ class ExnessConnector:
 
                 strict_min_lot = False
                 try:
-                    _cpath = os.path.join("data", "brain_settings.json")
+                    import core.storage_manager as storage_manager
+                    _cpath = storage_manager.BRAIN_FILE
                     if os.path.exists(_cpath):
                         with open(_cpath, "r", encoding="utf-8") as _f:
                             strict_min_lot = (

@@ -12,6 +12,77 @@ STATE_FILE = "data/bot_state.json"
 BRAIN_FILE = "data/brain_settings.json"
 HISTORY_FILE = "data/trade_history_log.csv" 
 MASTER_LOG_FILE = "data/trade_history_master.csv"
+SYMBOL_OVERRIDES_FILE = "data/symbol_overrides.json"
+SYSTEM_META_FILE = "data/system_meta.json"
+
+_active_account_dir = "data"
+
+def set_active_account(account_id: str):
+    global _active_account_dir
+    global STATE_FILE, BRAIN_FILE, HISTORY_FILE, MASTER_LOG_FILE, SYMBOL_OVERRIDES_FILE, SYSTEM_META_FILE
+    
+    _active_account_dir = os.path.join("data", str(account_id))
+    os.makedirs(_active_account_dir, exist_ok=True)
+    
+    STATE_FILE = os.path.join(_active_account_dir, "bot_state.json")
+    BRAIN_FILE = os.path.join(_active_account_dir, "brain_settings.json")
+    HISTORY_FILE = os.path.join(_active_account_dir, "trade_history_log.csv")
+    MASTER_LOG_FILE = os.path.join(_active_account_dir, "trade_history_master.csv")
+    SYMBOL_OVERRIDES_FILE = os.path.join(_active_account_dir, "symbol_overrides.json")
+    SYSTEM_META_FILE = os.path.join(_active_account_dir, "system_meta.json")
+    
+    invalidate_settings_cache()
+
+def get_magic_numbers() -> Dict[str, int]:
+    """
+    Đọc system_meta.json để lấy cặp MagicNumber. Nếu chưa có, tạo mới không trùng lặp.
+    """
+    import random
+    
+    if os.path.exists(SYSTEM_META_FILE):
+        try:
+            with open(SYSTEM_META_FILE, "r") as f:
+                data = json.load(f)
+                if "bot_magic" in data and "manual_magic" in data:
+                    return data
+        except:
+            pass
+
+    # Quét toàn bộ data/ để tìm các Magic Number đã dùng
+    used_magics = set()
+    if os.path.exists("data"):
+        for folder in os.listdir("data"):
+            meta_path = os.path.join("data", folder, "system_meta.json")
+            if os.path.exists(meta_path):
+                try:
+                    with open(meta_path, "r") as f:
+                        d = json.load(f)
+                        if "bot_magic" in d: used_magics.add(int(d["bot_magic"]))
+                        if "manual_magic" in d: used_magics.add(int(d["manual_magic"]))
+                except:
+                    pass
+
+    # Sinh 2 số mới
+    def generate_unique():
+        while True:
+            m = random.randint(1000, 99999)
+            if m not in used_magics:
+                used_magics.add(m)
+                return m
+
+    new_bot_magic = generate_unique()
+    new_manual_magic = generate_unique()
+    
+    meta_data = {
+        "bot_magic": new_bot_magic,
+        "manual_magic": new_manual_magic
+    }
+    
+    os.makedirs(_active_account_dir, exist_ok=True)
+    with open(SYSTEM_META_FILE, "w") as f:
+        json.dump(meta_data, f, indent=4)
+        
+    return meta_data
 
 # ==================== IN-MEMORY CACHE (TTL 2s) ====================
 _cache_brain = {"data": None, "ts": 0.0}        # Cache brain_settings.json
@@ -279,7 +350,7 @@ def save_brain_settings(data: Dict[str, Any]):
 # =====================================================================
 # [NEW V4.4] SYMBOL OVERRIDES (MẸ - CON)
 # =====================================================================
-SYMBOL_OVERRIDES_FILE = "data/symbol_overrides.json"
+# SYMBOL_OVERRIDES_FILE is now dynamically updated in set_active_account
 
 def load_symbol_overrides() -> Dict[str, Any]:
     try:

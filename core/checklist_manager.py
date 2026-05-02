@@ -144,8 +144,10 @@ class ChecklistManager:
 
         # 6. Open Position Check
         positions = self.connector.get_all_open_positions()
-        bot_magic = getattr(config, "BOT_MAGIC_NUMBER", 9999)
-        manual_magic = getattr(config, "MANUAL_MAGIC_NUMBER", 8888)
+        import core.storage_manager as storage_manager
+        magics = storage_manager.get_magic_numbers()
+        bot_magic = magics.get("bot_magic", 9999)
+        manual_magic = magics.get("manual_magic", 8888)
         my_pos = [p for p in positions if p.magic in (bot_magic, manual_magic)]
 
         try:
@@ -185,10 +187,9 @@ class ChecklistManager:
 
         # [NEW] Đọc cấu hình riêng lẻ của từng cặp tiền (nếu có)
         import json, os
+        import core.storage_manager as storage_manager
 
-        cfg_path = os.path.join(
-            getattr(config, "DATA_DIR", "data"), "brain_settings.json"
-        )
+        cfg_path = storage_manager.BRAIN_FILE
         try:
             if os.path.exists(cfg_path):
                 with open(cfg_path, "r", encoding="utf-8") as f:
@@ -306,7 +307,9 @@ class ChecklistManager:
             all_passed = False
 
         positions = self.connector.get_all_open_positions()
-        bot_magic = getattr(config, "BOT_MAGIC_NUMBER", 9999)
+        import core.storage_manager as storage_manager
+        magics = storage_manager.get_magic_numbers()
+        bot_magic = magics.get("bot_magic", 9999)
         all_bot_pos = [p for p in positions if p.magic == bot_magic]
 
         # [KAISER FIX] Chỉ đếm các lệnh Gốc (ENTRY), bỏ qua lệnh con (DCA/PCA) khi check giới hạn

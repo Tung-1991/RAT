@@ -12,7 +12,22 @@ from typing import Callable, Any
 import config
 
 logger = logging.getLogger("SignalListener")
-SIGNAL_FILE = os.path.join(getattr(config, "DATA_DIR", "data"), "live_signals.json")
+
+def _get_signal_file():
+    """Lấy đường dẫn live_signals.json động theo Account Workspace."""
+    try:
+        import core.storage_manager as sm
+        return os.path.join(sm._active_account_dir, "live_signals.json")
+    except:
+        return os.path.join("data", "live_signals.json")
+
+def _get_brain_file():
+    """Lấy đường dẫn brain_settings.json động theo Account Workspace."""
+    try:
+        import core.storage_manager as sm
+        return sm.BRAIN_FILE
+    except:
+        return os.path.join("data", "brain_settings.json")
 
 
 class SignalListener:
@@ -65,14 +80,15 @@ class SignalListener:
     def _listen_loop(self):
         while self.running:
             try:
-                if not os.path.exists(SIGNAL_FILE):
+                signal_file = _get_signal_file()
+                if not os.path.exists(signal_file):
                     time.sleep(0.5)
                     continue
 
                 # Đọc file với try-except bắt lỗi JSON đang ghi dở từ Daemon
                 # [FIX V4.3.2] Xử lý tranh chấp file (Permission denied) trên Windows
                 try:
-                    with open(SIGNAL_FILE, "r", encoding="utf-8") as f:
+                    with open(signal_file, "r", encoding="utf-8") as f:
                         try:
                             payload = json.load(f)
                         except json.JSONDecodeError:
@@ -139,7 +155,7 @@ class SignalListener:
                         min_hold = 180.0
                         b_set = {}
                         try:
-                            cpath = os.path.join(getattr(config, "DATA_DIR", "data"), "brain_settings.json")
+                            cpath = _get_brain_file()
                             if os.path.exists(cpath):
                                 with open(cpath, "r", encoding="utf-8") as cf:
                                     b_set = json.load(cf)
@@ -232,9 +248,7 @@ class SignalListener:
                     now = time.time()
 
                     try:
-                        cpath = os.path.join(
-                            getattr(config, "DATA_DIR", "data"), "brain_settings.json"
-                        )
+                        cpath = _get_brain_file()
                         cmin = 30.0  # Mặc định 30 phút cho đỡ spam
                         if os.path.exists(cpath):
                             with open(cpath, "r", encoding="utf-8") as cf:

@@ -111,7 +111,9 @@ class TradeManager:
     # [NEW V4.4] HÀM CẮT LỆNH KHI CÓ TÍN HIỆU ĐẢO CHIỀU (REVERSE SIGNAL)
     # ====================================================================================
     def close_opposite_positions(self, symbol, new_direction, min_hold_time=180):
-        bot_magic = getattr(config, "BOT_MAGIC_NUMBER", 9999)
+        import core.storage_manager as storage_manager
+        magics = storage_manager.get_magic_numbers()
+        bot_magic = magics.get("bot_magic", 9999)
         safe_cfg = self._get_brain_settings(symbol).get("bot_safeguard", {})
 
 
@@ -242,7 +244,9 @@ class TradeManager:
             return f"SAFEGUARD_FAIL|SL_Too_Tight|Khoảng cách SL quá hẹp ({sl_distance:.5f}). Từ chối để chống nổ Lot."
 
         parent_pos = None
-        bot_magic = getattr(config, "BOT_MAGIC_NUMBER", 9999)
+        import core.storage_manager as storage_manager
+        magics = storage_manager.get_magic_numbers()
+        bot_magic = magics.get("bot_magic", 9999)
         if signal_class in ["DCA", "PCA"]:
             positions = [
                 p
@@ -592,13 +596,17 @@ class TradeManager:
                 else price - (abs(price - sl_price) * params.get("TP_RR_RATIO", 1.5))
             )
 
+        import core.storage_manager as storage_manager
+        magics = storage_manager.get_magic_numbers()
+        manual_magic = magics.get("manual_magic", 8888)
+
         result = self.connector.place_order(
             symbol,
             order_type,
             lot_size,
             sl_price,
             tp_price,
-            getattr(config, "MANUAL_MAGIC_NUMBER", 8888),
+            manual_magic,
             f"[USER]_{preset_name}",
         )
 
@@ -651,7 +659,9 @@ class TradeManager:
                             d_out = deal_out[0]
                             real_pnl = d_out.profit + d_out.commission + d_out.swap
 
-                            bot_magic = getattr(config, "BOT_MAGIC_NUMBER", 9999)
+                            import core.storage_manager as storage_manager
+                            magics = storage_manager.get_magic_numbers()
+                            bot_magic = magics.get("bot_magic", 9999)
                             is_bot = d_out.magic == bot_magic
 
                             self.state["pnl_today"] += real_pnl
@@ -831,8 +841,10 @@ class TradeManager:
 
                 save_state(self.state)
 
-            bot_magic = getattr(config, "BOT_MAGIC_NUMBER", 9999)
-            manual_magic = getattr(config, "MANUAL_MAGIC_NUMBER", 8888)
+            import core.storage_manager as storage_manager
+            magics = storage_manager.get_magic_numbers()
+            bot_magic = magics.get("bot_magic", 9999)
+            manual_magic = magics.get("manual_magic", 8888)
             tracked_positions = [
                 p for p in current_positions if p.magic in (bot_magic, manual_magic)
             ]

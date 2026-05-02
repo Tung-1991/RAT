@@ -25,7 +25,8 @@ COL_BOT_TAG = "#E040FB"
 def open_symbol_config_popup(app, symbol):
     import json
 
-    cfg_path = os.path.join(getattr(config, "DATA_DIR", "data"), "brain_settings.json")
+    import core.storage_manager as storage_manager
+    cfg_path = storage_manager.BRAIN_FILE
     existing_data = {}
     if os.path.exists(cfg_path):
         try:
@@ -260,9 +261,8 @@ def open_bot_setting_popup(app):
     try:
         import json as _json
 
-        _cfg_path = os.path.join(
-            getattr(config, "DATA_DIR", "data"), "brain_settings.json"
-        )
+        import core.storage_manager as storage_manager
+        _cfg_path = storage_manager.BRAIN_FILE
         if os.path.exists(_cfg_path):
             with open(_cfg_path, "r", encoding="utf-8") as _f:
                 safe_cfg = _json.load(_f).get("bot_safeguard", {})
@@ -466,7 +466,8 @@ def open_bot_setting_popup(app):
         try:
             import json, os
 
-            cfg_path = "data/brain_settings.json"
+            import core.storage_manager as storage_manager
+            cfg_path = storage_manager.BRAIN_FILE
             existing_data = {}
             if os.path.exists(cfg_path):
                 with open(cfg_path, "r", encoding="utf-8") as f:

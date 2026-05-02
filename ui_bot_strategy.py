@@ -9,8 +9,19 @@ import config
 from tkinter import messagebox, filedialog
 from ui_indicators_config import open_indicator_config_popup
 
-BRAIN_SETTINGS_PATH = "data/brain_settings.json"
-TEMPLATE_DIR = "data/templates"
+def _get_brain_path():
+    try:
+        import core.storage_manager as sm
+        return sm.BRAIN_FILE
+    except:
+        return "data/brain_settings.json"
+
+def _get_template_dir():
+    try:
+        import core.storage_manager as sm
+        return os.path.join(sm._active_account_dir, "templates")
+    except:
+        return "data/templates"
 
 
 class BotStrategyUI(ctk.CTkToplevel):
@@ -29,7 +40,7 @@ class BotStrategyUI(ctk.CTkToplevel):
             self.grab_set()         # Modal: Khóa UI mẹ khi đang chỉnh UI con
         self.focus_force()
 
-        os.makedirs(TEMPLATE_DIR, exist_ok=True)
+        os.makedirs(_get_template_dir(), exist_ok=True)
 
         self.brain_data = self._load_brain_data()
         self.ind_widgets = {}
@@ -97,9 +108,10 @@ class BotStrategyUI(ctk.CTkToplevel):
             if "pca_config" in saved_data: base_data["pca_config"].update(saved_data["pca_config"])
             return base_data
 
-        if os.path.exists(BRAIN_SETTINGS_PATH):
+        brain_path = _get_brain_path()
+        if os.path.exists(brain_path):
             try:
-                with open(BRAIN_SETTINGS_PATH, "r", encoding="utf-8") as f:
+                with open(brain_path, "r", encoding="utf-8") as f:
                     saved_data = json.load(f)
 
                     for key in [
@@ -212,8 +224,9 @@ class BotStrategyUI(ctk.CTkToplevel):
         
         symbols = []
         try:
-            if os.path.exists(BRAIN_SETTINGS_PATH):
-                with open(BRAIN_SETTINGS_PATH, "r") as json_f:
+            brain_path = _get_brain_path()
+            if os.path.exists(brain_path):
+                with open(brain_path, "r") as json_f:
                     bs = json.load(json_f)
                     symbols = bs.get("BOT_ACTIVE_SYMBOLS", getattr(config, "SYMBOLS", []))
         except:
@@ -535,7 +548,7 @@ class BotStrategyUI(ctk.CTkToplevel):
 
         safe_cfg = {}
         try:
-            _cfg_path = os.path.join("data", "brain_settings.json")
+            _cfg_path = _get_brain_path()
             if os.path.exists(_cfg_path):
                 with open(_cfg_path, "r", encoding="utf-8") as _f:
                     safe_cfg = json.load(_f).get("bot_safeguard", {})
@@ -890,12 +903,13 @@ class BotStrategyUI(ctk.CTkToplevel):
                 self.destroy()
                 return
 
-            os.makedirs(os.path.dirname(BRAIN_SETTINGS_PATH), exist_ok=True)
+            brain_path = _get_brain_path()
+            os.makedirs(os.path.dirname(brain_path), exist_ok=True)
 
             existing_data = {}
-            if os.path.exists(BRAIN_SETTINGS_PATH):
+            if os.path.exists(brain_path):
                 try:
-                    with open(BRAIN_SETTINGS_PATH, "r", encoding="utf-8") as f:
+                    with open(brain_path, "r", encoding="utf-8") as f:
                         existing_data = json.load(f)
                 except Exception:
                     pass
@@ -914,7 +928,7 @@ class BotStrategyUI(ctk.CTkToplevel):
             existing_data["bot_safeguard"]["REV_CLOSE_MIN_PROFIT"] = float(self.var_rev_profit.get() or 0.0)
             existing_data["bot_safeguard"]["REV_CLOSE_MAX_LOSS"] = float(self.var_rev_loss.get() or 0.0)
 
-            with open(BRAIN_SETTINGS_PATH, "w", encoding="utf-8") as f:
+            with open(brain_path, "w", encoding="utf-8") as f:
                 json.dump(existing_data, f, indent=4)
             
             from core.storage_manager import invalidate_settings_cache
@@ -941,7 +955,7 @@ class BotStrategyUI(ctk.CTkToplevel):
 
     def load_template(self):
         file_path = filedialog.askopenfilename(
-            initialdir=TEMPLATE_DIR,
+            initialdir=_get_template_dir(),
             title="Chọn Template",
             filetypes=[("JSON files", "*.json")],
             parent=self
@@ -972,7 +986,7 @@ class BotStrategyUI(ctk.CTkToplevel):
         try:
             output_data = self._pack_data()
             file_path = filedialog.asksaveasfilename(
-                initialdir=TEMPLATE_DIR,
+                initialdir=_get_template_dir(),
                 title="Lưu Template",
                 defaultextension=".json",
                 filetypes=[("JSON files", "*.json")],
