@@ -602,7 +602,7 @@ class BotUI(ctk.CTk):
             tech_sl_dist = 0
             p_sl_tech = 0
             if use_swing_sl and sym_ctx:
-                brain = self.trade_mgr._get_brain_settings()
+                brain = self.trade_mgr._get_brain_settings(sym)
                 risk_tsl = brain.get("risk_tsl", {})
                 sl_group = risk_tsl.get("base_sl", "G2")
                 
@@ -635,7 +635,7 @@ class BotUI(ctk.CTk):
             use_swing_tp = params.get("USE_SWING_TP", False)
             p_tp_tech = 0
             if use_swing_tp and sym_ctx:
-                brain = self.trade_mgr._get_brain_settings()
+                brain = self.trade_mgr._get_brain_settings(sym)
                 risk_tsl = brain.get("risk_tsl", {})
                 tp_group = risk_tsl.get("base_sl", "G2")
                 if "DYNAMIC" in tp_group:
@@ -1076,7 +1076,7 @@ class BotUI(ctk.CTk):
             widget.configure(state="disabled")
 
     def reset_daily_stats(self):
-        if messagebox.askyesno("Xác nhận", "Tạo Phiên/Group mới (Clear Cache)?"):
+        if messagebox.askyesno("Xác nhận", "Tạo Phiên/Group mới (Clear Cache)?", parent=self):
             self.trade_mgr.state.update(
                 {
                     "pnl_today": 0.0,
@@ -1105,7 +1105,7 @@ class BotUI(ctk.CTk):
         if not items:
             return
         if self.var_confirm_close.get() and not messagebox.askyesno(
-            "Xác nhận", "ĐÓNG TOÀN BỘ LỆNH?"
+            "Xác nhận", "ĐÓNG TOÀN BỘ LỆNH?", parent=self
         ):
             return
         for item in items:
@@ -1128,7 +1128,7 @@ class BotUI(ctk.CTk):
         if not selected:
             return
         if self.var_confirm_close.get() and not messagebox.askyesno(
-            "Xác nhận", f"Đóng {len(selected)} lệnh đã chọn?"
+            "Xác nhận", f"Đóng {len(selected)} lệnh đã chọn?", parent=self
         ):
             return
         for item in selected:
@@ -1153,7 +1153,7 @@ class BotUI(ctk.CTk):
             row_id = self.tree.identify_row(event.y)
             if row_id and col == "#9":
                 if self.var_confirm_close.get() and not messagebox.askyesno(
-                    "Xác nhận", f"Đóng lệnh #{row_id}?"
+                    "Xác nhận", f"Đóng lệnh #{row_id}?", parent=self
                 ):
                     return
                 p = next(

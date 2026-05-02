@@ -10,6 +10,7 @@ import os
 import logging
 import config
 import pandas_ta as ta 
+from core.storage_manager import get_brain_settings_for_symbol
 
 logger = logging.getLogger("DataEngine")
 
@@ -22,25 +23,8 @@ class DataEngine:
         }
         self.brain_path = "data/brain_settings.json"
 
-    def _get_brain_settings(self):
-        try:
-            if os.path.exists(self.brain_path):
-                with open(self.brain_path, "r", encoding="utf-8") as f:
-                    return json.load(f)
-        except Exception as e:
-            logger.error(f"Lỗi đọc {self.brain_path}: {e}. Dùng default.")
-            
-        return {
-            "G0_TIMEFRAME": getattr(config, "G0_TIMEFRAME", "1d"),
-            "G1_TIMEFRAME": getattr(config, "G1_TIMEFRAME", "1h"),
-            "G2_TIMEFRAME": getattr(config, "G2_TIMEFRAME", "15m"),
-            "G3_TIMEFRAME": getattr(config, "G3_TIMEFRAME", "15m"),
-            "trend_timeframe": getattr(config, "trend_timeframe", "1h"),
-            "entry_timeframe": getattr(config, "entry_timeframe", "15m"),
-            "NUM_H1_BARS": getattr(config, "NUM_H1_BARS", 100),
-            "NUM_M15_BARS": getattr(config, "NUM_M15_BARS", 100),
-            "indicators": getattr(config, "SANDBOX_CONFIG", {}).get("indicators", {})
-        }
+    def _get_brain_settings(self, symbol=None):
+        return get_brain_settings_for_symbol(symbol)
 
     # =========================================================================
     # [TỐI ƯU CPU] CHỈ TÍNH TOÁN CÁC INDICATOR ĐƯỢC BẬT (ON)
@@ -197,7 +181,7 @@ class DataEngine:
 
     def fetch_data_v4(self, symbol):
         """Kéo độc lập 4 chuỗi dữ liệu cho G0, G1, G2, G3 và tính Cản/ATR cho tất cả"""
-        settings = self._get_brain_settings()
+        settings = self._get_brain_settings(symbol)
         inds_config = settings.get("indicators", {})
         tsl_config = settings.get("tsl_config", getattr(config, "TSL_CONFIG", {}))
         
@@ -263,7 +247,7 @@ class DataEngine:
 
     def fetch_and_prepare(self, symbol):
         """HÀM CŨ: Phục vụ chạy Bot Daemon bản cũ tránh crash"""
-        settings = self._get_brain_settings()
+        settings = self._get_brain_settings(symbol)
         inds_config = settings.get("indicators", {})
         tsl_config = settings.get("tsl_config", getattr(config, "TSL_CONFIG", {}))
         

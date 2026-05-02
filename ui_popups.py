@@ -114,10 +114,12 @@ def open_symbol_config_popup(app, symbol):
             }
             with open(cfg_path, "w", encoding="utf-8") as f:
                 json.dump(existing_data, f, indent=4)
+            from core.storage_manager import invalidate_settings_cache
+            invalidate_settings_cache()
             app.log_message(f"✅ Đã lưu cấu hình riêng cho {symbol}.", target="bot")
             top.destroy()
         except ValueError:
-            messagebox.showerror("Lỗi", "Dữ liệu nhập sai, vui lòng nhập số nguyên!")
+            messagebox.showerror("Lỗi", "Dữ liệu nhập sai, vui lòng nhập số nguyên!", parent=top)
 
     ctk.CTkButton(
         top,
@@ -507,6 +509,9 @@ def open_bot_setting_popup(app):
 
             with open(cfg_path, "w", encoding="utf-8") as f:
                 json.dump(existing_data, f, indent=4)
+            
+            from core.storage_manager import invalidate_settings_cache
+            invalidate_settings_cache()
 
             # [HOT-FIX]: Đồng bộ lại config runtime của Main UI ngay lập tức
             if hasattr(app, "reload_config_from_json"):
@@ -517,7 +522,7 @@ def open_bot_setting_popup(app):
             )
             top.destroy()
         except Exception as e:
-            messagebox.showerror("Lỗi", f"Lỗi lưu cấu hình: {e}")
+            messagebox.showerror("Lỗi", f"Lỗi lưu cấu hình: {e}", parent=top)
 
     ctk.CTkButton(
         top,
@@ -656,11 +661,24 @@ def open_preset_config_popup(app):
 # ==============================================================================
 # 3. POPUP TSL (CÓ BE SOFT/SMART, PNL LEVELS +, STEP R)
 # ==============================================================================
-def open_tsl_popup(app):
+def open_tsl_popup(app, override_symbol=None):
     top = ctk.CTkToplevel(app)
-    top.title("TSL Logic Configuration")
-    top.geometry("450x650")
+    title = "TSL Logic Configuration"
+    if override_symbol:
+        title += f" - CẤU HÌNH CON: {override_symbol}"
+    top.title(title)
+    top.geometry("450x700")
     top.attributes("-topmost", True)
+    top.transient(app)  # Đảm bảo luôn nổi trên app chính
+    if override_symbol:
+        top.grab_set()  # Modal: Không cho chạm vào UI mẹ khi đang chỉnh UI con
+
+    tsl_cfg = config.TSL_CONFIG.copy()
+    if override_symbol:
+        from core.storage_manager import get_brain_settings_for_symbol
+        brain = get_brain_settings_for_symbol(override_symbol)
+        if "TSL_CONFIG" in brain:
+            tsl_cfg.update(brain["TSL_CONFIG"])
 
     # [FIX V4.4] CHIA LÀM 2 TAB GỌN GÀNG THEO YÊU CẦU CỦA BOSS
     tabview = ctk.CTkTabview(top, height=550)
@@ -668,6 +686,9 @@ def open_tsl_popup(app):
 
     tab_basic = tabview.add("Basic (BE, PNL, STEP)")
     tab_adv = tabview.add("Advanced (CASH, PSAR)")
+    
+    if not override_symbol:
+        tab_ow = tabview.add("Overwrite (Mẹ-Con)")
 
     def sec(parent, t):
         ctk.CTkLabel(
@@ -679,10 +700,10 @@ def open_tsl_popup(app):
     f_be = sec(tab_basic, "1. BREAK-EVEN (BE)")
     f_be.pack(fill="x", padx=15)
     cbo_be = ctk.CTkOptionMenu(f_be, values=["SOFT", "SMART"], width=100)
-    cbo_be.set(config.TSL_CONFIG.get("BE_MODE", "SOFT"))
+    cbo_be.set(tsl_cfg.get("BE_MODE", "SOFT"))
     cbo_be.pack(side="right")
     e_be_rr = ctk.CTkEntry(f_be, width=50)
-    e_be_rr.insert(0, str(config.TSL_CONFIG.get("BE_OFFSET_RR", 0.8)))
+    e_be_rr.insert(0, str(tsl_cfg.get("BE_OFFSET_RR", 0.8)))
     e_be_rr.pack(side="left", padx=5)
     ctk.CTkLabel(f_be, text="Trigger(R):").pack(side="left")
 
@@ -703,7 +724,7 @@ def open_tsl_popup(app):
         e2.pack(side="right")
         pnl_entries.append((r, e1, e2))
 
-    for lvl in config.TSL_CONFIG.get("PNL_LEVELS", []):
+    for lvl in tsl_cfg.get("PNL_LEVELS", []):
         add_p(lvl[0], lvl[1])
 
     f_pbtns = ctk.CTkFrame(f_pnl, fg_color="transparent")
@@ -721,10 +742,10 @@ def open_tsl_popup(app):
     f_step = sec(tab_basic, "3. STEP R (TRAIL)")
     f_step.pack(fill="x", padx=15)
     e_sz = ctk.CTkEntry(f_step, width=50)
-    e_sz.insert(0, str(config.TSL_CONFIG.get("STEP_R_SIZE", 1.0)))
+    e_sz.insert(0, str(tsl_cfg.get("STEP_R_SIZE", 1.0)))
     e_sz.pack(side="left", padx=5)
     e_rt = ctk.CTkEntry(f_step, width=50)
-    e_rt.insert(0, str(config.TSL_CONFIG.get("STEP_R_RATIO", 0.8)))
+    e_rt.insert(0, str(tsl_cfg.get("STEP_R_RATIO", 0.8)))
     e_rt.pack(side="right", padx=5)
     ctk.CTkLabel(f_step, text="Size(R):").pack(side="left")
     ctk.CTkLabel(f_step, text="Lock(0-1):").pack(side="right", padx=5)
@@ -735,7 +756,7 @@ def open_tsl_popup(app):
     cbo_swing_grp = ctk.CTkOptionMenu(
         f_swing_man, values=["G0", "G1", "G2", "G3", "DYNAMIC-G1/G2"], width=100
     )
-    cbo_swing_grp.set(config.TSL_CONFIG.get("SWING_GROUP", "G2"))
+    cbo_swing_grp.set(tsl_cfg.get("SWING_GROUP", "G2"))
     cbo_swing_grp.pack(side="right")
     ctk.CTkLabel(f_swing_man, text="Group Theo Dõi:").pack(side="left")
 
@@ -750,26 +771,26 @@ def open_tsl_popup(app):
     cbo_cash_type = ctk.CTkOptionMenu(
         f_cash_r1, values=["USD", "PERCENT", "POINT"], width=80
     )
-    cbo_cash_type.set(config.TSL_CONFIG.get("BE_CASH_TYPE", "USD"))
+    cbo_cash_type.set(tsl_cfg.get("BE_CASH_TYPE", "USD"))
     cbo_cash_type.pack(side="left", padx=5)
 
     ctk.CTkLabel(f_cash_r1, text="Trig:").pack(side="left", padx=2)
     e_cash_trig = ctk.CTkEntry(f_cash_r1, width=50)
-    e_cash_trig.insert(0, str(config.TSL_CONFIG.get("BE_TRIGGER", 10.0)))
+    e_cash_trig.insert(0, str(tsl_cfg.get("BE_TRIGGER", 10.0)))
     e_cash_trig.pack(side="left", padx=2)
 
     ctk.CTkLabel(f_cash_r1, text="Step:").pack(side="left", padx=2)
     e_cash_val = ctk.CTkEntry(f_cash_r1, width=50)
-    e_cash_val.insert(0, str(config.TSL_CONFIG.get("BE_VALUE", 20.0)))
+    e_cash_val.insert(0, str(tsl_cfg.get("BE_VALUE", 20.0)))
     e_cash_val.pack(side="left", padx=2)
 
     cbo_cash_strat = ctk.CTkOptionMenu(
         f_cash_r1, values=["TRAILING (Gap)", "LOCK (Tight)"], width=110
     )
-    cbo_cash_strat.set(config.TSL_CONFIG.get("BE_CASH_STRAT", "TRAILING (Gap)"))
+    cbo_cash_strat.set(tsl_cfg.get("BE_CASH_STRAT", "TRAILING (Gap)"))
     cbo_cash_strat.pack(side="left", padx=5)
 
-    var_be_one_time = ctk.BooleanVar(value=config.TSL_CONFIG.get("ONE_TIME_BE", False))
+    var_be_one_time = ctk.BooleanVar(value=tsl_cfg.get("ONE_TIME_BE", False))
     ctk.CTkCheckBox(
         f_cash_r2, text="One-Time (Chỉ khóa mốc 1)", variable=var_be_one_time, width=60
     ).pack(side="left", padx=5)
@@ -782,17 +803,17 @@ def open_tsl_popup(app):
     cbo_psar_grp = ctk.CTkOptionMenu(
         f_psar_row1, values=["G0", "G1", "G2", "G3", "DYNAMIC-G1/G2"], width=80
     )
-    cbo_psar_grp.set(config.TSL_CONFIG.get("PSAR_GROUP", "G2"))
+    cbo_psar_grp.set(tsl_cfg.get("PSAR_GROUP", "G2"))
     cbo_psar_grp.pack(side="right")
     ctk.CTkLabel(f_psar_row1, text="Group:").pack(side="left")
 
     f_psar_row2 = ctk.CTkFrame(f_psar, fg_color="transparent")
     f_psar_row2.pack(fill="x", pady=2)
     e_psar_step = ctk.CTkEntry(f_psar_row2, width=60)
-    e_psar_step.insert(0, str(config.TSL_CONFIG.get("PSAR_STEP", 0.02)))
+    e_psar_step.insert(0, str(tsl_cfg.get("PSAR_STEP", 0.02)))
     e_psar_step.pack(side="left", padx=5)
     e_psar_max = ctk.CTkEntry(f_psar_row2, width=60)
-    e_psar_max.insert(0, str(config.TSL_CONFIG.get("PSAR_MAX", 0.2)))
+    e_psar_max.insert(0, str(tsl_cfg.get("PSAR_MAX", 0.2)))
     e_psar_max.pack(side="right", padx=5)
     ctk.CTkLabel(f_psar_row2, text="Step:").pack(side="left")
     ctk.CTkLabel(f_psar_row2, text="Max:").pack(side="right")
@@ -800,7 +821,7 @@ def open_tsl_popup(app):
     f_psar_row3 = ctk.CTkFrame(f_psar, fg_color="transparent")
     f_psar_row3.pack(fill="x", pady=2)
     e_psar_min_rr = ctk.CTkEntry(f_psar_row3, width=60)
-    e_psar_min_rr.insert(0, str(config.TSL_CONFIG.get("PSAR_MIN_RR", 0.0)))
+    e_psar_min_rr.insert(0, str(tsl_cfg.get("PSAR_MIN_RR", 0.0)))
     e_psar_min_rr.pack(side="left", padx=5)
     ctk.CTkLabel(f_psar_row3, text="Min RR kích hoạt:").pack(side="left")
 
@@ -810,17 +831,17 @@ def open_tsl_popup(app):
     f_anti_row = ctk.CTkFrame(f_anti, fg_color="transparent")
     f_anti_row.pack(fill="x", pady=2)
     e_anti_usd = ctk.CTkEntry(f_anti_row, width=60)
-    e_anti_usd.insert(0, str(config.TSL_CONFIG.get("ANTI_CASH_USD", 10.0)))
+    e_anti_usd.insert(0, str(tsl_cfg.get("ANTI_CASH_USD", 10.0)))
     e_anti_usd.pack(side="left", padx=5)
     ctk.CTkLabel(f_anti_row, text="Hard Stop (USD):").pack(side="left")
 
     e_anti_time = ctk.CTkEntry(f_anti_row, width=60)
-    e_anti_time.insert(0, str(config.TSL_CONFIG.get("ANTI_CASH_TIME", 60)))
+    e_anti_time.insert(0, str(tsl_cfg.get("ANTI_CASH_TIME", 60)))
     e_anti_time.pack(side="right", padx=5)
     ctk.CTkLabel(f_anti_row, text="Time Cut (s):").pack(side="right")
 
     var_anti_time_en = ctk.BooleanVar(
-        value=config.TSL_CONFIG.get("ANTI_CASH_TIME_ENABLE", True)
+        value=tsl_cfg.get("ANTI_CASH_TIME_ENABLE", True)
     )
     ctk.CTkCheckBox(
         f_anti_row, text="Dùng Time", variable=var_anti_time_en, width=50
@@ -828,40 +849,54 @@ def open_tsl_popup(app):
 
     def save():
         try:
-            config.TSL_CONFIG.update(
-                {
-                    "BE_CASH_TYPE": cbo_cash_type.get(),
-                    "BE_TRIGGER": float(e_cash_trig.get()),
-                    "BE_VALUE": float(e_cash_val.get()),
-                    "BE_CASH_STRAT": cbo_cash_strat.get(),
-                    "BE_MODE": cbo_be.get(),
-                    "BE_OFFSET_RR": float(e_be_rr.get()),
-                    "ONE_TIME_BE": var_be_one_time.get(),
-                    "PNL_LEVELS": sorted(
-                        [
-                            [float(e1.get()), float(e2.get())]
-                            for r, e1, e2 in pnl_entries
-                            if e1.get()
-                        ],
-                        key=lambda x: x[0],
-                    ),
-                    "STEP_R_SIZE": float(e_sz.get()),
-                    "STEP_R_RATIO": float(e_rt.get()),
-                    "SWING_GROUP": cbo_swing_grp.get(),
-                    "PSAR_GROUP": cbo_psar_grp.get(),
-                    "PSAR_STEP": float(e_psar_step.get()),
-                    "PSAR_MAX": float(e_psar_max.get()),
-                    "PSAR_MIN_RR": float(e_psar_min_rr.get()),
-                    "ANTI_CASH_USD": float(e_anti_usd.get()),
-                    "ANTI_CASH_TIME": int(e_anti_time.get()),
-                    "ANTI_CASH_TIME_ENABLE": var_anti_time_en.get(),
-                }
-            )
+            output_tsl = {
+                "BE_CASH_TYPE": cbo_cash_type.get(),
+                "BE_TRIGGER": float(e_cash_trig.get()),
+                "BE_VALUE": float(e_cash_val.get()),
+                "BE_CASH_STRAT": cbo_cash_strat.get(),
+                "BE_MODE": cbo_be.get(),
+                "BE_OFFSET_RR": float(e_be_rr.get()),
+                "ONE_TIME_BE": var_be_one_time.get(),
+                "PNL_LEVELS": sorted(
+                    [
+                        [float(e1.get()), float(e2.get())]
+                        for r, e1, e2 in pnl_entries
+                        if e1.get()
+                    ],
+                    key=lambda x: x[0],
+                ),
+                "STEP_R_SIZE": float(e_sz.get()),
+                "STEP_R_RATIO": float(e_rt.get()),
+                "SWING_GROUP": cbo_swing_grp.get(),
+                "PSAR_GROUP": cbo_psar_grp.get(),
+                "PSAR_STEP": float(e_psar_step.get()),
+                "PSAR_MAX": float(e_psar_max.get()),
+                "PSAR_MIN_RR": float(e_psar_min_rr.get()),
+                "ANTI_CASH_USD": float(e_anti_usd.get()),
+                "ANTI_CASH_TIME": int(e_anti_time.get()),
+                "ANTI_CASH_TIME_ENABLE": var_anti_time_en.get(),
+            }
+            
+            if override_symbol:
+                from core.storage_manager import load_symbol_overrides, save_symbol_overrides
+                overrides = load_symbol_overrides()
+                if override_symbol not in overrides:
+                    overrides[override_symbol] = {}
+                if "tsl" not in overrides[override_symbol]:
+                    overrides[override_symbol]["tsl"] = {}
+                overrides[override_symbol]["tsl"]["TSL_CONFIG"] = output_tsl
+                save_symbol_overrides(overrides)
+                app.log_message(f"✅ TSL Override Saved for {override_symbol}.", target="bot")
+                messagebox.showinfo("Lưu Override", f"Đã lưu cấu hình TSL riêng cho {override_symbol}!", parent=top)
+                top.destroy()
+                return
+
+            config.TSL_CONFIG.update(output_tsl)
             app.save_settings()
             app.log_message("✅ TSL Saved.", target="bot")
             top.destroy()
         except:
-            messagebox.showerror("Lỗi", "Cấu hình sai!")
+            messagebox.showerror("Lỗi", "Cấu hình sai!", parent=top)
 
     ctk.CTkButton(
         top,
@@ -871,6 +906,61 @@ def open_tsl_popup(app):
         font=FONT_BOLD,
         command=save,
     ).pack(pady=(0, 15), fill="x", padx=40)
+
+    if override_symbol:
+        def reset_tsl_override():
+            from core.storage_manager import load_symbol_overrides, save_symbol_overrides
+            overrides = load_symbol_overrides()
+            if override_symbol in overrides and "tsl" in overrides[override_symbol]:
+                del overrides[override_symbol]["tsl"]
+                save_symbol_overrides(overrides)
+                messagebox.showinfo("Reset", f"Đã xóa cấu hình TSL riêng cho {override_symbol}!", parent=top)
+                top.destroy()
+                
+        ctk.CTkButton(
+            top,
+            text="🗑️ RESET (VỀ MẶC ĐỊNH)",
+            fg_color="#D50000",
+            hover_color="#B71C1C",
+            height=40,
+            font=FONT_BOLD,
+            command=reset_tsl_override,
+        ).pack(pady=(0, 15), fill="x", padx=40)
+        
+    if not override_symbol:
+        def build_overwrite_tab():
+            f = ctk.CTkScrollableFrame(tab_ow)
+            f.pack(fill="both", expand=True, padx=5, pady=5)
+            
+            ctk.CTkLabel(f, text="CẤU HÌNH GHI ĐÈ (PER-SYMBOL OVERRIDE)", font=("Roboto", 14, "bold")).pack(pady=10)
+            ctk.CTkLabel(f, text="Bấm vào cặp tiền để cài đặt TSL riêng. Các cài đặt này sẽ ghi đè lên cấu hình Global.").pack(pady=5)
+            
+            grid_frame = ctk.CTkFrame(f, fg_color="transparent")
+            grid_frame.pack(pady=10)
+            
+            from core.storage_manager import get_brain_settings_for_symbol
+            from core.storage_manager import load_symbol_overrides
+            
+            brain = get_brain_settings_for_symbol()
+            symbols = brain.get("BOT_ACTIVE_SYMBOLS", getattr(config, "SYMBOLS", []))
+            overrides = load_symbol_overrides()
+    
+            row, col = 0, 0
+            for sym in symbols:
+                has_override = sym in overrides and "tsl" in overrides[sym]
+                color = "#00C853" if has_override else "#424242"
+                btn = ctk.CTkButton(
+                    grid_frame,
+                    text=f"{sym} {'(Có)' if has_override else ''}",
+                    fg_color=color,
+                    command=lambda s=sym: open_tsl_popup(app, s)
+                )
+                btn.grid(row=row, column=col, padx=5, pady=5)
+                col += 1
+                if col > 3:
+                    col = 0
+                    row += 1
+        build_overwrite_tab()
 
 
 # ==============================================================================
@@ -1055,6 +1145,7 @@ def open_edit_popup(app, ticket):
             messagebox.showwarning(
                 "Không có dữ liệu",
                 f"Không tìm thấy Swing/ATR của {group} cho {pos.symbol}.\nThử chọn Group khác.",
+                parent=top
             )
 
     ctk.CTkButton(
@@ -1107,7 +1198,7 @@ def open_edit_popup(app, ticket):
             e_tp.insert(0, f"{calc_tp:.5f}")
             live_edit()
         else:
-            messagebox.showwarning("Lỗi", "Không có dữ liệu Swing TP")
+            messagebox.showwarning("Lỗi", "Không có dữ liệu Swing TP", parent=top)
 
     ctk.CTkButton(
         f_ast, text="Lấy Preset TP", width=105, fg_color="#2E7D32", command=do_tp
@@ -1179,7 +1270,7 @@ def open_edit_popup(app, ticket):
             app.trade_mgr.update_trade_tactic(ticket, final_t)
             top.destroy()
         except Exception as e:
-            messagebox.showerror("Lỗi", str(e))
+            messagebox.showerror("Lỗi", str(e), parent=top)
 
     ctk.CTkButton(
         top,
@@ -1385,6 +1476,7 @@ def show_history_popup(app):
         if messagebox.askyesno(
             "Cảnh báo",
             f"Bạn có chắc muốn XÓA VĨNH VIỄN toàn bộ nhật ký của Phiên [{session_id}] không?",
+            parent=top
         ):
             from core.storage_manager import delete_session_log
 

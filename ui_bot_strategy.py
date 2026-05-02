@@ -14,13 +14,19 @@ TEMPLATE_DIR = "data/templates"
 
 
 class BotStrategyUI(ctk.CTkToplevel):
-    def __init__(self, master=None):
+    def __init__(self, master=None, symbol=None):
         super().__init__(master)
-        self.title(
-            "🧠 V4.4 Bot Strategy Sandbox (Professional Template & Advanced TSL)"
-        )
+        self.override_symbol = symbol
+        title_str = "🧠 V4.4 Bot Strategy Sandbox"
+        if symbol:
+            title_str += f" - CẤU HÌNH CON: {symbol}"
+        self.title(title_str)
         self.geometry("1150x800")
         self.attributes("-topmost", True)
+        if master:
+            self.transient(master)  # Luôn nổi trên UI gọi nó
+        if symbol:
+            self.grab_set()         # Modal: Khóa UI mẹ khi đang chỉnh UI con
         self.focus_force()
 
         os.makedirs(TEMPLATE_DIR, exist_ok=True)
@@ -71,6 +77,25 @@ class BotStrategyUI(ctk.CTkToplevel):
             "dca_config": getattr(config, "DCA_CONFIG", {}),
             "pca_config": getattr(config, "PCA_CONFIG", {}),
         }
+
+        if self.override_symbol:
+            from core.storage_manager import get_brain_settings_for_symbol
+            saved_data = get_brain_settings_for_symbol(self.override_symbol)
+            # Merge logic for override
+            for key in ["MASTER_EVAL_MODE", "MIN_MATCHING_VOTES", "FORCE_ANY_MODE", "G0_TIMEFRAME", "G1_TIMEFRAME", "G2_TIMEFRAME", "G3_TIMEFRAME"]:
+                if key in saved_data: base_data[key] = saved_data[key]
+            if "voting_rules" in saved_data:
+                for grp in ["G0", "G1", "G2", "G3"]:
+                    if grp in saved_data["voting_rules"]: base_data["voting_rules"][grp] = saved_data["voting_rules"][grp]
+            if "risk_tsl" in saved_data: base_data["risk_tsl"].update(saved_data["risk_tsl"])
+            if "indicators" in saved_data:
+                for k, v in saved_data["indicators"].items():
+                    if k not in base_data["indicators"]: base_data["indicators"][k] = {}
+                    base_data["indicators"][k].update(v)
+                    if "group" in v and "groups" not in v: base_data["indicators"][k]["groups"] = [v["group"]]
+            if "dca_config" in saved_data: base_data["dca_config"].update(saved_data["dca_config"])
+            if "pca_config" in saved_data: base_data["pca_config"].update(saved_data["pca_config"])
+            return base_data
 
         if os.path.exists(BRAIN_SETTINGS_PATH):
             try:
@@ -125,11 +150,15 @@ class BotStrategyUI(ctk.CTkToplevel):
         self.tab_rules = self.tabview.add("Cấu trúc & Luật Vote (4-Tier)")
         self.tab_risk = self.tabview.add("Risk & TSL")
         self.tab_dca_pca = self.tabview.add("Nhồi Lệnh (DCA/PCA)")
+        if not self.override_symbol:
+            self.tab_overwrite = self.tabview.add("Overwrite (Mẹ-Con)")
 
         self._build_indicators_tab()
         self._build_voting_tab()
         self._build_risk_tab()
         self._build_dca_pca_tab()
+        if not self.override_symbol:
+            self._build_overwrite_tab()
 
         btn_frame = ctk.CTkFrame(self, fg_color="transparent")
         btn_frame.pack(fill="x", padx=10, pady=10)
@@ -159,6 +188,69 @@ class BotStrategyUI(ctk.CTkToplevel):
             height=40,
             command=self.save_strategy,
         ).pack(side="right", padx=5)
+
+        if self.override_symbol:
+            ctk.CTkButton(
+                btn_frame,
+                text="🗑️ RESET (XÓA CON, VỀ MẸ)",
+                fg_color="#D50000",
+                hover_color="#B71C1C",
+                font=("Roboto", 13, "bold"),
+                height=40,
+                command=self.reset_override,
+            ).pack(side="right", padx=5)
+
+    def _build_overwrite_tab(self):
+        f = ctk.CTkScrollableFrame(self.tab_overwrite)
+        f.pack(fill="both", expand=True, padx=5, pady=5)
+        
+        ctk.CTkLabel(f, text="CẤU HÌNH GHI ĐÈ (PER-SYMBOL OVERRIDE)", font=("Roboto", 14, "bold")).pack(pady=10)
+        ctk.CTkLabel(f, text="Bấm vào cặp tiền để cài đặt Sandbox riêng. Các cài đặt này sẽ ghi đè lên cấu hình Global.").pack(pady=5)
+        
+        grid_frame = ctk.CTkFrame(f, fg_color="transparent")
+        grid_frame.pack(pady=10)
+        
+        symbols = []
+        try:
+            if os.path.exists(BRAIN_SETTINGS_PATH):
+                with open(BRAIN_SETTINGS_PATH, "r") as json_f:
+                    bs = json.load(json_f)
+                    symbols = bs.get("BOT_ACTIVE_SYMBOLS", getattr(config, "SYMBOLS", []))
+        except:
+            symbols = getattr(config, "SYMBOLS", [])
+
+        from core.storage_manager import load_symbol_overrides
+        overrides = load_symbol_overrides()
+
+        row, col = 0, 0
+        for sym in symbols:
+            has_override = sym in overrides and "sandbox" in overrides[sym]
+            color = "#00C853" if has_override else "#424242"
+            btn = ctk.CTkButton(
+                grid_frame,
+                text=f"{sym} {'(Có)' if has_override else ''}",
+                fg_color=color,
+                command=lambda s=sym: self._open_symbol_override_ui(s)
+            )
+            btn.grid(row=row, column=col, padx=5, pady=5)
+            col += 1
+            if col > 4:
+                col = 0
+                row += 1
+
+    def _open_symbol_override_ui(self, symbol):
+        override_ui = BotStrategyUI(self, symbol=symbol)
+        override_ui.focus_force()
+
+    def reset_override(self):
+        if not self.override_symbol: return
+        from core.storage_manager import load_symbol_overrides, save_symbol_overrides
+        overrides = load_symbol_overrides()
+        if self.override_symbol in overrides and "sandbox" in overrides[self.override_symbol]:
+            del overrides[self.override_symbol]["sandbox"]
+            save_symbol_overrides(overrides)
+            messagebox.showinfo("Reset", f"Đã xóa cấu hình Sandbox riêng cho {self.override_symbol}!", parent=self)
+            self.destroy()
 
     def _build_indicators_tab(self):
         scroll_frame = ctk.CTkScrollableFrame(self.tab_inds)
@@ -787,9 +879,19 @@ class BotStrategyUI(ctk.CTkToplevel):
     def save_strategy(self):
         try:
             output_data = self._pack_data()
+            if self.override_symbol:
+                from core.storage_manager import load_symbol_overrides, save_symbol_overrides
+                overrides = load_symbol_overrides()
+                if self.override_symbol not in overrides:
+                    overrides[self.override_symbol] = {}
+                overrides[self.override_symbol]["sandbox"] = output_data
+                save_symbol_overrides(overrides)
+                messagebox.showinfo("Lưu Override", f"Đã lưu Sandbox riêng cho {self.override_symbol} thành công!", parent=self)
+                self.destroy()
+                return
+
             os.makedirs(os.path.dirname(BRAIN_SETTINGS_PATH), exist_ok=True)
 
-            # [FIX] Keep existing non-strategy keys like bot_safeguard, BOT_ACTIVE_SYMBOLS, symbol_configs
             existing_data = {}
             if os.path.exists(BRAIN_SETTINGS_PATH):
                 try:
@@ -814,6 +916,9 @@ class BotStrategyUI(ctk.CTkToplevel):
 
             with open(BRAIN_SETTINGS_PATH, "w", encoding="utf-8") as f:
                 json.dump(existing_data, f, indent=4)
+            
+            from core.storage_manager import invalidate_settings_cache
+            invalidate_settings_cache()
 
             # [HOT-FIX]: Đồng bộ ngay vào config Runtime của UI Main
             if hasattr(self.master, "reload_config_from_json"):
@@ -832,13 +937,14 @@ class BotStrategyUI(ctk.CTkToplevel):
             # Tự động đóng cửa sổ mượt mà
             self.destroy()
         except Exception as e:
-            messagebox.showerror("Lỗi hệ thống", f"Lỗi ghi file cấu hình:\n{e}")
+            messagebox.showerror("Lỗi hệ thống", f"Lỗi ghi file cấu hình:\n{e}", parent=self)
 
     def load_template(self):
         file_path = filedialog.askopenfilename(
             initialdir=TEMPLATE_DIR,
             title="Chọn Template",
             filetypes=[("JSON files", "*.json")],
+            parent=self
         )
         if file_path:
             try:
@@ -857,9 +963,10 @@ class BotStrategyUI(ctk.CTkToplevel):
                 messagebox.showinfo(
                     "Thành công",
                     "Đã nạp Template thành công. Hãy bấm LƯU & ÁP DỤNG để kích hoạt!",
+                    parent=self
                 )
             except Exception as e:
-                messagebox.showerror("Lỗi", f"Không thể đọc Template:\n{e}")
+                messagebox.showerror("Lỗi", f"Không thể đọc Template:\n{e}", parent=self)
 
     def save_as_template(self):
         try:
@@ -869,10 +976,11 @@ class BotStrategyUI(ctk.CTkToplevel):
                 title="Lưu Template",
                 defaultextension=".json",
                 filetypes=[("JSON files", "*.json")],
+                parent=self
             )
             if file_path:
                 with open(file_path, "w", encoding="utf-8") as f:
                     json.dump(output_data, f, indent=4)
-                messagebox.showinfo("Thành công", f"Đã lưu Template tại:\n{file_path}")
+                messagebox.showinfo("Thành công", f"Đã lưu Template tại:\n{file_path}", parent=self)
         except Exception as e:
-            messagebox.showerror("Lỗi", f"Lỗi lưu Template:\n{e}")
+            messagebox.showerror("Lỗi", f"Lỗi lưu Template:\n{e}", parent=self)

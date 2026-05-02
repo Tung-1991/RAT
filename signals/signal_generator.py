@@ -6,6 +6,7 @@ import logging
 import json
 import os
 import config
+from core.storage_manager import get_brain_settings_for_symbol
 
 logger = logging.getLogger("SignalGenerator")
 
@@ -40,23 +41,8 @@ class SignalGenerator:
             "fibonacci": fibonacci_signal, "pivot_points": pivot_points_signal
         }
 
-    def _get_brain_settings(self):
-        try:
-            if os.path.exists(self.brain_path):
-                with open(self.brain_path, "r", encoding="utf-8") as f:
-                    return json.load(f)
-        except Exception as e:
-            logger.error(f"Lỗi đọc {self.brain_path}: {e}")
-            
-        return {
-            "voting_rules": {
-                "G0": {"max_opposite": 0, "max_none": 0, "master_rule": "PASS"},
-                "G1": {"max_opposite": 0, "max_none": 0, "master_rule": "FIX"},
-                "G2": {"max_opposite": 0, "max_none": 1, "master_rule": "FIX"},
-                "G3": {"max_opposite": 0, "max_none": 1, "master_rule": "IGNORE"}
-            },
-            "indicators": getattr(config, "SANDBOX_CONFIG", {}).get("indicators", {})
-        }
+    def _get_brain_settings(self, symbol=None):
+        return get_brain_settings_for_symbol(symbol)
 
     def _detect_dynamic_trend(self, dfs, context, inds_config, eval_mode="VETO", min_votes=3):
         """
@@ -103,7 +89,7 @@ class SignalGenerator:
         return group_trends
 
 
-    def _detect_market_mode(self, dfs, context, inds_config=None, voting_rules=None):
+    def _detect_market_mode(self, dfs, context, inds_config=None, voting_rules=None, symbol=None):
         """
         V4.3: Cảm biến Vĩ mô Động - Tích hợp Force ANY Mode (Scalping)
         Bước 1: Tính Base Mode (TREND/RANGE)
@@ -116,7 +102,7 @@ class SignalGenerator:
             return "ANY", "NONE", 0
 
         # --- [V4.3 NEW] FORCE ANY MODE (CHẾ ĐỘ SCALPING BỎ QUA VĨ MÔ) ---
-        settings = self._get_brain_settings()
+        settings = self._get_brain_settings(symbol)
         if settings.get("FORCE_ANY_MODE", getattr(config, "FORCE_ANY_MODE", False)):
             return "ANY", "FORCED_SCALP", 0
 
@@ -248,8 +234,8 @@ class SignalGenerator:
         
         return 0
 
-    def generate_signal_v4(self, dfs, context):
-        settings = self._get_brain_settings()
+    def generate_signal_v4(self, dfs, context, symbol=None):
+        settings = self._get_brain_settings(symbol)
         voting_rules = settings.get("voting_rules", {})
         inds_config = settings.get("indicators", {})
         
@@ -267,7 +253,7 @@ class SignalGenerator:
         context["real_trend"] = group_trends.get("G0", "NONE") # Giữ fallback 
         
         # 2. Tính Market Mode V4.2
-        current_mode, mode_src, macro_dir = self._detect_market_mode(dfs, context, inds_config, voting_rules)
+        current_mode, mode_src, macro_dir = self._detect_market_mode(dfs, context, inds_config, voting_rules, symbol)
         
         context["market_mode"] = current_mode
         context["mode_source"] = mode_src
@@ -312,12 +298,12 @@ class SignalGenerator:
 
         return final_direction
 
-    def generate_signal(self, df_entry, df_trend, context):
-        settings = self._get_brain_settings()
+    def generate_signal(self, df_entry, df_trend, context, symbol=None):
+        settings = self._get_brain_settings(symbol)
         voting_rules = settings.get("voting_rules", {})
         inds_config = settings.get("indicators", {})
         
-        current_mode, _, _ = self._detect_market_mode(df_trend, context)
+        current_mode, _, _ = self._detect_market_mode(df_trend, context, symbol=symbol)
 
         active_inds_by_group = {"G1": {}, "G2": {}, "G3": {}}
         for name, cfg in inds_config.items():

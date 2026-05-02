@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 import MetaTrader5 as mt5
 import config
 from core.data_engine import data_engine
-from core.storage_manager import load_state, save_state, append_trade_log
+from core.storage_manager import load_state, save_state, append_trade_log, get_brain_settings_for_symbol
 
 
 class TradeManager:
@@ -59,17 +59,8 @@ class TradeManager:
         self.state["exit_reasons"][str(ticket)] = reason
         save_state(self.state)
 
-    def _get_brain_settings(self):
-        now = time.time()
-        if now - self.last_brain_read > 5:
-            try:
-                if os.path.exists(self.brain_path):
-                    with open(self.brain_path, "r", encoding="utf-8") as f:
-                        self.brain_settings = json.load(f)
-                self.last_brain_read = now
-            except Exception:
-                pass
-        return self.brain_settings
+    def _get_brain_settings(self, symbol=None):
+        return get_brain_settings_for_symbol(symbol)
 
     def check_and_trigger_cooldown(self):
         brain = self._get_brain_settings()
@@ -121,7 +112,7 @@ class TradeManager:
     # ====================================================================================
     def close_opposite_positions(self, symbol, new_direction, min_hold_time=180):
         bot_magic = getattr(config, "BOT_MAGIC_NUMBER", 9999)
-        safe_cfg = self._get_brain_settings().get("bot_safeguard", {})
+        safe_cfg = self._get_brain_settings(symbol).get("bot_safeguard", {})
 
 
         positions = [
@@ -187,7 +178,7 @@ class TradeManager:
     ):
         config.SYMBOL = symbol
         acc_info = self.connector.get_account_info()
-        brain = self._get_brain_settings()
+        brain = self._get_brain_settings(symbol)
         safeguard_cfg = brain.get("bot_safeguard", {})
 
         # [NEW V4.4] KIỂM TRA ĐẢO CHIỀU TRƯỚC KHI VÀO LỆNH (Cắt lệnh ngược chiều giải phóng Margin)
@@ -501,7 +492,7 @@ class TradeManager:
             sl_price = manual_sl
             sl_distance = abs(price - manual_sl)
         elif use_swing_sl and context:
-            brain = self._get_brain_settings()
+            brain = self._get_brain_settings(symbol)
             risk_tsl = brain.get("risk_tsl", {})
             sl_group = risk_tsl.get("base_sl", "G2")
             if "DYNAMIC" in sl_group:
@@ -562,7 +553,7 @@ class TradeManager:
             sl_price = safe_sl
 
         # [NEW V4.4] Áp dụng Max Lot Cap (Tính cho từng lệnh riêng lẻ)
-        brain = self._get_brain_settings()
+        brain = self._get_brain_settings(symbol)
         sym_cfgs = brain.get("symbol_configs", {}).get(symbol, {})
         max_lot_cap = float(sym_cfgs.get("max_lot_cap", 0.0))
         if max_lot_cap > 0:
@@ -573,7 +564,7 @@ class TradeManager:
         if manual_tp > 0:
             tp_price = manual_tp
         elif use_swing_tp and context:
-            brain = self._get_brain_settings()
+            brain = self._get_brain_settings(symbol)
             risk_tsl = brain.get("risk_tsl", {})
             tp_group = risk_tsl.get("base_sl", "G2")
             if "DYNAMIC" in tp_group:
@@ -873,7 +864,7 @@ class TradeManager:
         return tsl_status_map
 
     def _check_anti_cash(self, pos):
-        tsl_cfg = self._get_brain_settings().get(
+        tsl_cfg = self._get_brain_settings(pos.symbol).get(
             "tsl_config", getattr(config, "TSL_CONFIG", {})
         )
         hard_stop_usd = float(tsl_cfg.get("ANTI_CASH_USD", 10.0))
@@ -937,7 +928,7 @@ class TradeManager:
             is_reversed = True
 
         if is_reversed:
-            safe_cfg = self._get_brain_settings().get("bot_safeguard", {})
+            safe_cfg = self._get_brain_settings(pos.symbol).get("bot_safeguard", {})
             min_hold = float(safe_cfg.get("CLOSE_ON_REVERSE_MIN_TIME", 180))
             min_pnl_rev = float(safe_cfg.get("MIN_PNL_REVERSE", 0.0))
 
@@ -982,7 +973,7 @@ class TradeManager:
         candidates = []
         milestones = []
 
-        brain = self._get_brain_settings()
+        brain = self._get_brain_settings(pos.symbol)
         tsl_cfg = brain.get("tsl_config", getattr(config, "TSL_CONFIG", {}))
 
         # [NEW V4.4] ONE-TIME BE: Bỏ qua BE/BE_CASH nếu SL đã được khoá an toàn
@@ -1179,7 +1170,7 @@ class TradeManager:
             atr = context.get(f"atr_{trail_group}", 0)
 
             if sh is not None and sl is not None and atr:
-                brain = self._get_brain_settings()
+                brain = self._get_brain_settings(pos.symbol)
                 risk_tsl = brain.get("risk_tsl", {})
                 trail_buf = float(risk_tsl.get("sl_atr_multiplier", getattr(config, "sl_atr_multiplier", 0.2)))
                 

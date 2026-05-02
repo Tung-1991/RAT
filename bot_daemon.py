@@ -13,6 +13,7 @@ import config
 from core.exness_connector import ExnessConnector
 from core.data_engine import data_engine
 from signals.signal_generator import signal_generator
+from core.storage_manager import get_brain_settings_for_symbol
 from core.logger_setup import setup_logging  # [NEW V4.3] Import hệ thống Log
 
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] [DAEMON] %(message)s")
@@ -178,7 +179,7 @@ class StandaloneBotDaemon:
 
             # [FIX CORE]: Luôn chạy hàm generate_signal_v4 để tính toán và lưu Trend, Mode vào biến context
             # Đảm bảo UI luôn nhận được cấu trúc thị trường mới nhất ngay cả khi Bot đang tắt (Manual Mode)
-            signal = signal_generator.generate_signal_v4(dfs, context)
+            signal = signal_generator.generate_signal_v4(dfs, context, symbol=sym)
             context["latest_signal"] = signal # [NEW V4.4] Phục vụ logic REV_C
 
             # --- [V4.2.1] Gói toàn bộ context vào Heartbeat ---
@@ -206,13 +207,7 @@ class StandaloneBotDaemon:
         self._write_signal_debugger(signal_debug_state)
 
     def _scan_dca_pca(self):
-        brain = signal_generator._get_brain_settings()
-        dca_cfg = brain.get("dca_config", getattr(config, "DCA_CONFIG", {}))
-        pca_cfg = brain.get("pca_config", getattr(config, "PCA_CONFIG", {}))
-
-        if not dca_cfg.get("ENABLED", False) and not pca_cfg.get("ENABLED", False):
-            return
-
+        # [NEW V4.4] Bỏ get brain global, dời xuống từng vòng lặp Symbol để lấy config riêng
         positions = mt5.positions_get()
         if not positions:
             return
@@ -228,6 +223,14 @@ class StandaloneBotDaemon:
         from core.storage_manager import get_last_dca_pca_close_time
 
         for symbol, pos_list in bot_positions.items():
+            # Lấy cấu hình riêng cho từng symbol
+            brain = get_brain_settings_for_symbol(symbol)
+            dca_cfg = brain.get("dca_config", getattr(config, "DCA_CONFIG", {}))
+            pca_cfg = brain.get("pca_config", getattr(config, "PCA_CONFIG", {}))
+            
+            if not dca_cfg.get("ENABLED", False) and not pca_cfg.get("ENABLED", False):
+                continue
+            
             context = self.heartbeat_contexts.get(symbol)
             if not context:
                 dfs, ctx = data_engine.fetch_data_v4(symbol)

@@ -2,6 +2,8 @@
 import json
 import os
 import csv
+import time
+import copy
 from datetime import datetime, timedelta
 from typing import Dict, Any
 import config 
@@ -10,6 +12,20 @@ STATE_FILE = "data/bot_state.json"
 BRAIN_FILE = "data/brain_settings.json"
 HISTORY_FILE = "data/trade_history_log.csv" 
 MASTER_LOG_FILE = "data/trade_history_master.csv"
+
+# ==================== IN-MEMORY CACHE (TTL 2s) ====================
+_cache_brain = {"data": None, "ts": 0.0}        # Cache brain_settings.json
+_cache_overrides = {"data": None, "ts": 0.0}     # Cache symbol_overrides.json
+_cache_merged = {}                                # Cache kết quả merge theo symbol
+_CACHE_TTL = 2.0                                  # Thời gian sống cache (giây)
+
+def invalidate_settings_cache():
+    """Xóa cache khi UI lưu config mới. Gọi hàm này sau mỗi lần save."""
+    _cache_brain["data"] = None
+    _cache_brain["ts"] = 0.0
+    _cache_overrides["data"] = None
+    _cache_overrides["ts"] = 0.0
+    _cache_merged.clear()
 
 def get_reset_hour():
     try:
@@ -259,3 +275,122 @@ def save_brain_settings(data: Dict[str, Any]):
             json.dump(data, f, indent=4)
     except:
         pass
+
+# =====================================================================
+# [NEW V4.4] SYMBOL OVERRIDES (MẸ - CON)
+# =====================================================================
+SYMBOL_OVERRIDES_FILE = "data/symbol_overrides.json"
+
+def load_symbol_overrides() -> Dict[str, Any]:
+    try:
+        if os.path.exists(SYMBOL_OVERRIDES_FILE):
+            with open(SYMBOL_OVERRIDES_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {}
+
+def save_symbol_overrides(data: Dict[str, Any]):
+    try:
+        os.makedirs(os.path.dirname(SYMBOL_OVERRIDES_FILE), exist_ok=True)
+        with open(SYMBOL_OVERRIDES_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4)
+        invalidate_settings_cache()  # Xóa cache khi lưu override mới
+    except Exception:
+        pass
+
+def _load_brain_cached() -> Dict[str, Any]:
+    """Đọc brain_settings.json với cache TTL."""
+    now = time.monotonic()
+    if _cache_brain["data"] is not None and (now - _cache_brain["ts"]) < _CACHE_TTL:
+        return _cache_brain["data"]
+    
+    data = {}
+    try:
+        if os.path.exists(BRAIN_FILE):
+            with open(BRAIN_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+    except Exception:
+        data = load_brain_settings()
+    
+    _cache_brain["data"] = data
+    _cache_brain["ts"] = now
+    return data
+
+def _load_overrides_cached() -> Dict[str, Any]:
+    """Đọc symbol_overrides.json với cache TTL."""
+    now = time.monotonic()
+    if _cache_overrides["data"] is not None and (now - _cache_overrides["ts"]) < _CACHE_TTL:
+        return _cache_overrides["data"]
+    
+    data = load_symbol_overrides()
+    _cache_overrides["data"] = data
+    _cache_overrides["ts"] = now
+    return data
+
+def get_brain_settings_for_symbol(symbol: str = None) -> Dict[str, Any]:
+    """
+    Hàm chuẩn mới: Đọc toàn bộ brain_settings.json (Mẹ),
+    sau đó nếu có symbol và symbol có config riêng, sẽ merge đè lên.
+    Kết quả được cache trong RAM (TTL 2s) để tối ưu hiệu năng.
+    """
+    # Cache key: symbol hoặc "__GLOBAL__"
+    cache_key = symbol or "__GLOBAL__"
+    now = time.monotonic()
+    
+    # Kiểm tra cache merged đã có và còn hạn không
+    if cache_key in _cache_merged:
+        cached = _cache_merged[cache_key]
+        if (now - cached["ts"]) < _CACHE_TTL:
+            return copy.deepcopy(cached["data"])  # deepcopy để tránh mutation
+    
+    # Cache miss → đọc file (qua cache layer 1)
+    base_brain = copy.deepcopy(_load_brain_cached())
+        
+    if not symbol:
+        _cache_merged[cache_key] = {"data": base_brain, "ts": now}
+        return copy.deepcopy(base_brain)
+        
+    overrides = _load_overrides_cached()
+    if symbol in overrides:
+        sym_override = overrides[symbol]
+        
+        # Merge Sandbox config
+        if "sandbox" in sym_override:
+            sb = sym_override["sandbox"]
+            for k in ["MASTER_EVAL_MODE", "MIN_MATCHING_VOTES", "FORCE_ANY_MODE", 
+                      "G0_TIMEFRAME", "G1_TIMEFRAME", "G2_TIMEFRAME", "G3_TIMEFRAME"]:
+                if k in sb: base_brain[k] = sb[k]
+                
+            if "voting_rules" in sb:
+                if "voting_rules" not in base_brain: base_brain["voting_rules"] = {}
+                for grp, rules in sb["voting_rules"].items():
+                    base_brain["voting_rules"][grp] = rules
+                    
+            if "risk_tsl" in sb:
+                if "risk_tsl" not in base_brain: base_brain["risk_tsl"] = {}
+                base_brain["risk_tsl"].update(sb["risk_tsl"])
+                
+            if "indicators" in sb:
+                if "indicators" not in base_brain: base_brain["indicators"] = {}
+                base_brain["indicators"] = sb["indicators"]
+                
+            if "dca_config" in sb:
+                if "dca_config" not in base_brain: base_brain["dca_config"] = {}
+                base_brain["dca_config"].update(sb["dca_config"])
+                
+            if "pca_config" in sb:
+                if "pca_config" not in base_brain: base_brain["pca_config"] = {}
+                base_brain["pca_config"].update(sb["pca_config"])
+                
+        # Merge TSL config
+        if "tsl" in sym_override:
+            tsl = sym_override["tsl"]
+            if "TSL_CONFIG" in tsl:
+                if "TSL_CONFIG" not in base_brain: base_brain["TSL_CONFIG"] = {}
+                base_brain["TSL_CONFIG"].update(tsl["TSL_CONFIG"])
+            if "TSL_LOGIC_MODE" in tsl:
+                base_brain["TSL_LOGIC_MODE"] = tsl["TSL_LOGIC_MODE"]
+
+    _cache_merged[cache_key] = {"data": base_brain, "ts": now}
+    return copy.deepcopy(base_brain)
