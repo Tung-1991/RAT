@@ -593,7 +593,7 @@ class BotStrategyUI(ctk.CTkToplevel):
             f_rev_time, textvariable=self.var_rev_profit, width=50, justify="center"
         ).pack(side="left", padx=5)
 
-        ctk.CTkLabel(f_rev_time, text="Max Loss ($):").pack(side="left", padx=(10, 0))
+        ctk.CTkLabel(f_rev_time, text="Max Loss (-$):").pack(side="left", padx=(10, 0))
         self.var_rev_loss = ctk.StringVar(
             value=str(safe_cfg.get("REV_CLOSE_MAX_LOSS", 0.0))
         )

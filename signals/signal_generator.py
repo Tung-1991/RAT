@@ -26,6 +26,7 @@ from signals.candle import get_signal_vector as candle_pattern_signal
 from signals.swing_point import get_signal_vector as swing_point_signal
 from signals.fibonacci import get_signal_vector as fibonacci_signal
 from signals.pivot_points import get_signal_vector as pivot_points_signal
+from signals.simple_breakout import get_signal_vector as simple_breakout_signal
 
 class SignalGenerator:
     def __init__(self):
@@ -38,7 +39,8 @@ class SignalGenerator:
             "atr": atr_signal, "adx": adx_signal, "supertrend": supertrend_signal,
             "psar": psar_signal, "volume": volume_signal, "multi_candle": multi_candle_signal,
             "candle": candle_pattern_signal, "swing_point": swing_point_signal,
-            "fibonacci": fibonacci_signal, "pivot_points": pivot_points_signal
+            "fibonacci": fibonacci_signal, "pivot_points": pivot_points_signal,
+            "simple_breakout": simple_breakout_signal
         }
 
     def _get_brain_settings(self, symbol=None):

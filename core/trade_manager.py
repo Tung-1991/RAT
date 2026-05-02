@@ -138,7 +138,7 @@ class TradeManager:
                 pnl_ok = True
                 if safe_cfg.get("CLOSE_ON_REVERSE_USE_PNL", True):
                     min_profit = float(safe_cfg.get("REV_CLOSE_MIN_PROFIT", 0.0))
-                    max_loss = float(safe_cfg.get("REV_CLOSE_MAX_LOSS", 0.0))
+                    max_loss = -abs(float(safe_cfg.get("REV_CLOSE_MAX_LOSS", 0.0)))
 
                     if profit_usd >= 0:
                         if min_profit > 0 and profit_usd < min_profit:

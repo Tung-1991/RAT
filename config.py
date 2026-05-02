@@ -347,6 +347,15 @@ SANDBOX_CONFIG = {
             "params": {"min_body_size": 1.2, "check_volume": True},
             "trigger_mode": "STRICT_CLOSE",
         },
+        "simple_breakout": {
+            "active": False,
+            "groups": ["G2"],
+            "is_trend": True,
+            "macro_role": "BREAKOUT",
+            "active_modes": ["ANY"],
+            "params": {},
+            "trigger_mode": "STRICT_CLOSE",
+        },
     },
 }
 
