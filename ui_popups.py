@@ -267,7 +267,8 @@ def open_bot_setting_popup(app):
         rem = int((cooldown_until - now) / 60)
         cooldown_str = f"BỊ CHẶN ({rem} phút)"
 
-    preview_text = f"Lỗ: {loss_pct:.2f}% | Lệnh: {trades} | Thua: {losses} | Cooldown: {cooldown_str}"
+    pnl_color = COL_GREEN if loss_pct >= 0 else COL_RED
+    preview_text = f"PNL Today: {loss_pct:+.2f}% | Lệnh: {trades} | Thua: {losses} | Cooldown: {cooldown_str}"
 
     ctk.CTkLabel(
         f_preview,
@@ -277,7 +278,7 @@ def open_bot_setting_popup(app):
     ).pack(side="left", padx=10, pady=8)
 
     lbl_preview = ctk.CTkLabel(
-        f_preview, text=preview_text, font=("Consolas", 12, "bold"), text_color="white"
+        f_preview, text=preview_text, font=("Consolas", 12, "bold"), text_color=pnl_color
     )
     lbl_preview.pack(side="left", padx=10, pady=8)
 

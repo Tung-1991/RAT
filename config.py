@@ -28,7 +28,7 @@ BOT_ACTIVE_SYMBOLS = ["ETHUSD"]
 # BOT_MAGIC_NUMBER = 9999     # [DEPRECATED] Quản lý động qua system_meta.json
 
 LOOP_SLEEP_SECONDS = 0.25
-RESET_HOUR = 6
+RESET_HOUR = 0
 # DATA_DIR = "data"           # [DEPRECATED] Quản lý động qua storage_manager
 STRICT_MODE_DEFAULT = True
 MAX_PING_MS = 150
