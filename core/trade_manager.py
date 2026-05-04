@@ -994,11 +994,17 @@ class TradeManager:
                                         
                             threading.Thread(target=_close_watermark_seq, args=(tracked_positions, sym), daemon=True).start()
                             
-                            # Kích hoạt Cooldown cho Symbol (Ép Fail Time về hiện tại)
+                            # Kích hoạt Cooldown cho Symbol (Phanh nhẹ)
                             if "bot_last_fail_times" not in self.state:
                                 self.state["bot_last_fail_times"] = {}
                             self.state["bot_last_fail_times"][sym] = time.time()
                             
+                            # [NEW V5.1] Kích hoạt Global Cooldown (Phanh gấp toàn sàn) nếu cấu hình cho phép
+                            if sg_cfg.get("APPLY_GLOBAL_COOLDOWN_ON_SAFEGUARD", False):
+                                hours = float(sg_cfg.get("GLOBAL_COOLDOWN_HOURS", 4.0))
+                                self.state["cooldown_until"] = time.time() + (hours * 3600)
+                                self.log(f"🛑 [GLOBAL BRAKE] Kích hoạt Phanh Toàn Hệ Thống trong {hours} giờ do dính Watermark {sym}!", target="bot")
+
                             # Xóa mốc để chu kỳ mới làm lại
                             self.state["highest_pnl_recorded"][sym] = 0.0
                             needs_save = True
@@ -1038,11 +1044,17 @@ class TradeManager:
                                     
                             threading.Thread(target=_close_basket_seq, args=(basket_pos,), daemon=True).start()
                             
-                            # Kích hoạt Cooldown (Block vào lệnh mới)
+                            # Kích hoạt Cooldown cho Symbol (Phanh nhẹ)
                             if "bot_last_fail_times" not in self.state:
                                 self.state["bot_last_fail_times"] = {}
                             self.state["bot_last_fail_times"][sym] = time.time()
                             
+                            # [NEW V5.1] Kích hoạt Global Cooldown (Phanh gấp toàn sàn) nếu cấu hình cho phép
+                            if sg_cfg.get("APPLY_GLOBAL_COOLDOWN_ON_SAFEGUARD", False):
+                                hours = float(sg_cfg.get("GLOBAL_COOLDOWN_HOURS", 4.0))
+                                self.state["cooldown_until"] = time.time() + (hours * 3600)
+                                self.log(f"🛑 [GLOBAL BRAKE] Kích hoạt Phanh Toàn Hệ Thống trong {hours} giờ do dính Basket Loss {sym}!", target="bot")
+
                             needs_save = True
             # ---------------------------------------------------------------
             

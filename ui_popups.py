@@ -310,226 +310,165 @@ def open_bot_setting_popup(app):
             )
         ),
     )
-    e_max_loss.grid(row=0, column=1, sticky="w", padx=10, pady=8)
+    # --- [GROUP 1: ⚠️ PHANH KHẨN CẤP GLOBAL (EMERGENCY)] ---
+    # --- [GROUP 1: ⚠️ PHANH KHẨN CẤP GLOBAL (EMERGENCY)] ---
+    f_global = ctk.CTkFrame(f_safety, border_width=1, border_color="#F44336")
+    f_global.grid(row=0, column=0, columnspan=4, sticky="nsew", padx=5, pady=8)
+    ctk.CTkLabel(f_global, text="⚠️ PHANH KHẨN CẤP (GLOBAL BRAKE)", text_color="#F44336", font=("Roboto", 13, "bold")).pack(pady=5)
+    
+    f_gl_content = ctk.CTkFrame(f_global, fg_color="transparent")
+    f_gl_content.pack(fill="x", padx=10, pady=5)
+    
+    ctk.CTkLabel(f_gl_content, text="Bot Max Loss/Ngày (%):").grid(row=0, column=0, sticky="w", padx=10, pady=5)
+    e_max_loss = ctk.CTkEntry(f_gl_content, width=70, justify="center")
+    e_max_loss.insert(0, str(safe_cfg.get("MAX_DAILY_LOSS_PERCENT", 2.5)))
+    e_max_loss.grid(row=0, column=1, sticky="w", padx=10, pady=5)
 
-    ctk.CTkLabel(f_safety, text="Bot Max Lệnh Cùng Lúc:").grid(
-        row=0, column=2, sticky="w", padx=10, pady=8
-    )
-    e_max_open = ctk.CTkEntry(f_safety, width=70, justify="center")
-    e_max_open.insert(
-        0,
-        str(
-            safe_cfg.get("MAX_OPEN_POSITIONS", getattr(config, "MAX_OPEN_POSITIONS", 3))
-        ),
-    )
-    e_max_open.grid(row=0, column=3, sticky="w", padx=10, pady=8)
+    ctk.CTkLabel(f_gl_content, text="Bot Max Thua (Streak):").grid(row=0, column=2, sticky="w", padx=10, pady=5)
+    e_max_streak = ctk.CTkEntry(f_gl_content, width=70, justify="center")
+    e_max_streak.insert(0, str(safe_cfg.get("MAX_LOSING_STREAK", 3)))
+    e_max_streak.grid(row=0, column=3, sticky="w", padx=10, pady=5)
 
-    ctk.CTkLabel(f_safety, text="Bot Tổng Lệnh/Ngày:").grid(
-        row=1, column=0, sticky="w", padx=10, pady=8
-    )
-    e_max_trades = ctk.CTkEntry(f_safety, width=70, justify="center")
-    e_max_trades.insert(
-        0,
-        str(
-            safe_cfg.get(
-                "MAX_TRADES_PER_DAY", getattr(config, "MAX_TRADES_PER_DAY", 30)
-            )
-        ),
-    )
-    e_max_trades.grid(row=1, column=1, sticky="w", padx=10, pady=8)
-
-    ctk.CTkLabel(f_safety, text="Bot Max Thua (Streak):").grid(
-        row=1, column=2, sticky="w", padx=10, pady=8
-    )
-    e_max_streak = ctk.CTkEntry(f_safety, width=70, justify="center")
-    e_max_streak.insert(
-        0,
-        str(safe_cfg.get("MAX_LOSING_STREAK", getattr(config, "MAX_LOSING_STREAK", 3))),
-    )
-    e_max_streak.grid(row=1, column=3, sticky="w", padx=10, pady=8)
-
-    ctk.CTkLabel(f_safety, text="Bot Chế độ tính Loss:").grid(
-        row=2, column=0, sticky="w", padx=10, pady=8
-    )
-    cbo_loss_mode = ctk.CTkOptionMenu(f_safety, values=["TOTAL", "STREAK"], width=90)
-    cbo_loss_mode.set(
-        str(
-            safe_cfg.get("LOSS_COUNT_MODE", getattr(config, "LOSS_COUNT_MODE", "TOTAL"))
-        )
-    )
-    cbo_loss_mode.grid(row=2, column=1, sticky="w", padx=10, pady=8)
-
-    ctk.CTkLabel(f_safety, text="Bot Cooldown (Phút):").grid(
-        row=2, column=2, sticky="w", padx=10, pady=8
-    )
-    e_cooldown = ctk.CTkEntry(f_safety, width=70, justify="center")
-    e_cooldown.insert(
-        0, str(safe_cfg.get("COOLDOWN_MINUTES", getattr(config, "COOLDOWN_MINUTES", 1)))
-    )
-    e_cooldown.grid(row=2, column=3, sticky="w", padx=10, pady=8)
-
-    var_check_ping = ctk.BooleanVar(value=safe_cfg.get("CHECK_PING", True))
-    chk_ping = ctk.CTkCheckBox(
-        f_safety, text="Bot Check Ping (ms):", variable=var_check_ping
-    )
-    chk_ping.grid(row=3, column=0, sticky="w", padx=10, pady=8)
-    e_max_ping = ctk.CTkEntry(f_safety, width=70, justify="center")
-    e_max_ping.insert(
-        0, str(safe_cfg.get("MAX_PING_MS", getattr(config, "MAX_PING_MS", 150)))
-    )
-    e_max_ping.grid(row=3, column=1, sticky="w", padx=10, pady=8)
-
-    var_check_spread = ctk.BooleanVar(value=safe_cfg.get("CHECK_SPREAD", True))
-    chk_spread = ctk.CTkCheckBox(
-        f_safety, text="Bot Check Spread (points):", variable=var_check_spread
-    )
-    chk_spread.grid(row=3, column=2, sticky="w", padx=10, pady=8)
-    e_max_spread = ctk.CTkEntry(f_safety, width=70, justify="center")
-    e_max_spread.insert(
-        0,
-        str(
-            safe_cfg.get("MAX_SPREAD_POINTS", getattr(config, "MAX_SPREAD_POINTS", 50))
-        ),
-    )
-    e_max_spread.grid(row=3, column=3, sticky="w", padx=10, pady=8)
-
-    # Nến G0/G1 và G2/G3
-    ctk.CTkLabel(f_safety, text="Nến Trend (G0/G1):").grid(
-        row=4, column=0, sticky="w", padx=10, pady=8
-    )
-    e_num_h1 = ctk.CTkEntry(f_safety, width=70, justify="center")
-    e_num_h1.insert(
-        0, str(safe_cfg.get("NUM_H1_BARS", getattr(config, "NUM_H1_BARS", 70)))
-    )
-    e_num_h1.grid(row=4, column=1, sticky="w", padx=10, pady=8)
-
-    ctk.CTkLabel(f_safety, text="Nến Entry (G2/G3):").grid(
-        row=4, column=2, sticky="w", padx=10, pady=8
-    )
-    e_num_m15 = ctk.CTkEntry(f_safety, width=70, justify="center")
-    e_num_m15.insert(
-        0, str(safe_cfg.get("NUM_M15_BARS", getattr(config, "NUM_M15_BARS", 70)))
-    )
-    e_num_m15.grid(row=4, column=3, sticky="w", padx=10, pady=8)
-
-    # Daemon Loop & Scan Time
-    ctk.CTkLabel(f_safety, text="Daemon Loop (giây):").grid(
-        row=5, column=0, sticky="w", padx=10, pady=8
-    )
-    e_daemon_loop = ctk.CTkEntry(f_safety, width=70, justify="center")
-    e_daemon_loop.insert(
-        0,
-        str(
-            safe_cfg.get("DAEMON_LOOP_DELAY", getattr(config, "DAEMON_LOOP_DELAY", 15))
-        ),
-    )
-    e_daemon_loop.grid(row=5, column=1, sticky="w", padx=10, pady=8)
-
-    ctk.CTkLabel(f_safety, text="DCA/PCA Scan (giây):").grid(
-        row=5, column=2, sticky="w", padx=10, pady=8
-    )
-    e_scan_delay = ctk.CTkEntry(f_safety, width=70, justify="center")
-    e_scan_delay.insert(0, str(safe_cfg.get("DCA_PCA_SCAN_INTERVAL", 2)))
-    e_scan_delay.grid(row=5, column=3, sticky="w", padx=10, pady=8)
-
-    # [NEW] Log Cooldown
-    ctk.CTkLabel(f_safety, text="Log Spam Cooldown (Phút):").grid(
-        row=6, column=0, sticky="w", padx=10, pady=8
-    )
-    e_log_cooldown = ctk.CTkEntry(f_safety, width=70, justify="center")
-    e_log_cooldown.insert(0, str(safe_cfg.get("LOG_COOLDOWN_MINUTES", 60)))
-    e_log_cooldown.grid(row=6, column=1, sticky="w", padx=10, pady=8)
-
-    # [NEW] Bot Use TP Toggle: SwingPoint
-    var_bot_use_swing_tp = ctk.BooleanVar(
-        value=safe_cfg.get("BOT_USE_SWING_TP", config.BOT_SAFEGUARD.get("BOT_USE_SWING_TP", False))
-    )
-    chk_bot_use_swing_tp = ctk.CTkCheckBox(
-        f_safety, text="Bot Dùng TP (SwingPoint)", variable=var_bot_use_swing_tp
-    )
-    chk_bot_use_swing_tp.grid(row=6, column=2, sticky="w", padx=10, pady=8)
-
-    var_bot_use_rr_tp = ctk.BooleanVar(
-        value=safe_cfg.get("BOT_USE_RR_TP", config.BOT_SAFEGUARD.get("BOT_USE_RR_TP", True))
-    )
-    chk_bot_use_rr_tp = ctk.CTkCheckBox(
-        f_safety, text="Bot Dùng TP (R Tỷ lệ):", variable=var_bot_use_rr_tp
-    )
-    chk_bot_use_rr_tp.grid(row=7, column=2, sticky="w", padx=10, pady=8)
-
-    e_bot_tp_rr = ctk.CTkEntry(f_safety, width=70, justify="center")
-    e_bot_tp_rr.insert(
-        0, str(safe_cfg.get("BOT_TP_RR_RATIO", config.BOT_SAFEGUARD.get("BOT_TP_RR_RATIO", 1.5)))
-    )
-    e_bot_tp_rr.grid(row=7, column=3, sticky="w", padx=10, pady=8)
-
-    # [NEW V4.4] Strict Min Lot Rejection & Post-Close Cooldown
-    var_strict_min_lot = ctk.BooleanVar(value=safe_cfg.get("STRICT_MIN_LOT", False))
-    chk_strict_min_lot = ctk.CTkCheckBox(
-        f_safety,
-        text="Strict Min Lot (Chặn < Min Vol)",
-        variable=var_strict_min_lot,
-        text_color="#F44336",
-        font=("Roboto", 12, "bold"),
-    )
-    chk_strict_min_lot.grid(row=7, column=0, columnspan=2, sticky="w", padx=10, pady=8)
-
-    ctk.CTkLabel(
-        f_safety, text="Nghỉ Sau Đóng Lệnh (Giây):", text_color="#FFB300"
-    ).grid(row=8, column=2, sticky="w", padx=10, pady=8)
-    e_post_close = ctk.CTkEntry(f_safety, width=70, justify="center")
-    e_post_close.insert(0, str(safe_cfg.get("POST_CLOSE_COOLDOWN", 0)))
-    e_post_close.grid(row=8, column=3, sticky="w", padx=10, pady=8)
-
-    # [NEW] Global Cooldown (Chặn toàn bộ Bot khi chạm Safeguard)
-    ctk.CTkLabel(f_safety, text="Global Cooldown (Giờ):").grid(
-        row=8, column=0, sticky="w", padx=10, pady=8
-    )
-    e_global_cooldown = ctk.CTkEntry(f_safety, width=70, justify="center")
+    ctk.CTkLabel(f_gl_content, text="Global Cooldown (Giờ):", font=("Roboto", 12, "bold")).grid(row=1, column=0, sticky="w", padx=10, pady=5)
+    e_global_cooldown = ctk.CTkEntry(f_gl_content, width=70, justify="center", fg_color="#311B92")
     e_global_cooldown.insert(0, str(safe_cfg.get("GLOBAL_COOLDOWN_HOURS", 4.0)))
-    e_global_cooldown.grid(row=8, column=1, sticky="w", padx=10, pady=8)
+    e_global_cooldown.grid(row=1, column=1, sticky="w", padx=10, pady=5)
 
-    # [NEW V5] Global Watermark & Min SL
-    ctk.CTkLabel(f_safety, text="Watermark Trigger Global ($):", text_color="#00C853").grid(
-        row=9, column=0, sticky="w", padx=10, pady=8
-    )
-    e_gl_wm_trigger = ctk.CTkEntry(f_safety, width=70, justify="center")
+    var_gl_on_sg = ctk.BooleanVar(value=safe_cfg.get("APPLY_GLOBAL_COOLDOWN_ON_SAFEGUARD", False))
+    chk_gl_on_sg = ctk.CTkCheckBox(f_gl_content, text="Dính Basket/Watermark -> Chặn Global luôn", variable=var_gl_on_sg, text_color="#FF5252", font=("Roboto", 11, "italic"))
+    chk_gl_on_sg.grid(row=1, column=2, columnspan=2, sticky="w", padx=10, pady=5)
+
+    # --- [GROUP 2: 📉 SAFEGUARD & PROFIT (PROTECTION)] ---
+    f_sg = ctk.CTkFrame(f_safety, border_width=1, border_color="#00C853")
+    f_sg.grid(row=1, column=0, columnspan=4, sticky="nsew", padx=5, pady=8)
+    ctk.CTkLabel(f_sg, text="📉 BẢO VỆ LỢI NHUẬN & RỔ LỆNH (SAFEGUARD)", text_color="#00C853", font=("Roboto", 13, "bold")).pack(pady=5)
+    
+    f_sg_content = ctk.CTkFrame(f_sg, fg_color="transparent")
+    f_sg_content.pack(fill="x", padx=10, pady=5)
+
+    ctk.CTkLabel(f_sg_content, text="Watermark Global ($):").grid(row=0, column=0, sticky="w", padx=10, pady=5)
+    e_gl_wm_trigger = ctk.CTkEntry(f_sg_content, width=60, justify="center")
     e_gl_wm_trigger.insert(0, str(safe_cfg.get("WATERMARK_TRIGGER", 0.0)))
-    e_gl_wm_trigger.grid(row=9, column=1, sticky="w", padx=10, pady=8)
+    e_gl_wm_trigger.grid(row=0, column=1, sticky="w", padx=5, pady=5)
 
-    ctk.CTkLabel(f_safety, text="Watermark Drawdown Global ($):", text_color="#00C853").grid(
-        row=9, column=2, sticky="w", padx=10, pady=8
-    )
-    e_gl_wm_drawdown = ctk.CTkEntry(f_safety, width=70, justify="center")
+    ctk.CTkLabel(f_sg_content, text="Drawdown ($):").grid(row=0, column=2, sticky="w", padx=10, pady=5)
+    e_gl_wm_drawdown = ctk.CTkEntry(f_sg_content, width=60, justify="center")
     e_gl_wm_drawdown.insert(0, str(safe_cfg.get("WATERMARK_DRAWDOWN", 0.0)))
-    e_gl_wm_drawdown.grid(row=9, column=3, sticky="w", padx=10, pady=8)
+    e_gl_wm_drawdown.grid(row=0, column=3, sticky="w", padx=5, pady=5)
 
-    ctk.CTkLabel(f_safety, text="SL Tối thiểu Global (Points):").grid(
-        row=10, column=0, sticky="w", padx=10, pady=8
-    )
-    e_gl_min_sl = ctk.CTkEntry(f_safety, width=70, justify="center")
-    e_gl_min_sl.insert(0, str(safe_cfg.get("MIN_SL_POINTS", 0)))
-    e_gl_min_sl.grid(row=10, column=1, sticky="w", padx=10, pady=8)
-
-    ctk.CTkLabel(f_safety, text="Max Basket Loss Global ($):").grid(
-        row=11, column=0, sticky="w", padx=10, pady=8
-    )
-    e_gl_basket_dd = ctk.CTkEntry(f_safety, width=70, justify="center")
+    ctk.CTkLabel(f_sg_content, text="Max Basket Loss ($):").grid(row=1, column=0, sticky="w", padx=10, pady=5)
+    e_gl_basket_dd = ctk.CTkEntry(f_sg_content, width=60, justify="center")
     e_gl_basket_dd.insert(0, str(safe_cfg.get("MAX_BASKET_DRAWDOWN_USD", 0.0)))
-    e_gl_basket_dd.grid(row=11, column=1, sticky="w", padx=10, pady=8)
+    e_gl_basket_dd.grid(row=1, column=1, sticky="w", padx=5, pady=5)
+
+    ctk.CTkLabel(f_sg_content, text="SL Tối thiểu (pts):").grid(row=1, column=2, sticky="w", padx=10, pady=5)
+    e_gl_min_sl = ctk.CTkEntry(f_sg_content, width=60, justify="center")
+    e_gl_min_sl.insert(0, str(safe_cfg.get("MIN_SL_POINTS", 0)))
+    e_gl_min_sl.grid(row=1, column=3, sticky="w", padx=5, pady=5)
+
+    # Dòng TP & Safeguard bổ sung
+    var_bot_use_swing_tp = ctk.BooleanVar(value=safe_cfg.get("BOT_USE_SWING_TP", False))
+    ctk.CTkCheckBox(f_sg_content, text="Dùng TP SwingPoint", variable=var_bot_use_swing_tp, font=("Roboto", 11)).grid(row=2, column=0, columnspan=2, sticky="w", padx=10, pady=2)
+    
+    var_bot_use_rr_tp = ctk.BooleanVar(value=safe_cfg.get("BOT_USE_RR_TP", True))
+    ctk.CTkCheckBox(f_sg_content, text="Dùng TP R (Ratio):", variable=var_bot_use_rr_tp, font=("Roboto", 11)).grid(row=2, column=2, sticky="w", padx=10, pady=2)
+    e_bot_tp_rr = ctk.CTkEntry(f_sg_content, width=50, justify="center")
+    e_bot_tp_rr.insert(0, str(safe_cfg.get("BOT_TP_RR_RATIO", 1.5)))
+    e_bot_tp_rr.grid(row=2, column=3, sticky="w", padx=5, pady=2)
+
+    var_strict_min_lot = ctk.BooleanVar(value=safe_cfg.get("STRICT_MIN_LOT", False))
+    ctk.CTkCheckBox(f_sg_content, text="Strict Min Lot", variable=var_strict_min_lot, text_color="#F44336", font=("Roboto", 11, "bold")).grid(row=3, column=0, columnspan=2, sticky="w", padx=10, pady=2)
 
     var_gl_reject_lot = ctk.BooleanVar(value=safe_cfg.get("REJECT_ON_MAX_LOT", False))
-    chk_gl_reject_lot = ctk.CTkCheckBox(
-        f_safety, text="Hủy lệnh vượt Max Lot (Global)", variable=var_gl_reject_lot
-    )
-    chk_gl_reject_lot.grid(row=11, column=2, columnspan=2, sticky="w", padx=10, pady=8)
+    ctk.CTkCheckBox(f_sg_content, text="Hủy lệnh vượt Max Lot", variable=var_gl_reject_lot, font=("Roboto", 11)).grid(row=3, column=2, columnspan=2, sticky="w", padx=10, pady=2)
 
-    # Đã chuyển Watchlist lên đầu
+    # --- [GROUP 3: 🛡️ ĐIỀU KIỆN VẬN HÀNH (OPERATIONAL)] ---
+    f_op = ctk.CTkFrame(f_safety, border_width=1, border_color="#2196F3")
+    f_op.grid(row=2, column=0, columnspan=4, sticky="nsew", padx=5, pady=8)
+    ctk.CTkLabel(f_op, text="🛡️ ĐIỀU KIỆN VẬN HÀNH (OPERATIONAL)", text_color="#2196F3", font=("Roboto", 13, "bold")).pack(pady=5)
+    
+    f_op_content = ctk.CTkFrame(f_op, fg_color="transparent")
+    f_op_content.pack(fill="x", padx=10, pady=5)
+
+    ctk.CTkLabel(f_op_content, text="Max Lệnh Mở:").grid(row=0, column=0, sticky="w", padx=10, pady=5)
+    e_max_open = ctk.CTkEntry(f_op_content, width=60, justify="center")
+    e_max_open.insert(0, str(safe_cfg.get("MAX_OPEN_POSITIONS", 3)))
+    e_max_open.grid(row=0, column=1, sticky="w", padx=5, pady=5)
+
+    ctk.CTkLabel(f_op_content, text="Bot Cooldown (M):").grid(row=0, column=2, sticky="w", padx=10, pady=5)
+    e_cooldown = ctk.CTkEntry(f_op_content, width=60, justify="center")
+    e_cooldown.insert(0, str(safe_cfg.get("COOLDOWN_MINUTES", 1)))
+    e_cooldown.grid(row=0, column=3, sticky="w", padx=5, pady=5)
+
+    ctk.CTkLabel(f_op_content, text="Tổng Lệnh/Ngày:").grid(row=1, column=0, sticky="w", padx=10, pady=5)
+    e_max_trades = ctk.CTkEntry(f_op_content, width=60, justify="center")
+    e_max_trades.insert(0, str(safe_cfg.get("MAX_TRADES_PER_DAY", 30)))
+    e_max_trades.grid(row=1, column=1, sticky="w", padx=5, pady=5)
+
+    ctk.CTkLabel(f_op_content, text="Chế độ tính Loss:").grid(row=1, column=2, sticky="w", padx=10, pady=5)
+    cbo_loss_mode = ctk.CTkOptionMenu(f_op_content, values=["TOTAL", "STREAK"], width=80, height=24)
+    cbo_loss_mode.set(safe_cfg.get("LOSS_COUNT_MODE", "TOTAL"))
+    cbo_loss_mode.grid(row=1, column=3, sticky="w", padx=5, pady=5)
+
+    var_check_ping = ctk.BooleanVar(value=safe_cfg.get("CHECK_PING", True))
+    ctk.CTkCheckBox(f_op_content, text="Ping (ms):", variable=var_check_ping, font=("Roboto", 11)).grid(row=2, column=0, sticky="w", padx=10, pady=5)
+    e_max_ping = ctk.CTkEntry(f_op_content, width=60, justify="center")
+    e_max_ping.insert(0, str(safe_cfg.get("MAX_PING_MS", 150)))
+    e_max_ping.grid(row=2, column=1, sticky="w", padx=5, pady=5)
+
+    var_check_spread = ctk.BooleanVar(value=safe_cfg.get("CHECK_SPREAD", True))
+    ctk.CTkCheckBox(f_op_content, text="Spread (pts):", variable=var_check_spread, font=("Roboto", 11)).grid(row=2, column=2, sticky="w", padx=10, pady=5)
+    e_max_spread = ctk.CTkEntry(f_op_content, width=60, justify="center")
+    e_max_spread.insert(0, str(safe_cfg.get("MAX_SPREAD_POINTS", 50)))
+    e_max_spread.grid(row=2, column=3, sticky="w", padx=5, pady=5)
+
+    ctk.CTkLabel(f_op_content, text="Nghỉ sau đóng (s):", text_color="#FFB300").grid(row=3, column=0, sticky="w", padx=10, pady=5)
+    e_post_close = ctk.CTkEntry(f_op_content, width=60, justify="center")
+    e_post_close.insert(0, str(safe_cfg.get("POST_CLOSE_COOLDOWN", 0)))
+    e_post_close.grid(row=3, column=1, sticky="w", padx=5, pady=5)
+
+    # --- [GROUP 4: ⚙️ HỆ THỐNG & TẦN SUẤT (SYSTEM)] ---
+    f_sys = ctk.CTkFrame(f_safety, border_width=1, border_color="#757575")
+    f_sys.grid(row=3, column=0, columnspan=4, sticky="nsew", padx=5, pady=8)
+    ctk.CTkLabel(f_sys, text="⚙️ HỆ THỐNG & TẦN SUẤT (SYSTEM)", text_color="#757575", font=("Roboto", 13, "bold")).pack(pady=5)
+    
+    f_sys_content = ctk.CTkFrame(f_sys, fg_color="transparent")
+    f_sys_content.pack(fill="x", padx=10, pady=5)
+
+    ctk.CTkLabel(f_sys_content, text="Loop (s):").grid(row=0, column=0, sticky="w", padx=10, pady=5)
+    e_daemon_loop = ctk.CTkEntry(f_sys_content, width=50, justify="center")
+    e_daemon_loop.insert(0, str(safe_cfg.get("DAEMON_LOOP_DELAY", 15)))
+    e_daemon_loop.grid(row=0, column=1, sticky="w", padx=5, pady=5)
+
+    ctk.CTkLabel(f_sys_content, text="Nhồi (s):").grid(row=0, column=2, sticky="w", padx=10, pady=5)
+    e_scan_delay = ctk.CTkEntry(f_sys_content, width=50, justify="center")
+    e_scan_delay.insert(0, str(safe_cfg.get("DCA_PCA_SCAN_INTERVAL", 2)))
+    e_scan_delay.grid(row=0, column=3, sticky="w", padx=5, pady=5)
+
+    ctk.CTkLabel(f_sys_content, text="Nến Trend:").grid(row=1, column=0, sticky="w", padx=10, pady=5)
+    e_num_h1 = ctk.CTkEntry(f_sys_content, width=50, justify="center")
+    e_num_h1.insert(0, str(safe_cfg.get("NUM_H1_BARS", 70)))
+    e_num_h1.grid(row=1, column=1, sticky="w", padx=5, pady=5)
+
+    ctk.CTkLabel(f_sys_content, text="Nến Entry:").grid(row=1, column=2, sticky="w", padx=10, pady=5)
+    e_num_m15 = ctk.CTkEntry(f_sys_content, width=50, justify="center")
+    e_num_m15.insert(0, str(safe_cfg.get("NUM_M15_BARS", 70)))
+    e_num_m15.grid(row=1, column=3, sticky="w", padx=5, pady=5)
+
+    ctk.CTkLabel(f_sys_content, text="Log Spam (M):").grid(row=2, column=0, sticky="w", padx=10, pady=5)
+    e_log_cooldown = ctk.CTkEntry(f_sys_content, width=50, justify="center")
+    e_log_cooldown.insert(0, str(safe_cfg.get("LOG_COOLDOWN_MINUTES", 60)))
+    e_log_cooldown.grid(row=2, column=1, sticky="w", padx=5, pady=5)
+
+    # [HINT / LEGEND AT BOTTOM]
+    f_hint = ctk.CTkFrame(f_safety, fg_color="#212121")
+    f_hint.grid(row=4, column=0, columnspan=4, sticky="nsew", padx=5, pady=5)
+    hint_text = "🔴: Phanh Global | 🟢: Bảo vệ | 🔵: Điều kiện | ⚪: Hệ thống"
+    ctk.CTkLabel(f_hint, text=hint_text, font=("Roboto", 10, "italic"), text_color="#BDBDBD").pack(pady=2)
 
     def save():
         try:
             import json, os
-
             import core.storage_manager as storage_manager
             cfg_path = storage_manager.BRAIN_FILE
             existing_data = {}
@@ -537,7 +476,6 @@ def open_bot_setting_popup(app):
                 with open(cfg_path, "r", encoding="utf-8") as f:
                     existing_data = json.load(f)
 
-            # [FIX TRIỆT ĐỂ]: Sử dụng .update() để không làm mất các biến từ Sandbox (như CLOSE_ON_REVERSE)
             if "bot_safeguard" not in existing_data:
                 existing_data["bot_safeguard"] = {}
 
@@ -564,6 +502,7 @@ def open_bot_setting_popup(app):
                     "STRICT_MIN_LOT": var_strict_min_lot.get(),
                     "POST_CLOSE_COOLDOWN": int(e_post_close.get()),
                     "GLOBAL_COOLDOWN_HOURS": float(e_global_cooldown.get()),
+                    "APPLY_GLOBAL_COOLDOWN_ON_SAFEGUARD": var_gl_on_sg.get(),
                     "WATERMARK_TRIGGER": float(e_gl_wm_trigger.get()),
                     "WATERMARK_DRAWDOWN": float(e_gl_wm_drawdown.get()),
                     "MIN_SL_POINTS": int(e_gl_min_sl.get()),
@@ -583,25 +522,23 @@ def open_bot_setting_popup(app):
             from core.storage_manager import invalidate_settings_cache
             invalidate_settings_cache()
 
-            # [HOT-FIX]: Đồng bộ lại config runtime của Main UI ngay lập tức
             if hasattr(app, "reload_config_from_json"):
                 app.reload_config_from_json()
 
-            app.log_message(
-                "✅ Đã cập nhật Bot Safeguard (Cập nhật gia tăng).", target="bot"
-            )
+            app.log_message("✅ Đã cập nhật đầy đủ Bot Settings.", target="bot")
             top.destroy()
         except Exception as e:
+            from tkinter import messagebox
             messagebox.showerror("Lỗi", f"Lỗi lưu cấu hình: {e}", parent=top)
 
     ctk.CTkButton(
         top,
-        text="LƯU CẤU HÌNH BOT SAFEGUARD",
+        text="LƯU CẤU HÌNH BOT SETTINGS",
         fg_color=COL_BLUE_ACCENT,
         height=45,
-        font=FONT_BOLD,
+        font=("Roboto", 13, "bold"),
         command=save,
-    ).pack(pady=20, fill="x", padx=40)
+    ).pack(pady=15, fill="x", padx=40)
 
 
 # ==============================================================================
@@ -1565,22 +1502,23 @@ def open_minibrain_popup(app, title, mb_cfg, on_save_callback):
     """
     [NEW V5.1] Popup cài đặt Mini-Brain 1-Group độc lập cho DCA/PCA
     """
-    import tkinter as tk
     from tkinter import messagebox
     import customtkinter as ctk
-    import config
+    import config as _cfg
 
-    top = ctk.CTkToplevel(getattr(app, 'root', app))
+    top = ctk.CTkToplevel()
     top.title(title)
-    top.geometry("700x500")
+    top.geometry("700x520")
+    top.attributes("-topmost", True)
+    top.lift()
     top.grab_set()
+    top.focus_force()
 
     f_top = ctk.CTkFrame(top)
     f_top.pack(fill="x", padx=10, pady=10)
 
     var_active = ctk.BooleanVar(value=mb_cfg.get("active", False))
-    chk_active = ctk.CTkCheckBox(f_top, text="Bật Mini-Brain", variable=var_active, font=("Roboto", 13, "bold"))
-    chk_active.pack(side="left", padx=10)
+    ctk.CTkCheckBox(f_top, text="Bật Mini-Brain", variable=var_active, font=("Roboto", 13, "bold")).pack(side="left", padx=10)
 
     ctk.CTkLabel(f_top, text="Timeframe:").pack(side="left", padx=(20, 5))
     cbo_tf = ctk.CTkComboBox(f_top, values=["1m", "5m", "15m", "30m", "1h", "4h"], width=80)
@@ -1607,26 +1545,31 @@ def open_minibrain_popup(app, title, mb_cfg, on_save_callback):
     inds_cfg = mb_cfg.get("indicators", {})
     vars_dict = {}
 
-    from config import INDICATOR_DEFINITIONS
-    
-    # Tạo lưới cho các indicators (Tương tự Sandbox)
+    # Dùng SANDBOX_CONFIG["indicators"] làm nguồn danh sách indicator (không dùng INDICATOR_DEFINITIONS không tồn tại)
+    all_indicators = _cfg.SANDBOX_CONFIG.get("indicators", {})
+    LABEL_MAP = {
+        "adx": "ADX", "ema": "EMA", "swing_point": "Swing Point", "atr": "ATR",
+        "pivot_points": "Pivot Points", "ema_cross": "EMA Cross", "volume": "Volume",
+        "supertrend": "SuperTrend", "psar": "PSAR", "bollinger_bands": "Bollinger Bands",
+        "fibonacci": "Fibonacci", "rsi": "RSI", "stochastic": "Stochastic",
+        "macd": "MACD", "multi_candle": "Multi-Candle", "candle": "Candle",
+        "simple_breakout": "Simple Breakout",
+    }
+
     grid_f = ctk.CTkFrame(f_inds, fg_color="transparent")
     grid_f.pack(fill="both", expand=True, padx=5, pady=5)
-    
-    row, col = 0, 0
-    for key, defi in INDICATOR_DEFINITIONS.items():
-        val = False
-        if key in inds_cfg:
-            val = inds_cfg[key].get("active", False)
-        
-        var = ctk.BooleanVar(value=val)
+
+    r, c = 0, 0
+    for key in all_indicators.keys():
+        is_on = inds_cfg.get(key, {}).get("active", False)
+        var = ctk.BooleanVar(value=is_on)
         vars_dict[key] = var
-        ctk.CTkCheckBox(grid_f, text=defi["name"], variable=var).grid(row=row, column=col, sticky="w", padx=10, pady=5)
-        
-        col += 1
-        if col > 2:
-            col = 0
-            row += 1
+        label = LABEL_MAP.get(key, key.upper())
+        ctk.CTkCheckBox(grid_f, text=label, variable=var).grid(row=r, column=c, sticky="w", padx=10, pady=5)
+        c += 1
+        if c > 2:
+            c = 0
+            r += 1
 
     def save_mb():
         try:
@@ -1637,21 +1580,14 @@ def open_minibrain_popup(app, title, mb_cfg, on_save_callback):
                 "max_none": int(e_max_none.get()),
                 "indicators": {}
             }
-            
             for k, v in vars_dict.items():
                 if v.get():
-                    if k in inds_cfg:
-                        new_cfg["indicators"][k] = inds_cfg[k]
-                        new_cfg["indicators"][k]["active"] = True
-                    else:
-                        new_cfg["indicators"][k] = {
-                            "active": True,
-                            "params": INDICATOR_DEFINITIONS[k]["default_params"].copy()
-                        }
-                        
+                    # Chỉ lưu trạng thái active, không lưu cứng params để Mini-Brain tự mượn params từ Sandbox
+                    new_cfg["indicators"][k] = {"active": True}
             on_save_callback(new_cfg)
             top.destroy()
-        except ValueError:
-            messagebox.showerror("Lỗi", "Vui lòng nhập số hợp lệ", parent=top)
+        except ValueError as e:
+            messagebox.showerror("Lỗi", f"Vui lòng nhập số hợp lệ: {e}", parent=top)
 
-    ctk.CTkButton(top, text="LƯU MINI-BRAIN", fg_color="#FBC02D", text_color="#212121", font=("Roboto", 13, "bold"), command=save_mb).pack(pady=10)
+    ctk.CTkButton(top, text="LƯU MINI-BRAIN", fg_color="#FBC02D", text_color="#212121",
+                  font=("Roboto", 13, "bold"), command=save_mb).pack(pady=10)

@@ -221,15 +221,8 @@ class BotStrategyUI(ctk.CTkToplevel):
         grid_frame = ctk.CTkFrame(f, fg_color="transparent")
         grid_frame.pack(pady=10)
         
-        symbols = []
-        try:
-            brain_path = _get_brain_path()
-            if os.path.exists(brain_path):
-                with open(brain_path, "r") as json_f:
-                    bs = json.load(json_f)
-                    symbols = bs.get("BOT_ACTIVE_SYMBOLS", getattr(config, "SYMBOLS", []))
-        except:
-            symbols = getattr(config, "SYMBOLS", [])
+        # [V5.1] Đọc từ COIN_LIST (Watchlist) thay vì BOT_ACTIVE_SYMBOLS trong JSON để đồng bộ toàn hệ thống
+        symbols = getattr(config, "COIN_LIST", [])
 
         from core.storage_manager import load_symbol_overrides
         overrides = load_symbol_overrides()

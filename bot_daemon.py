@@ -312,6 +312,12 @@ class StandaloneBotDaemon:
                     dca_signal = context.get("latest_signal", 0)
                     dca_mb = dca_cfg.get("MINI_BRAIN", {})
                     if dca_mb.get("active", False):
+                        # [Way B] Tự động kế thừa thông số params từ Sandbox hiện tại
+                        sandbox_inds = brain.get("indicators", {})
+                        for k, v in dca_mb.get("indicators", {}).items():
+                            if k in sandbox_inds:
+                                v["params"] = sandbox_inds[k].get("params", {})
+                        
                         tf = dca_mb.get("timeframe", "15m")
                         df_mb = data_engine._fetch_bars(symbol, tf, 50, dca_mb.get("indicators", {}))
                         dca_signal = signal_generator.evaluate_mini_brain(df_mb, context, dca_mb, context.get("market_mode", "ANY"))
@@ -352,6 +358,12 @@ class StandaloneBotDaemon:
                     pca_signal = context.get("latest_signal", 0)
                     pca_mb = pca_cfg.get("MINI_BRAIN", {})
                     if pca_mb.get("active", False):
+                        # [Way B] Tự động kế thừa thông số params từ Sandbox hiện tại
+                        sandbox_inds = brain.get("indicators", {})
+                        for k, v in pca_mb.get("indicators", {}).items():
+                            if k in sandbox_inds:
+                                v["params"] = sandbox_inds[k].get("params", {})
+
                         tf = pca_mb.get("timeframe", "15m")
                         df_mb = data_engine._fetch_bars(symbol, tf, 50, pca_mb.get("indicators", {}))
                         pca_signal = signal_generator.evaluate_mini_brain(df_mb, context, pca_mb, context.get("market_mode", "ANY"))
