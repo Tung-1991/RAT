@@ -150,11 +150,11 @@ class BotUI(ctk.CTk):
             
             
             self.log_message(f"✅ Đã tải Workspace cho tài khoản: {acc_info['login']}")
+        else:
+            self.log_message("⚠️ Không thể xác định Account ID. Dùng Workspace mặc định.", error=True)
 
         # Khởi chạy luồng theo dõi Daemon Log
         threading.Thread(target=self._tail_daemon_logs, daemon=True).start()
-        else:
-            self.log_message("⚠️ Không thể xác định Account ID. Dùng Workspace mặc định.", error=True)
 
         self.load_settings()
         setattr(config, "UI_ACTIVE_SYMBOL", config.DEFAULT_SYMBOL)
