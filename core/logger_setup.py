@@ -6,7 +6,7 @@ import logging
 import os
 from logging.handlers import TimedRotatingFileHandler 
 
-def setup_logging(debug_mode=False):
+def setup_logging(debug_mode=False, process_name="ui"):
     """
     Hệ thống quản trị Log 3 Lớp:
     1. CRITICAL: Khớp lệnh, DCA/PCA, SL/TP, Lỗi API.
@@ -33,12 +33,12 @@ def setup_logging(debug_mode=False):
     file_formatter = logging.Formatter('[%(asctime)s] [%(levelname)s] - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
     
     # --- LỚP 1: CRITICAL LOG (Giao dịch, Lỗi MT5) ---
-    critical_handler = TimedRotatingFileHandler(os.path.join(LOG_DIR, "trade_critical.log"), when='D', interval=1, backupCount=30, encoding='utf-8')
+    critical_handler = TimedRotatingFileHandler(os.path.join(LOG_DIR, f"{process_name}_trade_critical.log"), when='D', interval=1, backupCount=30, encoding='utf-8')
     critical_handler.setLevel(logging.CRITICAL)
     critical_handler.setFormatter(file_formatter)
     
     # --- LỚP 2: INFO LOG (Sự kiện hệ thống) ---
-    info_handler = TimedRotatingFileHandler(os.path.join(LOG_DIR, "system_events.log"), when='D', interval=1, backupCount=7, encoding='utf-8')
+    info_handler = TimedRotatingFileHandler(os.path.join(LOG_DIR, f"{process_name}_system_events.log"), when='D', interval=1, backupCount=7, encoding='utf-8')
     info_handler.setLevel(logging.INFO)
     
     # Cấu hình bộ lọc để INFO không ghi lại các log CRITICAL (tránh trùng lặp)
@@ -49,7 +49,7 @@ def setup_logging(debug_mode=False):
     info_handler.setFormatter(file_formatter)
     
     # --- LỚP 3: DEBUG LOG (Dữ liệu Indicator 15s) ---
-    debug_handler = TimedRotatingFileHandler(os.path.join(LOG_DIR, "signal_debug.log"), when='D', interval=1, backupCount=2, encoding='utf-8')
+    debug_handler = TimedRotatingFileHandler(os.path.join(LOG_DIR, f"{process_name}_signal_debug.log"), when='D', interval=1, backupCount=2, encoding='utf-8')
     debug_handler.setLevel(logging.DEBUG)
     
     class DebugFilter(logging.Filter):

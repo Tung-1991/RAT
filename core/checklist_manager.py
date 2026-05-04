@@ -145,6 +145,7 @@ class ChecklistManager:
         # 6. Open Position Check
         positions = self.connector.get_all_open_positions()
         import core.storage_manager as storage_manager
+
         magics = storage_manager.get_magic_numbers()
         bot_magic = magics.get("bot_magic", 9999)
         manual_magic = magics.get("manual_magic", 8888)
@@ -220,9 +221,9 @@ class ChecklistManager:
                     {
                         "name": "Global Cooldown",
                         "status": "FAIL",
-                        "msg": f"Bot bị chặn. Mở lại sau {rem_minutes} phút"
+                        "msg": f"Bot bị chặn. Mở lại sau {rem_minutes} phút",
                     }
-                ]
+                ],
             }
 
         if not account_info:
@@ -308,6 +309,7 @@ class ChecklistManager:
 
         positions = self.connector.get_all_open_positions()
         import core.storage_manager as storage_manager
+
         magics = storage_manager.get_magic_numbers()
         bot_magic = magics.get("bot_magic", 9999)
         all_bot_pos = [p for p in positions if p.magic == bot_magic]
@@ -366,15 +368,15 @@ class ChecklistManager:
             # [NEW V4.4.1] Kiểm tra Failure Cooldown (Sử dụng chung COOLDOWN_MINUTES của Safeguard)
             last_fail = state.get("bot_last_fail_times", {}).get(symbol, 0)
             fail_elapsed = time.time() - last_fail
-            
+
             # Lấy đúng giá trị Cooldown (phút) mà Ngài đã cài ở UI và quy đổi sang giây
             try:
                 cooldown_min = float(safeguard_cfg.get("COOLDOWN_MINUTES", 1.0))
             except:
                 cooldown_min = 1.0
-                
+
             fail_cd_sec = cooldown_min * 60
-            
+
             if fail_elapsed < fail_cd_sec:
                 rem_fail = int(fail_cd_sec - fail_elapsed)
                 checks.append(
@@ -385,7 +387,6 @@ class ChecklistManager:
                     }
                 )
                 all_passed = False
-
 
             # [NEW V4.4] Kiểm tra Post-Close Cooldown (Nghỉ sau khi vừa đóng lệnh)
             post_close_cd = int(safeguard_cfg.get("POST_CLOSE_COOLDOWN", 0))

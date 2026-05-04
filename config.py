@@ -146,6 +146,10 @@ BOT_SAFEGUARD = {
     "CLOSE_ON_REVERSE_USE_PNL": True, # [NEW V4.4] Bật/Tắt kiểm tra PnL khi đảo chiều
     "REV_CLOSE_MIN_PROFIT": 0.0,      # Chỉ đảo khi lãi ít nhất X (0 = ko tính)
     "REV_CLOSE_MAX_LOSS": 0.0,        # Chỉ đảo khi lỗ ko quá Y (âm, ví dụ -10, 0 = ko tính)
+    "WATERMARK_TRIGGER": 0.0,         # [NEW V5] Mức USD bắt đầu kích hoạt Khóa lãi (0 = Tắt)
+    "WATERMARK_DRAWDOWN": 0.0,        # [NEW V5] Mức USD sụt giảm cho phép từ đỉnh
+    "MIN_SL_POINTS": 0,               # [NEW V5] Khoảng cách SL tối thiểu bằng Point
+    "REJECT_ON_MAX_LOT": False,       # [NEW V5] True: Bỏ lệnh nếu vượt trần. False: Ép về Max Lot Cap
 }
 
 # ==============================================================================

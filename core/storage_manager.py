@@ -192,6 +192,9 @@ def load_state() -> Dict[str, Any]:
         "exit_reasons": {},          # [NEW V4.4] Tracking lý do đóng lệnh
         "last_close_times": {},      # [NEW V4.4] Tracking thời gian đóng lệnh cho Cooldown
         "last_dca_pca_close_time": {}, # [NEW V4.4] Tracking DCA/PCA Cooldown
+        "last_dca_pca_signal_time": {},# [NEW V5] Tracking Cooldown theo tín hiệu bóp cò
+        "highest_pnl_recorded": {},    # [NEW V5] Đỉnh PnL cho Watermark
+        "last_rev_log_time": {},       # [NEW V5] Bộ nhớ chống spam log đảo chiều
         "current_session_id": datetime.now().strftime("%Y%m%d_%H%M%S"),
         "cooldown_until": 0.0
     }
@@ -467,3 +470,14 @@ def get_brain_settings_for_symbol(symbol: str = None) -> Dict[str, Any]:
 
     _cache_merged[cache_key] = {"data": base_brain, "ts": now}
     return copy.deepcopy(base_brain)
+
+def get_last_dca_pca_signal_time(symbol: str) -> float:
+    state = load_state()
+    return state.get("last_dca_pca_signal_time", {}).get(symbol, 0.0)
+
+def update_last_dca_pca_signal_time(symbol: str, timestamp: float):
+    state = load_state()
+    if "last_dca_pca_signal_time" not in state:
+        state["last_dca_pca_signal_time"] = {}
+    state["last_dca_pca_signal_time"][symbol] = timestamp
+    save_state(state)

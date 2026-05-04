@@ -12,7 +12,12 @@ from datetime import datetime, timedelta
 import MetaTrader5 as mt5
 import config
 from core.data_engine import data_engine
-from core.storage_manager import load_state, save_state, append_trade_log, get_brain_settings_for_symbol
+from core.storage_manager import (
+    load_state,
+    save_state,
+    append_trade_log,
+    get_brain_settings_for_symbol,
+)
 
 
 class TradeManager:
@@ -65,22 +70,22 @@ class TradeManager:
     def check_and_trigger_cooldown(self):
         brain = self._get_brain_settings()
         safeguard_cfg = brain.get("bot_safeguard", {})
-        
+
         max_loss_pct = float(safeguard_cfg.get("MAX_DAILY_LOSS_PERCENT", 2.5))
         max_trades = int(safeguard_cfg.get("MAX_TRADES_PER_DAY", 30))
         max_streak = int(safeguard_cfg.get("MAX_LOSING_STREAK", 3))
         cooldown_hours = float(safeguard_cfg.get("GLOBAL_COOLDOWN_HOURS", 4.0))
-        
+
         start_bal = self.state.get("starting_balance", 0)
         pnl = self.state.get("bot_pnl_today", 0.0)
         loss_pct = (pnl / start_bal * 100) if start_bal > 0 else 0
-        
+
         trades = self.state.get("bot_trades_today", 0)
         losses = self.state.get("bot_daily_loss_count", 0)
-        
+
         triggered = False
         reason = ""
-        
+
         if loss_pct <= -max_loss_pct:
             triggered = True
             reason = f"Chạm Max Loss ({loss_pct:.2f}% / {max_loss_pct}%)"
@@ -90,32 +95,36 @@ class TradeManager:
         elif losses >= max_streak:
             triggered = True
             reason = f"Chạm Max Streak ({losses}/{max_streak})"
-            
+
         if triggered:
             from core.storage_manager import reset_bot_session
+
             cooldown_until = time.time() + (cooldown_hours * 3600)
-            
+
             # Đóng tất cả các lệnh bot đang chạy nếu có cấu hình CLOSE_ALL_ON_COOLDOWN (tùy chọn)
             # Ở đây ta chỉ reset cache và chặn mở lệnh mới. Lệnh cũ vẫn chạy.
-            
+
             reset_bot_session(f"Hit Limit: {reason}")
-            
+
             # Cập nhật lại state sau khi reset
             self.state = load_state()
             self.state["cooldown_until"] = cooldown_until
             save_state(self.state)
-            
-            self.log(f"🛑 [SAFEGUARD] {reason}. Bot bước vào Global Cooldown trong {cooldown_hours} giờ.", target="bot")
+
+            self.log(
+                f"🛑 [SAFEGUARD] {reason}. Bot bước vào Global Cooldown trong {cooldown_hours} giờ.",
+                target="bot",
+            )
 
     # ====================================================================================
     # [NEW V4.4] HÀM CẮT LỆNH KHI CÓ TÍN HIỆU ĐẢO CHIỀU (REVERSE SIGNAL)
     # ====================================================================================
     def close_opposite_positions(self, symbol, new_direction, min_hold_time=180):
         import core.storage_manager as storage_manager
+
         magics = storage_manager.get_magic_numbers()
         bot_magic = magics.get("bot_magic", 9999)
         safe_cfg = self._get_brain_settings(symbol).get("bot_safeguard", {})
-
 
         positions = [
             p
@@ -144,7 +153,9 @@ class TradeManager:
                         if min_profit > 0 and profit_usd < min_profit:
                             pnl_ok = False
                     else:
-                        if max_loss != 0 and profit_usd < max_loss: # Ví dụ: -15 < -10 -> False
+                        if (
+                            max_loss != 0 and profit_usd < max_loss
+                        ):  # Ví dụ: -15 < -10 -> False
                             pnl_ok = False
 
                 if hold_time >= min_hold_time and pnl_ok:
@@ -164,11 +175,14 @@ class TradeManager:
                     ).start()
                     closed_count += 1
                 else:
-                    reason = "HoldTime" if hold_time < min_hold_time else "PnL_Filter"
-                    self.log(
-                        f"⏳ [REVERSE] Bỏ qua cắt đảo chiều lệnh #{p.ticket} ({reason} | Hold: {hold_time:.0f}s, PnL: ${profit_usd:.2f})",
-                        target="bot",
-                    )
+                    # [NEW V5] Chống spam log đảo chiều (15 phút / lần)
+                    s_ticket = str(p.ticket)
+                    last_log = self.state.get("last_rev_log_time", {}).get(s_ticket, 0)
+                    if time.time() - last_log > 900:
+                        reason = "HoldTime" if hold_time < min_hold_time else "PnL_Filter"
+                        self.log(f"⏳ [REVERSE] Tín hiệu ngược nhưng chưa đủ điều kiện cắt #{p.ticket} ({reason}). Đang theo dõi ngầm...", target="bot")
+                        if "last_rev_log_time" not in self.state: self.state["last_rev_log_time"] = {}
+                        self.state["last_rev_log_time"][s_ticket] = time.time()
 
         return closed_count
 
@@ -224,7 +238,11 @@ class TradeManager:
         swing_h_key = f"swing_high_{sl_group}"
 
         # CHỐT CHẶN 1: Bẫy lỗi mất Data
-        if atr_key not in context or swing_l_key not in context or swing_h_key not in context:
+        if (
+            atr_key not in context
+            or swing_l_key not in context
+            or swing_h_key not in context
+        ):
             return f"SAFEGUARD_FAIL|No_Data|Mất dữ liệu Swing/ATR của {sl_group}. Từ chối vào lệnh."
 
         atr_val = context.get(atr_key)
@@ -232,19 +250,22 @@ class TradeManager:
         swing_h = context.get(swing_h_key)
 
         # [KAISER FIX]: Sử dụng Multiplier từ Brain (Mặc định 0.2 nếu không có)
-        sl_mult = float(risk_tsl.get("sl_atr_multiplier", getattr(config, "sl_atr_multiplier", 0.2)))
+        sl_mult = float(
+            risk_tsl.get("sl_atr_multiplier", getattr(config, "sl_atr_multiplier", 0.2))
+        )
         buffer_atr = atr_val * sl_mult
 
         sl_price = swing_l - buffer_atr if direction == "BUY" else swing_h + buffer_atr
         sl_distance = abs(current_price - sl_price)
 
         # CHỐT CHẶN 2: Bẫy lỗi SL cực hẹp (Nhỏ hơn 0.05% giá trị tài sản)
-        min_safe_dist = current_price * 0.0005 
+        min_safe_dist = current_price * 0.0005
         if sl_distance < min_safe_dist:
             return f"SAFEGUARD_FAIL|SL_Too_Tight|Khoảng cách SL quá hẹp ({sl_distance:.5f}). Từ chối để chống nổ Lot."
 
         parent_pos = None
         import core.storage_manager as storage_manager
+
         magics = storage_manager.get_magic_numbers()
         bot_magic = magics.get("bot_magic", 9999)
         if signal_class in ["DCA", "PCA"]:
@@ -279,10 +300,16 @@ class TradeManager:
         sym_cfgs = brain.get("symbol_configs", {}).get(symbol, {})
         fixed_lot = float(sym_cfgs.get("fixed_lot", 0.0))
         strict_min_lot = safeguard_cfg.get("STRICT_MIN_LOT", False)
-        
-        vol_min = sym_info.volume_min if sym_info else getattr(config, "MIN_LOT_SIZE", 0.01)
-        vol_max = sym_info.volume_max if sym_info else getattr(config, "MAX_LOT_SIZE", 200.0)
-        vol_step = sym_info.volume_step if sym_info else getattr(config, "LOT_STEP", 0.01)
+
+        vol_min = (
+            sym_info.volume_min if sym_info else getattr(config, "MIN_LOT_SIZE", 0.01)
+        )
+        vol_max = (
+            sym_info.volume_max if sym_info else getattr(config, "MAX_LOT_SIZE", 200.0)
+        )
+        vol_step = (
+            sym_info.volume_step if sym_info else getattr(config, "LOT_STEP", 0.01)
+        )
 
         if parent_pos and signal_class in ["DCA", "PCA"]:
             cfg_key = "dca_config" if signal_class == "DCA" else "pca_config"
@@ -337,10 +364,18 @@ class TradeManager:
             use_rr_tp = safeguard_cfg.get("BOT_USE_RR_TP", True)
 
             if use_swing_tp and context and swing_h and swing_l and atr_val:
-                tp_price = (swing_h - buffer_atr) if direction == "BUY" else (swing_l + buffer_atr)
+                tp_price = (
+                    (swing_h - buffer_atr)
+                    if direction == "BUY"
+                    else (swing_l + buffer_atr)
+                )
             elif use_rr_tp:
                 # Đọc từ JSON (safeguard_cfg) → fallback config
-                reward_ratio = float(safeguard_cfg.get("BOT_TP_RR_RATIO", getattr(config, "BOT_TP_RR_RATIO", 1.5)))
+                reward_ratio = float(
+                    safeguard_cfg.get(
+                        "BOT_TP_RR_RATIO", getattr(config, "BOT_TP_RR_RATIO", 1.5)
+                    )
+                )
                 tp_price = (
                     current_price + (sl_distance * reward_ratio)
                     if direction == "BUY"
@@ -463,7 +498,7 @@ class TradeManager:
         preset_name,
         symbol,
         strict_mode,
-        context,        # <--- Thêm biến context vào khai báo
+        context,  # <--- Thêm biến context vào khai báo
         manual_lot=0.0,
         manual_tp=0.0,
         manual_sl=0.0,
@@ -482,7 +517,7 @@ class TradeManager:
         params = getattr(config, "PRESETS", {}).get(
             preset_name, {"SL_PERCENT": 0.4, "TP_RR_RATIO": 1.5, "RISK_PERCENT": 0.3}
         )
-        use_swing_sl = params.get("USE_SWING_SL", False) # Đọc cấu hình
+        use_swing_sl = params.get("USE_SWING_SL", False)  # Đọc cấu hình
 
         tick = mt5.symbol_info_tick(symbol)
         sym_info = mt5.symbol_info(symbol)
@@ -510,7 +545,11 @@ class TradeManager:
             atr_val = context.get(f"atr_{sl_group}")
 
             if sh and sl_val and atr_val:
-                sl_mult = float(risk_tsl.get("sl_atr_multiplier", getattr(config, "sl_atr_multiplier", 0.2)))
+                sl_mult = float(
+                    risk_tsl.get(
+                        "sl_atr_multiplier", getattr(config, "sl_atr_multiplier", 0.2)
+                    )
+                )
                 buffer = atr_val * sl_mult
                 sl_price = (sl_val - buffer) if direction == "BUY" else (sh + buffer)
                 sl_distance = abs(price - sl_price)
@@ -518,7 +557,9 @@ class TradeManager:
                 return "ERR_NO_SWING_DATA"
         else:
             sl_distance = price * (params.get("SL_PERCENT", 0.5) / 100.0)
-            sl_price = price - sl_distance if direction == "BUY" else price + sl_distance
+            sl_price = (
+                price - sl_distance if direction == "BUY" else price + sl_distance
+            )
 
         if sl_distance <= 0:
             return "ERR_CALC_SL_ZERO"
@@ -582,14 +623,19 @@ class TradeManager:
             atr_val = context.get(f"atr_{tp_group}")
 
             if sh and sl_val and atr_val:
-                tp_mult = float(risk_tsl.get("sl_atr_multiplier", getattr(config, "sl_atr_multiplier", 0.2)))
+                tp_mult = float(
+                    risk_tsl.get(
+                        "sl_atr_multiplier", getattr(config, "sl_atr_multiplier", 0.2)
+                    )
+                )
                 buffer = atr_val * tp_mult
                 tp_price = (sh - buffer) if direction == "BUY" else (sl_val + buffer)
             else:
                 tp_price = (
                     price + (abs(price - sl_price) * params.get("TP_RR_RATIO", 1.5))
                     if direction == "BUY"
-                    else price - (abs(price - sl_price) * params.get("TP_RR_RATIO", 1.5))
+                    else price
+                    - (abs(price - sl_price) * params.get("TP_RR_RATIO", 1.5))
                 )
         else:
             tp_price = (
@@ -599,6 +645,7 @@ class TradeManager:
             )
 
         import core.storage_manager as storage_manager
+
         magics = storage_manager.get_magic_numbers()
         manual_magic = magics.get("manual_magic", 8888)
 
@@ -662,6 +709,7 @@ class TradeManager:
                             real_pnl = d_out.profit + d_out.commission + d_out.swap
 
                             import core.storage_manager as storage_manager
+
                             magics = storage_manager.get_magic_numbers()
                             bot_magic = magics.get("bot_magic", 9999)
                             is_bot = d_out.magic == bot_magic
@@ -673,19 +721,33 @@ class TradeManager:
                             close_sym = mt5.symbol_info(d_out.symbol)
                             spread_cost = 0.0
                             if close_tick and close_sym:
-                                spread_cost = (close_tick.ask - close_tick.bid) * d_out.volume * close_sym.trade_contract_size
-                                
+                                spread_cost = (
+                                    (close_tick.ask - close_tick.bid)
+                                    * d_out.volume
+                                    * close_sym.trade_contract_size
+                                )
+
                             deal_in = [d for d in deals if d.entry == mt5.DEAL_ENTRY_IN]
                             entry_price = deal_in[0].price if deal_in else 0.0
                             in_comm = abs(deal_in[0].commission) if deal_in else 0.0
-                            
+
                             from datetime import datetime
+
                             open_time_s = deal_in[0].time if deal_in else 0
-                            open_time_str = datetime.fromtimestamp(open_time_s).strftime("%Y-%m-%d %H:%M:%S") if open_time_s > 0 else ""
-                            
+                            open_time_str = (
+                                datetime.fromtimestamp(open_time_s).strftime(
+                                    "%Y-%m-%d %H:%M:%S"
+                                )
+                                if open_time_s > 0
+                                else ""
+                            )
+
                             actual_comm = abs(d_out.commission) + in_comm
-                            
-                            if actual_comm == 0.0 and account_type not in ["PRO", "STANDARD"]:
+
+                            if actual_comm == 0.0 and account_type not in [
+                                "PRO",
+                                "STANDARD",
+                            ]:
                                 comm_rate = getattr(config, "COMMISSION_RATES", {}).get(
                                     d_out.symbol,
                                     getattr(config, "ACCOUNT_TYPES_CONFIG", {})
@@ -693,9 +755,11 @@ class TradeManager:
                                     .get("COMMISSION_PER_LOT", 7.0),
                                 )
                                 actual_comm = comm_rate * d_out.volume
-                                
+
                             total_fee_cost = spread_cost + actual_comm + abs(d_out.swap)
-                            self.state["fee_today"] = self.state.get("fee_today", 0.0) + total_fee_cost
+                            self.state["fee_today"] = (
+                                self.state.get("fee_today", 0.0) + total_fee_cost
+                            )
 
                             if real_pnl < 0:
                                 self.state["daily_loss_count"] += 1
@@ -723,17 +787,24 @@ class TradeManager:
                             pnl_sign = "+" if real_pnl >= 0 else ""
 
                             # [NEW V4.4] Lấy lý do thoát lệnh từ Tracker và lưu Cooldown
-                            exit_reason = self.state.get("exit_reasons", {}).get(s_ticket)
+                            exit_reason = self.state.get("exit_reasons", {}).get(
+                                s_ticket
+                            )
                             if not exit_reason:
                                 deal_reason = getattr(d_out, "reason", -1)
                                 if deal_reason == mt5.DEAL_REASON_SL:
-                                    last_rule = self.state.get("last_tsl_rules", {}).get(s_ticket)
-                                    exit_reason = f"SL_{last_rule}" if last_rule else "Hit_SL"
+                                    last_rule = self.state.get(
+                                        "last_tsl_rules", {}
+                                    ).get(s_ticket)
+                                    exit_reason = (
+                                        f"SL_{last_rule}" if last_rule else "Hit_SL"
+                                    )
                                 elif deal_reason == mt5.DEAL_REASON_TP:
                                     # [NEW] Kiểm tra nếu là lệnh thuộc rổ DCA/PCA
-                                    is_basket = (
-                                        s_ticket in self.state.get("child_to_parent", {}) or 
-                                        s_ticket in self.state.get("parent_baskets", {})
+                                    is_basket = s_ticket in self.state.get(
+                                        "child_to_parent", {}
+                                    ) or s_ticket in self.state.get(
+                                        "parent_baskets", {}
                                     )
                                     exit_reason = "Basket_TP" if is_basket else "Hit_TP"
                                 elif deal_reason == mt5.DEAL_REASON_SO:
@@ -747,17 +818,25 @@ class TradeManager:
 
                             self.state["last_close_times"][d_out.symbol] = time.time()
 
-                            current_session = self.state.get("current_session_id", "LEGACY")
-                            
+                            current_session = self.state.get(
+                                "current_session_id", "LEGACY"
+                            )
+
                             last_sl, last_tp = 0.0, 0.0
                             orders = mt5.history_orders_get(position=ticket)
                             if orders:
                                 for ord in reversed(orders):
-                                    if ord.sl > 0: last_sl = ord.sl
-                                    if ord.tp > 0: last_tp = ord.tp
-                                    if last_sl > 0 and last_tp > 0: break
-                                    
+                                    if ord.sl > 0:
+                                        last_sl = ord.sl
+                                    if ord.tp > 0:
+                                        last_tp = ord.tp
+                                    if last_sl > 0 and last_tp > 0:
+                                        break
+
                             fee = -total_fee_cost
+
+                            # [NEW V5] Trích xuất Tag/Comment từ MT5 để phân biệt Mẹ/Con
+                            trigger_signal = deal_in[0].comment if deal_in else "UNK"
 
                             append_trade_log(
                                 ticket,
@@ -770,6 +849,7 @@ class TradeManager:
                                 fee,
                                 real_pnl,
                                 exit_reason,
+                                trigger_signal=trigger_signal,
                                 session_id=current_session,
                                 open_time_str=open_time_str
                             )
@@ -844,6 +924,7 @@ class TradeManager:
                 save_state(self.state)
 
             import core.storage_manager as storage_manager
+
             magics = storage_manager.get_magic_numbers()
             bot_magic = magics.get("bot_magic", 9999)
             manual_magic = magics.get("manual_magic", 8888)
@@ -870,6 +951,55 @@ class TradeManager:
                 if "REV_C" in self.get_trade_tactic(pos.ticket):
                     self._check_recovery(pos, sym_ctx)
 
+            # --- [NEW V5] WATERMARK DYNAMIC PNL ---
+            if tracked_positions:
+                symbol_pnl = {}
+                for p in tracked_positions:
+                    profit = p.profit + p.swap + getattr(p, "commission", 0.0)
+                    symbol_pnl[p.symbol] = symbol_pnl.get(p.symbol, 0.0) + profit
+
+                for sym, current_pnl in symbol_pnl.items():
+                    brain = self._get_brain_settings(sym)
+                    sym_cfg = brain.get("symbol_configs", {}).get(sym, {})
+                    sg_cfg = brain.get("bot_safeguard", getattr(config, "BOT_SAFEGUARD", {}))
+                    
+                    wm_trigger = float(sym_cfg.get("watermark_trigger", 0.0))
+                    if wm_trigger <= 0:
+                        wm_trigger = float(sg_cfg.get("WATERMARK_TRIGGER", 0.0))
+                        
+                    wm_dd = float(sym_cfg.get("watermark_drawdown", 0.0))
+                    if wm_dd <= 0:
+                        wm_dd = float(sg_cfg.get("WATERMARK_DRAWDOWN", 0.0))
+
+                    if wm_trigger > 0 and wm_dd > 0:
+                        if "highest_pnl_recorded" not in self.state:
+                            self.state["highest_pnl_recorded"] = {}
+                        
+                        highest = self.state["highest_pnl_recorded"].get(sym, 0.0)
+                        
+                        if current_pnl > highest:
+                            self.state["highest_pnl_recorded"][sym] = current_pnl
+                            highest = current_pnl
+                            
+                        # Kích hoạt Watermark
+                        if highest >= wm_trigger and current_pnl <= (highest - wm_dd):
+                            self.log(f"💧 [WATERMARK] {sym} Sụt giảm từ đỉnh (+${highest:.2f}) xuống (+${current_pnl:.2f})! Đạt giới hạn Drawdown (${wm_dd:.2f}). KÍCH HOẠT ĐÓNG TOÀN BỘ!", target="bot")
+                            
+                            for p in tracked_positions:
+                                if p.symbol == sym:
+                                    self.state["exit_reasons"][str(p.ticket)] = "Watermark_Hit"
+                                    threading.Thread(target=self.connector.close_position, args=(p,), daemon=True).start()
+                            
+                            # Kích hoạt Cooldown cho Symbol (Ép Fail Time về hiện tại)
+                            if "bot_last_fail_times" not in self.state:
+                                self.state["bot_last_fail_times"] = {}
+                            self.state["bot_last_fail_times"][sym] = time.time()
+                            
+                            # Xóa mốc để chu kỳ mới làm lại
+                            self.state["highest_pnl_recorded"][sym] = 0.0
+                            needs_save = True
+            # ---------------------------------------
+            
             if needs_save:
                 save_state(self.state)
 
@@ -1016,7 +1146,10 @@ class TradeManager:
             if be_type == "USD":
                 trigger_usd, step_usd = trigger_val, step_val
             elif be_type == "PERCENT":
-                trigger_usd, step_usd = bal * (trigger_val / 100.0), bal * (step_val / 100.0)
+                trigger_usd, step_usd = (
+                    bal * (trigger_val / 100.0),
+                    bal * (step_val / 100.0),
+                )
             elif be_type == "POINT":
                 mult = point * pos.volume * sym_info.trade_contract_size
                 trigger_usd, step_usd = trigger_val * mult, step_val * mult
@@ -1028,12 +1161,14 @@ class TradeManager:
                 )
 
                 if profit_usd >= trigger_usd:
-                    locked_profit_usd = 0 # Giai đoạn 1: Mới đạt Trigger -> Khóa BE ($0)
-                    
+                    locked_profit_usd = (
+                        0  # Giai đoạn 1: Mới đạt Trigger -> Khóa BE ($0)
+                    )
+
                     # Giai đoạn 2: Tính thêm các bước Trailing (Step)
                     extra_profit = profit_usd - trigger_usd
                     steps = math.floor(extra_profit / step_usd) if step_usd > 0 else 0
-                    
+
                     cash_strat = tsl_cfg.get("BE_CASH_STRAT", "TRAILING (Gap)")
                     if steps >= 1:
                         if cash_strat == "LOCK (Tight)":
@@ -1064,24 +1199,36 @@ class TradeManager:
 
                 # Tính Milestone hiển thị lên UI
                 if profit_usd < trigger_usd:
-                    milestones.append((trigger_usd - profit_usd, f"CASH Đợi Trig (${trigger_usd:.2f})"))
+                    milestones.append(
+                        (
+                            trigger_usd - profit_usd,
+                            f"CASH Đợi Trig (${trigger_usd:.2f})",
+                        )
+                    )
                 else:
                     extra_profit = profit_usd - trigger_usd
                     steps = math.floor(extra_profit / step_usd) if step_usd > 0 else 0
                     next_target_usd = trigger_usd + (steps + 1) * step_usd
-                    milestones.append((next_target_usd - profit_usd, f"CASH Đợi Step {steps+1} (${next_target_usd:.2f})"))
+                    milestones.append(
+                        (
+                            next_target_usd - profit_usd,
+                            f"CASH Đợi Step {steps + 1} (${next_target_usd:.2f})",
+                        )
+                    )
 
         # [NEW V4.4] 2. PSAR TRAILING
         if "PSAR_TRAIL" in active_modes and context:
             psar_min_rr = float(tsl_cfg.get("PSAR_MIN_RR", 0.0))
             if psar_min_rr > 0 and curr_r < psar_min_rr:
-                milestones.append((abs(psar_min_rr - curr_r), f"PSAR Đợi Đủ {psar_min_rr}R"))
+                milestones.append(
+                    (abs(psar_min_rr - curr_r), f"PSAR Đợi Đủ {psar_min_rr}R")
+                )
             else:
                 trail_group = tsl_cfg.get("PSAR_GROUP", "G2")
                 if "DYNAMIC" in trail_group:
                     market_mode = context.get("market_mode", "ANY")
                     trail_group = "G1" if market_mode in ["TREND", "BREAKOUT"] else "G2"
-    
+
                 psar_val = context.get(f"psar_{trail_group}", context.get("psar"))
                 if psar_val:
                     candidates.append((psar_val, f"PSAR ➔ {psar_val:.2f}"))
@@ -1186,8 +1333,12 @@ class TradeManager:
             if sh is not None and sl is not None and atr:
                 brain = self._get_brain_settings(pos.symbol)
                 risk_tsl = brain.get("risk_tsl", {})
-                trail_buf = float(risk_tsl.get("sl_atr_multiplier", getattr(config, "sl_atr_multiplier", 0.2)))
-                
+                trail_buf = float(
+                    risk_tsl.get(
+                        "sl_atr_multiplier", getattr(config, "sl_atr_multiplier", 0.2)
+                    )
+                )
+
                 tsl_mode = tsl_cfg.get("TSL_LOGIC_MODE", "STATIC")
                 is_trending = context.get("market_mode", "TREND") in [
                     "TREND",

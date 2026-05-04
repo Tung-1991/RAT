@@ -267,9 +267,10 @@ class StandaloneBotDaemon:
                     continue
                 context = ctx
             
-            # [NEW V4.4] Check Cooldown DCA/PCA
+            # [NEW V5] Check Cooldown DCA/PCA theo Signal Time (Chống xả lệnh liên thanh)
+            from core.storage_manager import get_last_dca_pca_signal_time
             cd_time = dca_cfg.get("COOLDOWN", 60)
-            if time.time() - get_last_dca_pca_close_time(symbol) < cd_time:
+            if time.time() - get_last_dca_pca_signal_time(symbol) < cd_time:
                 continue
 
             current_price = context.get("current_price", 0)
@@ -308,6 +309,8 @@ class StandaloneBotDaemon:
                         context,
                         "DCA",
                     )
+                    from core.storage_manager import update_last_dca_pca_signal_time
+                    update_last_dca_pca_signal_time(symbol, time.time())
                     time.sleep(0.5)
                     continue
 
@@ -333,12 +336,14 @@ class StandaloneBotDaemon:
                         context,
                         "PCA",
                     )
+                    from core.storage_manager import update_last_dca_pca_signal_time
+                    update_last_dca_pca_signal_time(symbol, time.time())
                     time.sleep(0.5)
 
 
 if __name__ == "__main__":
-    # [NEW V4.3] Khởi chạy hệ thống Log 3 Lớp chuẩn xác cho luồng Bot ngầm
-    setup_logging(debug_mode=getattr(config, "ENABLE_DEBUG_LOGGING", False))
+    # [FIX V5] Đổi tên tiến trình thành "daemon" để không đụng file log của UI (WinError 32)
+    setup_logging(debug_mode=getattr(config, "ENABLE_DEBUG_LOGGING", False), process_name="daemon")
 
     daemon = StandaloneBotDaemon()
     try:

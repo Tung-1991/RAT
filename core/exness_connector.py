@@ -324,6 +324,44 @@ class ExnessConnector:
                 lot_size = round(lot_size / vol_step) * vol_step
             lot_size = round(lot_size, 2)
 
+            # --- [NEW V5] KIỂM SOÁT MAX LOT CAP VÀ MIN SL TỪ UI ---
+            try:
+                import core.storage_manager as storage_manager
+                import json, os
+                _cpath = storage_manager.BRAIN_FILE
+                if os.path.exists(_cpath):
+                    with open(_cpath, "r", encoding="utf-8") as _f:
+                        _brain = json.load(_f)
+                        _sym_cfg = _brain.get("symbol_configs", {}).get(symbol, {})
+                        _sg_cfg = _brain.get("bot_safeguard", {})
+                        
+                        max_lot_cap = float(_sym_cfg.get("max_lot_cap", 0.0))
+                        
+                        # Fallback for reject_on_max
+                        reject_on_max = _sym_cfg.get("reject_on_max_lot")
+                        if reject_on_max is None:
+                            reject_on_max = _sg_cfg.get("REJECT_ON_MAX_LOT", False)
+                            
+                        # Fallback for min_sl_points
+                        min_sl_points = int(_sym_cfg.get("min_sl_points", 0))
+                        if min_sl_points <= 0:
+                            min_sl_points = int(_sg_cfg.get("MIN_SL_POINTS", 0))
+                        
+                        if min_sl_points > 0 and abs(entry_price - sl_price) < (min_sl_points * symbol_info.point):
+                            logger.warning(f"TỪ CHỐI LỆNH: SL quá hẹp < {min_sl_points} points.")
+                            return 0.0, sl_price
+
+                        if max_lot_cap > 0 and lot_size > max_lot_cap:
+                            if reject_on_max:
+                                logger.warning(f"TỪ CHỐI LỆNH: Lot ({lot_size:.2f}) > Max Lot Cap ({max_lot_cap}) & Reject = ON.")
+                                return 0.0, sl_price
+                            else:
+                                logger.info(f"ÉP LOT: Lot ({lot_size:.2f}) > Max Lot Cap ({max_lot_cap}). Ép về {max_lot_cap}.")
+                                lot_size = max_lot_cap
+            except Exception as e:
+                pass
+            # ----------------------------------------------------
+            
             # BƯỚC 7: Áp dụng giới hạn min/max của sàn
             if lot_size < min_vol:
                 # [NEW V4.4 FINAL] Đọc cấu hình Strict Min Lot trực tiếp
@@ -332,6 +370,7 @@ class ExnessConnector:
                 strict_min_lot = False
                 try:
                     import core.storage_manager as storage_manager
+
                     _cpath = storage_manager.BRAIN_FILE
                     if os.path.exists(_cpath):
                         with open(_cpath, "r", encoding="utf-8") as _f:

@@ -263,7 +263,9 @@ class SignalListener:
 
                     is_cooldown_expired = (now - last_time) >= (cmin * 60)
 
-                    if reason_key != last_key or is_cooldown_expired:
+                    # [KAISER FIX] Tránh edgecase khi reason flap (VD: Ping,MaxOrders -> MaxOrders) làm bypass cooldown
+                    # Chúng ta sẽ block theo track_key (Symbol + Class). Chỉ báo log mới nếu HẾT COOLDOWN.
+                    if is_cooldown_expired:
                         self.log_ui(
                             f"🤖 Bot định bóp cò {sig_class}: {action} {symbol} nhưng bị chặn!",
                             error=False,

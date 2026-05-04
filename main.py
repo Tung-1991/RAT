@@ -130,6 +130,7 @@ class BotUI(ctk.CTk):
         self.brain_active_symbols = []
 
         self.daemon_process = None
+        self.log_cooldown_cache = {}
 
         # [MODIFIED V6.9.4] Kết nối MT5 TRƯỚC để lấy ID -> Setup Workspace -> Mới Load Setting
         self.connector = ExnessConnector()
@@ -147,7 +148,11 @@ class BotUI(ctk.CTk):
             PRESETS_FILE = os.path.join(acc_dir, "presets_config.json")
             BRAIN_SETTINGS_FILE = os.path.join(acc_dir, "brain_settings.json")
             
+            
             self.log_message(f"✅ Đã tải Workspace cho tài khoản: {acc_info['login']}")
+
+        # Khởi chạy luồng theo dõi Daemon Log
+        threading.Thread(target=self._tail_daemon_logs, daemon=True).start()
         else:
             self.log_message("⚠️ Không thể xác định Account ID. Dùng Workspace mặc định.", error=True)
 
@@ -388,6 +393,79 @@ class BotUI(ctk.CTk):
             sandbox_window.destroy()
 
         sandbox_window.protocol("WM_DELETE_WINDOW", on_sandbox_close)
+
+    # ==========================================
+    # LOG TAILER - THEO DÕI DAEMON VÀ HIỂN THỊ LÊN UI
+    # ==========================================
+    def _tail_daemon_logs(self):
+        import time
+        import os
+        
+        while self.running:
+            # Wait until workspace is ready
+            try:
+                import core.storage_manager as storage_manager
+                log_path = os.path.join(storage_manager._active_account_dir, "daemon_system_events.log") if hasattr(storage_manager, '_active_account_dir') and storage_manager._active_account_dir else os.path.join("data", "logs", "daemon_system_events.log")
+            except:
+                log_path = os.path.join("data", "logs", "daemon_system_events.log")
+                
+            if not os.path.exists(log_path):
+                time.sleep(2)
+                continue
+                
+            try:
+                with open(log_path, "r", encoding="utf-8") as f:
+                    f.seek(0, 2)  # Nhảy đến cuối file
+                    while self.running:
+                        line = f.readline()
+                        if not line:
+                            time.sleep(0.5)
+                            continue
+                            
+                        self._process_daemon_line(line)
+            except Exception:
+                time.sleep(1)
+
+    def _process_daemon_line(self, line: str):
+        line = line.strip()
+        if not line: return
+        
+        # Nhận diện các sự kiện quan trọng (Vào lệnh, Chốt lệnh, Watermark)
+        if "BÓP CÒ" in line or "WATERMARK" in line or "ĐÓNG LỆNH" in line or "REVERSE TACTIC" in line:
+            # Cắt bớt phần timestamp của daemon nếu có
+            msg = line.split("] - ")[-1] if "] - " in line else line
+            self.log_message(f"[DAEMON] {msg}", target="bot")
+            return
+            
+        # Lọc rác (Scanned, No Signal)
+        if "Scanned" in line or "No Signal" in line or "Đang tìm và kết nối" in line or "Sẵn sàng kết nối" in line:
+            return
+            
+        # Nhận diện Checklist Fail / Lỗi
+        if "FAIL" in line or "ERROR" in line or "TỪ CHỐI" in line or "bị chặn" in line or "SAFEGUARD" in line or "Lỗi" in line or "Bỏ qua" in line:
+            # Tạo signature cho lỗi để filter spam
+            msg = line.split("] - ")[-1] if "] - " in line else line
+            # Trích xuất lý do chính để filter (loại bỏ timestamp, số dư, etc)
+            import re
+            sig = re.sub(r'\d+', '', msg) # Xoá số đi để gom nhóm lỗi
+            
+            import time
+            now = time.time()
+            last_time = self.log_cooldown_cache.get(sig, 0)
+            
+            # Đọc cooldown time
+            try:
+                import json
+                from core.storage_manager import BRAIN_FILE
+                with open(BRAIN_FILE, "r", encoding="utf-8") as cf:
+                    b_set = json.load(cf)
+                    cd_mins = float(b_set.get("bot_safeguard", {}).get("LOG_COOLDOWN_MINUTES", 60.0))
+            except:
+                cd_mins = 60.0
+                
+            if now - last_time > (cd_mins * 60):
+                self.log_message(f"⚠️ [DAEMON LOGIC]: {msg}", target="bot-log")
+                self.log_cooldown_cache[sig] = now
 
     # ==========================================
 

@@ -40,7 +40,7 @@ def open_symbol_config_popup(app, symbol):
 
     top = ctk.CTkToplevel(app)
     top.title(f"Cấu hình riêng: {symbol}")
-    top.geometry("380x480")
+    top.geometry("380x600")
     top.attributes("-topmost", True)
     top.focus_force()
     top.grab_set()  # Khóa (Block) cửa sổ mẹ, bắt buộc người dùng thao tác trên popup này
@@ -98,6 +98,25 @@ def open_symbol_config_popup(app, symbol):
     e_max_lot_cap.insert(0, str(sym_cfg.get("max_lot_cap", 0.0)))
     e_max_lot_cap.grid(row=4, column=1, sticky="e", pady=10)
 
+    # [NEW V5] Watermark & Options
+    ctk.CTkLabel(f_grid, text="Watermark Trigger ($):", text_color="#00C853").grid(row=5, column=0, sticky="w", pady=10)
+    e_wm_trigger = ctk.CTkEntry(f_grid, width=100, justify="center")
+    e_wm_trigger.insert(0, str(sym_cfg.get("watermark_trigger", 0.0)))
+    e_wm_trigger.grid(row=5, column=1, sticky="e", pady=10)
+
+    ctk.CTkLabel(f_grid, text="Watermark Sụt giảm ($):", text_color="#00C853").grid(row=6, column=0, sticky="w", pady=10)
+    e_wm_drawdown = ctk.CTkEntry(f_grid, width=100, justify="center")
+    e_wm_drawdown.insert(0, str(sym_cfg.get("watermark_drawdown", 0.0)))
+    e_wm_drawdown.grid(row=6, column=1, sticky="e", pady=10)
+
+    ctk.CTkLabel(f_grid, text="SL Tối thiểu (Points):").grid(row=7, column=0, sticky="w", pady=10)
+    e_min_sl = ctk.CTkEntry(f_grid, width=100, justify="center")
+    e_min_sl.insert(0, str(sym_cfg.get("min_sl_points", 0)))
+    e_min_sl.grid(row=7, column=1, sticky="e", pady=10)
+
+    var_reject_lot = ctk.BooleanVar(value=sym_cfg.get("reject_on_max_lot", False))
+    ctk.CTkCheckBox(f_grid, text="Hủy lệnh nếu vượt Max Lot (Tắt = Ép bằng Max Lot)", variable=var_reject_lot, font=("Roboto", 11)).grid(row=8, column=0, columnspan=2, sticky="w", pady=10)
+
     def save_sym():
         try:
             mo = int(e_max_orders.get())
@@ -112,6 +131,10 @@ def open_symbol_config_popup(app, symbol):
                 "max_ping": mp,
                 "fixed_lot": float(e_fixed_lot.get()),
                 "max_lot_cap": float(e_max_lot_cap.get()),
+                "watermark_trigger": float(e_wm_trigger.get()),
+                "watermark_drawdown": float(e_wm_drawdown.get()),
+                "min_sl_points": int(e_min_sl.get()),
+                "reject_on_max_lot": var_reject_lot.get(),
             }
             with open(cfg_path, "w", encoding="utf-8") as f:
                 json.dump(existing_data, f, indent=4)
@@ -138,7 +161,7 @@ def open_symbol_config_popup(app, symbol):
 def open_bot_setting_popup(app):
     top = ctk.CTkToplevel(app)
     top.title("Cấu hình Lõi Hệ Thống (Core Settings)")
-    top.geometry("700x550")
+    top.geometry("750x650")
     top.attributes("-topmost", True)
     # top.transient(app) # Khóa Z-index, luôn nổi trên App chính
 
@@ -460,6 +483,34 @@ def open_bot_setting_popup(app):
     e_global_cooldown.insert(0, str(safe_cfg.get("GLOBAL_COOLDOWN_HOURS", 4.0)))
     e_global_cooldown.grid(row=8, column=1, sticky="w", padx=10, pady=8)
 
+    # [NEW V5] Global Watermark & Min SL
+    ctk.CTkLabel(f_safety, text="Watermark Trigger Global ($):", text_color="#00C853").grid(
+        row=9, column=0, sticky="w", padx=10, pady=8
+    )
+    e_gl_wm_trigger = ctk.CTkEntry(f_safety, width=70, justify="center")
+    e_gl_wm_trigger.insert(0, str(safe_cfg.get("WATERMARK_TRIGGER", 0.0)))
+    e_gl_wm_trigger.grid(row=9, column=1, sticky="w", padx=10, pady=8)
+
+    ctk.CTkLabel(f_safety, text="Watermark Drawdown Global ($):", text_color="#00C853").grid(
+        row=9, column=2, sticky="w", padx=10, pady=8
+    )
+    e_gl_wm_drawdown = ctk.CTkEntry(f_safety, width=70, justify="center")
+    e_gl_wm_drawdown.insert(0, str(safe_cfg.get("WATERMARK_DRAWDOWN", 0.0)))
+    e_gl_wm_drawdown.grid(row=9, column=3, sticky="w", padx=10, pady=8)
+
+    ctk.CTkLabel(f_safety, text="SL Tối thiểu Global (Points):").grid(
+        row=10, column=0, sticky="w", padx=10, pady=8
+    )
+    e_gl_min_sl = ctk.CTkEntry(f_safety, width=70, justify="center")
+    e_gl_min_sl.insert(0, str(safe_cfg.get("MIN_SL_POINTS", 0)))
+    e_gl_min_sl.grid(row=10, column=1, sticky="w", padx=10, pady=8)
+
+    var_gl_reject_lot = ctk.BooleanVar(value=safe_cfg.get("REJECT_ON_MAX_LOT", False))
+    chk_gl_reject_lot = ctk.CTkCheckBox(
+        f_safety, text="Hủy lệnh vượt Max Lot (Global)", variable=var_gl_reject_lot
+    )
+    chk_gl_reject_lot.grid(row=10, column=2, columnspan=2, sticky="w", padx=10, pady=8)
+
     # Đã chuyển Watchlist lên đầu
 
     def save():
@@ -500,6 +551,10 @@ def open_bot_setting_popup(app):
                     "STRICT_MIN_LOT": var_strict_min_lot.get(),
                     "POST_CLOSE_COOLDOWN": int(e_post_close.get()),
                     "GLOBAL_COOLDOWN_HOURS": float(e_global_cooldown.get()),
+                    "WATERMARK_TRIGGER": float(e_gl_wm_trigger.get()),
+                    "WATERMARK_DRAWDOWN": float(e_gl_wm_drawdown.get()),
+                    "MIN_SL_POINTS": int(e_gl_min_sl.get()),
+                    "REJECT_ON_MAX_LOT": var_gl_reject_lot.get(),
                 }
             )
 
