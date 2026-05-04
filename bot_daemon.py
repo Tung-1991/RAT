@@ -290,55 +290,88 @@ class StandaloneBotDaemon:
 
             pos_list.sort(key=lambda x: x.time)
             first_pos = pos_list[0]
+            is_buy = first_pos.type == mt5.ORDER_TYPE_BUY
+            expected_sig = 1 if is_buy else -1
+            
             profit_points = (
                 (current_price - first_pos.price_open)
-                if first_pos.type == mt5.ORDER_TYPE_BUY
+                if is_buy
                 else (first_pos.price_open - current_price)
             )
 
-            # DCA
+            # DCA LOGIC
             if (
                 dca_cfg.get("ENABLED", False)
                 and profit_points < 0
                 and len(pos_list) < dca_cfg.get("MAX_STEPS", 3)
             ):
                 if abs(profit_points) >= (dca_cfg.get("DISTANCE_ATR_R", 1.0) * atr_val):
-                    self._add_signal(
-                        "BUY" if first_pos.type == mt5.ORDER_TYPE_BUY else "SELL",
-                        symbol,
-                        context,
-                        "DCA",
-                    )
-                    from core.storage_manager import update_last_dca_pca_signal_time
-                    update_last_dca_pca_signal_time(symbol, time.time())
-                    time.sleep(0.5)
-                    continue
+                    # ==========================================
+                    # [NEW V5.1] MINI-BRAIN EVALUATION (DCA)
+                    # ==========================================
+                    dca_signal = context.get("latest_signal", 0)
+                    dca_mb = dca_cfg.get("MINI_BRAIN", {})
+                    if dca_mb.get("active", False):
+                        tf = dca_mb.get("timeframe", "15m")
+                        df_mb = data_engine._fetch_bars(symbol, tf, 50, dca_mb.get("indicators", {}))
+                        dca_signal = signal_generator.evaluate_mini_brain(df_mb, context, dca_mb, context.get("market_mode", "ANY"))
 
-            # PCA
+                    if dca_signal == expected_sig:  # [V5.1] Cần Mini-Brain đồng thuận
+                        self._add_signal(
+                            "BUY" if is_buy else "SELL",
+                            symbol,
+                            context,
+                            "DCA",
+                        )
+                        from core.storage_manager import update_last_dca_pca_signal_time
+                        update_last_dca_pca_signal_time(symbol, time.time())
+                        time.sleep(0.5)
+                        continue
+                    else:
+                        mb_log_key = f"mb_dca_reject_{symbol}"
+                        last_mb_log = self.heartbeat_contexts.get(mb_log_key, 0)
+                        if time.time() - last_mb_log > 300: # 5 phút cooldown
+                            logger.info(f"🚫 [MINI-BRAIN] Tạm chặn DCA {symbol} (Chưa đồng thuận xu hướng).")
+                            self.heartbeat_contexts[mb_log_key] = time.time()
+
+            # PCA LOGIC
             if (
                 pca_cfg.get("ENABLED", False)
                 and profit_points > 0
                 and len(pos_list) < pca_cfg.get("MAX_STEPS", 2)
             ):
                 is_safe = (
-                    first_pos.type == mt5.ORDER_TYPE_BUY
-                    and first_pos.sl > first_pos.price_open
+                    is_buy and first_pos.sl > first_pos.price_open
                 ) or (
-                    first_pos.type == mt5.ORDER_TYPE_SELL
-                    and (first_pos.sl > 0 and first_pos.sl < first_pos.price_open)
+                    not is_buy and (0 < first_pos.sl < first_pos.price_open)
                 )
-                if is_safe and profit_points >= (
-                    pca_cfg.get("DISTANCE_ATR_R", 1.5) * atr_val
-                ):
-                    self._add_signal(
-                        "BUY" if first_pos.type == mt5.ORDER_TYPE_BUY else "SELL",
-                        symbol,
-                        context,
-                        "PCA",
-                    )
-                    from core.storage_manager import update_last_dca_pca_signal_time
-                    update_last_dca_pca_signal_time(symbol, time.time())
-                    time.sleep(0.5)
+                if is_safe and profit_points >= (pca_cfg.get("DISTANCE_ATR_R", 1.5) * atr_val):
+                    # ==========================================
+                    # [NEW V5.1] MINI-BRAIN EVALUATION (PCA)
+                    # ==========================================
+                    pca_signal = context.get("latest_signal", 0)
+                    pca_mb = pca_cfg.get("MINI_BRAIN", {})
+                    if pca_mb.get("active", False):
+                        tf = pca_mb.get("timeframe", "15m")
+                        df_mb = data_engine._fetch_bars(symbol, tf, 50, pca_mb.get("indicators", {}))
+                        pca_signal = signal_generator.evaluate_mini_brain(df_mb, context, pca_mb, context.get("market_mode", "ANY"))
+
+                    if pca_signal == expected_sig:  # [V5.1] Cần Mini-Brain đồng thuận
+                        self._add_signal(
+                            "BUY" if is_buy else "SELL",
+                            symbol,
+                            context,
+                            "PCA",
+                        )
+                        from core.storage_manager import update_last_dca_pca_signal_time
+                        update_last_dca_pca_signal_time(symbol, time.time())
+                        time.sleep(0.5)
+                    else:
+                        mb_log_key = f"mb_pca_reject_{symbol}"
+                        last_mb_log = self.heartbeat_contexts.get(mb_log_key, 0)
+                        if time.time() - last_mb_log > 300: # 5 phút cooldown
+                            logger.info(f"🚫 [MINI-BRAIN] Tạm chặn PCA {symbol} (Chưa đồng thuận xu hướng).")
+                            self.heartbeat_contexts[mb_log_key] = time.time()
 
 
 if __name__ == "__main__":

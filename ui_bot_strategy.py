@@ -735,6 +735,16 @@ class BotStrategyUI(ctk.CTkToplevel):
             text_color="#FFAB00",
         ).grid(row=0, column=0, columnspan=6, padx=10, pady=10, sticky="w")
 
+        # [NEW V5.1] Nút cài đặt Mini-Brain cho DCA
+        self.dca_mb_cfg = dca_cfg.get("MINI_BRAIN", {})
+        ctk.CTkButton(
+            dca_frame, 
+            text="⚙️ Cài đặt Mini-Brain", 
+            width=120, 
+            fg_color="#F57C00", 
+            command=lambda: self._open_mb_popup("DCA")
+        ).grid(row=0, column=6, padx=20, pady=10, sticky="e")
+
         ctk.CTkLabel(dca_frame, text="Max Steps:").grid(
             row=1, column=0, padx=10, pady=5, sticky="w"
         )
@@ -772,6 +782,16 @@ class BotStrategyUI(ctk.CTkToplevel):
             font=("Roboto", 13, "bold"),
             text_color="#00C853",
         ).grid(row=0, column=0, columnspan=6, padx=10, pady=10, sticky="w")
+
+        # [NEW V5.1] Nút cài đặt Mini-Brain cho PCA
+        self.pca_mb_cfg = pca_cfg.get("MINI_BRAIN", {})
+        ctk.CTkButton(
+            pca_frame, 
+            text="⚙️ Cài đặt Mini-Brain", 
+            width=120, 
+            fg_color="#00C853", 
+            command=lambda: self._open_mb_popup("PCA")
+        ).grid(row=0, column=6, padx=20, pady=10, sticky="e")
 
         ctk.CTkLabel(pca_frame, text="Max Steps:").grid(
             row=1, column=0, padx=10, pady=5, sticky="w"
@@ -864,6 +884,7 @@ class BotStrategyUI(ctk.CTkToplevel):
             "STEP_MULTIPLIER": float(self.dca_mult.get() or 1.5),
             "DISTANCE_ATR_R": float(self.dca_atr.get() or 1.0),
             "COOLDOWN": int(self.dca_pca_cooldown.get() or 60),
+            "MINI_BRAIN": getattr(self, "dca_mb_cfg", {})
         }
         new_pca = {
             "ENABLED": self.pca_active.get(),
@@ -871,6 +892,7 @@ class BotStrategyUI(ctk.CTkToplevel):
             "STEP_MULTIPLIER": float(self.pca_mult.get() or 0.5),
             "DISTANCE_ATR_R": float(self.pca_atr.get() or 1.5),
             "CONFIRM_ADX": getattr(config, "PCA_CONFIG", {}).get("CONFIRM_ADX", 23),
+            "MINI_BRAIN": getattr(self, "pca_mb_cfg", {})
         }
 
         return {
@@ -887,6 +909,17 @@ class BotStrategyUI(ctk.CTkToplevel):
             "dca_config": new_dca,
             "pca_config": new_pca,
         }
+
+    def _open_mb_popup(self, mode):
+        from ui_popups import open_minibrain_popup
+        if mode == "DCA":
+            def save_cb(new_cfg):
+                self.dca_mb_cfg = new_cfg
+            open_minibrain_popup(self, "Cài đặt Mini-Brain (DCA)", getattr(self, "dca_mb_cfg", {}), save_cb)
+        else:
+            def save_cb(new_cfg):
+                self.pca_mb_cfg = new_cfg
+            open_minibrain_popup(self, "Cài đặt Mini-Brain (PCA)", getattr(self, "pca_mb_cfg", {}), save_cb)
 
     def save_strategy(self):
         try:

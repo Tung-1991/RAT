@@ -236,6 +236,24 @@ class SignalGenerator:
         
         return 0
 
+    def evaluate_mini_brain(self, df, context, mini_brain_cfg, current_mode="ANY"):
+        """[NEW V5.1] Đánh giá độc lập cho DCA/PCA bằng Mini-Brain 1-Group"""
+        if not mini_brain_cfg or not mini_brain_cfg.get("active", False):
+            return 0 # Nếu không bật Mini-Brain, trả về 0 để hệ thống xử lý logic mặc định
+            
+        inds = mini_brain_cfg.get("indicators", {})
+        if not inds:
+            return 0
+            
+        rules = {
+            "max_opposite": int(mini_brain_cfg.get("max_opposite", 0)),
+            "max_none": int(mini_brain_cfg.get("max_none", 0)),
+            "master_rule": "FIX" 
+        }
+        
+        # Tái sử dụng engine evaluate lõi nhưng chạy độc lập với 1 Group
+        return self._evaluate_group("MINI_BRAIN", inds, df, context, current_mode, rules)
+
     def generate_signal_v4(self, dfs, context, symbol=None):
         settings = self._get_brain_settings(symbol)
         voting_rules = settings.get("voting_rules", {})

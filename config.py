@@ -150,6 +150,7 @@ BOT_SAFEGUARD = {
     "WATERMARK_DRAWDOWN": 0.0,        # [NEW V5] Mức USD sụt giảm cho phép từ đỉnh
     "MIN_SL_POINTS": 0,               # [NEW V5] Khoảng cách SL tối thiểu bằng Point
     "REJECT_ON_MAX_LOT": False,       # [NEW V5] True: Bỏ lệnh nếu vượt trần. False: Ép về Max Lot Cap
+    "MAX_BASKET_DRAWDOWN_USD": 0.0,   # [NEW V5.1] Mức âm tối đa của cả rổ lệnh (Mẹ + DCA/PCA) (0 = Tắt)
 }
 
 # ==============================================================================
@@ -367,17 +368,29 @@ SANDBOX_CONFIG = {
 }
 
 # ==============================================================================
-# 8. TÍNH NĂNG NHỒI LỆNH (AUTO DCA/PCA)
+# 8. TÍNH NĂNG NHỒI LỆNH (AUTO DCA/PCA & MINI-BRAIN)
 # ==============================================================================
+MINI_BRAIN_DEFAULT = {
+    "active": False,
+    "timeframe": "15m",
+    "max_opposite": 0,
+    "max_none": 0,
+    "indicators": {} # Tái sử dụng cấu trúc indicators của Sandbox
+}
+
 DCA_CONFIG = {
     "ENABLED": False,
     "MAX_STEPS": 3,
     "STEP_MULTIPLIER": 1.5,
     "DISTANCE_ATR_R": 1.0,
+    "COOLDOWN": 60,
+    "MINI_BRAIN": MINI_BRAIN_DEFAULT.copy()
 }
 PCA_CONFIG = {
     "ENABLED": False,
     "MAX_STEPS": 2,
     "STEP_MULTIPLIER": 0.5,
     "DISTANCE_ATR_R": 1.5,
+    "CONFIRM_ADX": 23,
+    "MINI_BRAIN": MINI_BRAIN_DEFAULT.copy()
 }

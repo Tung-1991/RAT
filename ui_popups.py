@@ -114,8 +114,13 @@ def open_symbol_config_popup(app, symbol):
     e_min_sl.insert(0, str(sym_cfg.get("min_sl_points", 0)))
     e_min_sl.grid(row=7, column=1, sticky="e", pady=10)
 
+    ctk.CTkLabel(f_grid, text="Max Basket Drawdown ($):").grid(row=8, column=0, sticky="w", pady=10)
+    e_basket_dd = ctk.CTkEntry(f_grid, width=100, justify="center")
+    e_basket_dd.insert(0, str(sym_cfg.get("max_basket_drawdown", 0.0)))
+    e_basket_dd.grid(row=8, column=1, sticky="e", pady=10)
+
     var_reject_lot = ctk.BooleanVar(value=sym_cfg.get("reject_on_max_lot", False))
-    ctk.CTkCheckBox(f_grid, text="Hủy lệnh nếu vượt Max Lot (Tắt = Ép bằng Max Lot)", variable=var_reject_lot, font=("Roboto", 11)).grid(row=8, column=0, columnspan=2, sticky="w", pady=10)
+    ctk.CTkCheckBox(f_grid, text="Hủy lệnh nếu vượt Max Lot (Tắt = Ép bằng Max Lot)", variable=var_reject_lot, font=("Roboto", 11)).grid(row=9, column=0, columnspan=2, sticky="w", pady=10)
 
     def save_sym():
         try:
@@ -134,6 +139,7 @@ def open_symbol_config_popup(app, symbol):
                 "watermark_trigger": float(e_wm_trigger.get()),
                 "watermark_drawdown": float(e_wm_drawdown.get()),
                 "min_sl_points": int(e_min_sl.get()),
+                "max_basket_drawdown": float(e_basket_dd.get()),
                 "reject_on_max_lot": var_reject_lot.get(),
             }
             with open(cfg_path, "w", encoding="utf-8") as f:
@@ -505,11 +511,18 @@ def open_bot_setting_popup(app):
     e_gl_min_sl.insert(0, str(safe_cfg.get("MIN_SL_POINTS", 0)))
     e_gl_min_sl.grid(row=10, column=1, sticky="w", padx=10, pady=8)
 
+    ctk.CTkLabel(f_safety, text="Max Basket Loss Global ($):").grid(
+        row=11, column=0, sticky="w", padx=10, pady=8
+    )
+    e_gl_basket_dd = ctk.CTkEntry(f_safety, width=70, justify="center")
+    e_gl_basket_dd.insert(0, str(safe_cfg.get("MAX_BASKET_DRAWDOWN_USD", 0.0)))
+    e_gl_basket_dd.grid(row=11, column=1, sticky="w", padx=10, pady=8)
+
     var_gl_reject_lot = ctk.BooleanVar(value=safe_cfg.get("REJECT_ON_MAX_LOT", False))
     chk_gl_reject_lot = ctk.CTkCheckBox(
         f_safety, text="Hủy lệnh vượt Max Lot (Global)", variable=var_gl_reject_lot
     )
-    chk_gl_reject_lot.grid(row=10, column=2, columnspan=2, sticky="w", padx=10, pady=8)
+    chk_gl_reject_lot.grid(row=11, column=2, columnspan=2, sticky="w", padx=10, pady=8)
 
     # Đã chuyển Watchlist lên đầu
 
@@ -554,6 +567,7 @@ def open_bot_setting_popup(app):
                     "WATERMARK_TRIGGER": float(e_gl_wm_trigger.get()),
                     "WATERMARK_DRAWDOWN": float(e_gl_wm_drawdown.get()),
                     "MIN_SL_POINTS": int(e_gl_min_sl.get()),
+                    "MAX_BASKET_DRAWDOWN_USD": float(e_gl_basket_dd.get()),
                     "REJECT_ON_MAX_LOT": var_gl_reject_lot.get(),
                 }
             )
@@ -998,7 +1012,7 @@ def open_tsl_popup(app, override_symbol=None):
             from core.storage_manager import load_symbol_overrides
             
             brain = get_brain_settings_for_symbol()
-            symbols = brain.get("BOT_ACTIVE_SYMBOLS", getattr(config, "SYMBOLS", []))
+            symbols = getattr(config, "COIN_LIST", [])
             overrides = load_symbol_overrides()
     
             row, col = 0, 0
@@ -1545,3 +1559,99 @@ def show_history_popup(app):
             load_data()  # Reload lại Treeview
 
     tr.bind("<Button-3>", on_right_click)
+
+
+def open_minibrain_popup(app, title, mb_cfg, on_save_callback):
+    """
+    [NEW V5.1] Popup cài đặt Mini-Brain 1-Group độc lập cho DCA/PCA
+    """
+    import tkinter as tk
+    from tkinter import messagebox
+    import customtkinter as ctk
+    import config
+
+    top = ctk.CTkToplevel(getattr(app, 'root', app))
+    top.title(title)
+    top.geometry("700x500")
+    top.grab_set()
+
+    f_top = ctk.CTkFrame(top)
+    f_top.pack(fill="x", padx=10, pady=10)
+
+    var_active = ctk.BooleanVar(value=mb_cfg.get("active", False))
+    chk_active = ctk.CTkCheckBox(f_top, text="Bật Mini-Brain", variable=var_active, font=("Roboto", 13, "bold"))
+    chk_active.pack(side="left", padx=10)
+
+    ctk.CTkLabel(f_top, text="Timeframe:").pack(side="left", padx=(20, 5))
+    cbo_tf = ctk.CTkComboBox(f_top, values=["1m", "5m", "15m", "30m", "1h", "4h"], width=80)
+    cbo_tf.set(mb_cfg.get("timeframe", "15m"))
+    cbo_tf.pack(side="left", padx=5)
+
+    f_rules = ctk.CTkFrame(top)
+    f_rules.pack(fill="x", padx=10, pady=5)
+
+    ctk.CTkLabel(f_rules, text="Max Opposite (Phiếu ngược tối đa):").pack(side="left", padx=10, pady=5)
+    e_max_opp = ctk.CTkEntry(f_rules, width=60, justify="center")
+    e_max_opp.insert(0, str(mb_cfg.get("max_opposite", 0)))
+    e_max_opp.pack(side="left", padx=5)
+
+    ctk.CTkLabel(f_rules, text="Max None (Phiếu trắng tối đa):").pack(side="left", padx=20, pady=5)
+    e_max_none = ctk.CTkEntry(f_rules, width=60, justify="center")
+    e_max_none.insert(0, str(mb_cfg.get("max_none", 0)))
+    e_max_none.pack(side="left", padx=5)
+
+    f_inds = ctk.CTkFrame(top)
+    f_inds.pack(fill="both", expand=True, padx=10, pady=10)
+    ctk.CTkLabel(f_inds, text="CHỌN CHỈ BÁO", font=("Roboto", 12, "bold")).pack(pady=5)
+
+    inds_cfg = mb_cfg.get("indicators", {})
+    vars_dict = {}
+
+    from config import INDICATOR_DEFINITIONS
+    
+    # Tạo lưới cho các indicators (Tương tự Sandbox)
+    grid_f = ctk.CTkFrame(f_inds, fg_color="transparent")
+    grid_f.pack(fill="both", expand=True, padx=5, pady=5)
+    
+    row, col = 0, 0
+    for key, defi in INDICATOR_DEFINITIONS.items():
+        val = False
+        if key in inds_cfg:
+            val = inds_cfg[key].get("active", False)
+        
+        var = ctk.BooleanVar(value=val)
+        vars_dict[key] = var
+        ctk.CTkCheckBox(grid_f, text=defi["name"], variable=var).grid(row=row, column=col, sticky="w", padx=10, pady=5)
+        
+        col += 1
+        if col > 2:
+            col = 0
+            row += 1
+
+    def save_mb():
+        try:
+            new_cfg = {
+                "active": var_active.get(),
+                "timeframe": cbo_tf.get(),
+                "max_opposite": int(e_max_opp.get()),
+                "max_none": int(e_max_none.get()),
+                "indicators": {}
+            }
+            
+            for k, v in vars_dict.items():
+                if v.get():
+                    if k in inds_cfg:
+                        new_cfg["indicators"][k] = inds_cfg[k]
+                        new_cfg["indicators"][k]["active"] = True
+                    else:
+                        new_cfg["indicators"][k] = {
+                            "active": True,
+                            "params": INDICATOR_DEFINITIONS[k]["default_params"].copy()
+                        }
+                        
+            on_save_callback(new_cfg)
+            top.destroy()
+        except ValueError:
+            messagebox.showerror("Lỗi", "Vui lòng nhập số hợp lệ", parent=top)
+
+    ctk.CTkButton(top, text="LƯU MINI-BRAIN", fg_color="#FBC02D", text_color="#212121", font=("Roboto", 13, "bold"), command=save_mb).pack(pady=10)

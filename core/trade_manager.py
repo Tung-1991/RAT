@@ -985,10 +985,14 @@ class TradeManager:
                         if highest >= wm_trigger and current_pnl <= (highest - wm_dd):
                             self.log(f"💧 [WATERMARK] {sym} Sụt giảm từ đỉnh (+${highest:.2f}) xuống (+${current_pnl:.2f})! Đạt giới hạn Drawdown (${wm_dd:.2f}). KÍCH HOẠT ĐÓNG TOÀN BỘ!", target="bot")
                             
-                            for p in tracked_positions:
-                                if p.symbol == sym:
-                                    self.state["exit_reasons"][str(p.ticket)] = "Watermark_Hit"
-                                    threading.Thread(target=self.connector.close_position, args=(p,), daemon=True).start()
+                            def _close_watermark_seq(positions, symbol):
+                                for p in positions:
+                                    if p.symbol == symbol:
+                                        self.state["exit_reasons"][str(p.ticket)] = "Watermark_Hit"
+                                        self.connector.close_position(p)
+                                        time.sleep(0.2)
+                                        
+                            threading.Thread(target=_close_watermark_seq, args=(tracked_positions, sym), daemon=True).start()
                             
                             # Kích hoạt Cooldown cho Symbol (Ép Fail Time về hiện tại)
                             if "bot_last_fail_times" not in self.state:
@@ -999,6 +1003,48 @@ class TradeManager:
                             self.state["highest_pnl_recorded"][sym] = 0.0
                             needs_save = True
             # ---------------------------------------
+
+            # --- [NEW V5.1] MAX BASKET DRAWDOWN (PHANH KHẨN CẤP RỔ LỆNH) ---
+            if tracked_positions and self.state.get("parent_baskets"):
+                # Dùng list() để tránh lỗi RuntimeError: dictionary changed size during iteration
+                for parent_str, children_list in list(self.state["parent_baskets"].items()):
+                    basket_tickets = [int(parent_str)] + [int(t) for t in children_list]
+                    basket_pos = [p for p in tracked_positions if p.ticket in basket_tickets]
+                    
+                    if not basket_pos:
+                        continue
+                        
+                    # Lấy cấu hình Drawdown (Ưu tiên Symbol Config -> Fallback Global)
+                    sym = basket_pos[0].symbol
+                    brain = self._get_brain_settings(sym)
+                    sym_cfg = brain.get("symbol_configs", {}).get(sym, {})
+                    sg_cfg = brain.get("bot_safeguard", getattr(config, "BOT_SAFEGUARD", {}))
+                    
+                    max_basket_loss = float(sym_cfg.get("max_basket_drawdown", 0.0))
+                    if max_basket_loss <= 0:
+                        max_basket_loss = float(sg_cfg.get("MAX_BASKET_DRAWDOWN_USD", 0.0))
+                        
+                    if max_basket_loss > 0:
+                        total_basket_pnl = sum((p.profit + p.swap + getattr(p, "commission", 0.0)) for p in basket_pos)
+                        
+                        if total_basket_pnl <= -max_basket_loss:
+                            self.log(f"🔥 [BASKET DRAWDOWN] Rổ {sym} (Mẹ #{parent_str}) âm vượt ngưỡng (-${max_basket_loss:.2f})! PnL hiện tại: ${total_basket_pnl:.2f}. CẮT SẠCH CẢ RỔ!", target="bot")
+                            
+                            def _close_basket_seq(b_pos):
+                                for p in b_pos:
+                                    self.state["exit_reasons"][str(p.ticket)] = "Basket_Drawdown_Hit"
+                                    self.connector.close_position(p)
+                                    time.sleep(0.2)
+                                    
+                            threading.Thread(target=_close_basket_seq, args=(basket_pos,), daemon=True).start()
+                            
+                            # Kích hoạt Cooldown (Block vào lệnh mới)
+                            if "bot_last_fail_times" not in self.state:
+                                self.state["bot_last_fail_times"] = {}
+                            self.state["bot_last_fail_times"][sym] = time.time()
+                            
+                            needs_save = True
+            # ---------------------------------------------------------------
             
             if needs_save:
                 save_state(self.state)
