@@ -491,7 +491,7 @@ class BotStrategyUI(ctk.CTkToplevel):
                 frame, textvariable=max_none_var, width=60, justify="center"
             ).grid(row=1, column=3, padx=10, pady=5)
 
-            ctk.CTkLabel(frame, text="Master Rule:").grid(
+            ctk.CTkLabel(frame, text="Master Rule (VETO):").grid(
                 row=2, column=0, padx=10, pady=5, sticky="w"
             )
             master_rule_var = ctk.StringVar(value=grp_data.get("master_rule", "FIX"))

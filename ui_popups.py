@@ -114,7 +114,7 @@ def open_symbol_config_popup(app, symbol):
     e_min_sl.insert(0, str(sym_cfg.get("min_sl_points", 0)))
     e_min_sl.grid(row=7, column=1, sticky="e", pady=10)
 
-    ctk.CTkLabel(f_grid, text="Max Basket Drawdown ($):").grid(row=8, column=0, sticky="w", pady=10)
+    ctk.CTkLabel(f_grid, text="Max Basket Drawdown (DCA/PCA) ($):").grid(row=8, column=0, sticky="w", pady=10)
     e_basket_dd = ctk.CTkEntry(f_grid, width=100, justify="center")
     e_basket_dd.insert(0, str(sym_cfg.get("max_basket_drawdown", 0.0)))
     e_basket_dd.grid(row=8, column=1, sticky="e", pady=10)
@@ -356,7 +356,7 @@ def open_bot_setting_popup(app):
     e_gl_wm_drawdown.insert(0, str(safe_cfg.get("WATERMARK_DRAWDOWN", 0.0)))
     e_gl_wm_drawdown.grid(row=0, column=3, sticky="w", padx=5, pady=5)
 
-    ctk.CTkLabel(f_sg_content, text="Max Basket Loss ($):").grid(row=1, column=0, sticky="w", padx=10, pady=5)
+    ctk.CTkLabel(f_sg_content, text="Max Basket Loss (DCA/PCA) ($):").grid(row=1, column=0, sticky="w", padx=10, pady=5)
     e_gl_basket_dd = ctk.CTkEntry(f_sg_content, width=60, justify="center")
     e_gl_basket_dd.insert(0, str(safe_cfg.get("MAX_BASKET_DRAWDOWN_USD", 0.0)))
     e_gl_basket_dd.grid(row=1, column=1, sticky="w", padx=5, pady=5)
