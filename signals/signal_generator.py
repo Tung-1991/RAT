@@ -253,22 +253,28 @@ class SignalGenerator:
                     context["block_reason"] = f"Bị chặn bởi {grp} (Luật FIX)"
                     return 0 
                 
-                active_votes = [v for v in votes.values() if v != 0]
+                active_votes = [
+                    v for g, v in votes.items()
+                    if v != 0 and voting_rules.get(g, {}).get("master_rule", "IGNORE") == "FIX"
+                ]
                 if len(set(active_votes)) > 1:
                     context["block_reason"] = "Xung đột hướng giữa các nhóm"
                     return 0 
 
         if eval_mode == "VETO":
-            active_votes = [v for v in votes.values() if v != 0]
+            fix_votes = [
+                v for grp, v in votes.items()
+                if v != 0 and voting_rules.get(grp, {}).get("master_rule", "IGNORE") == "FIX"
+            ]
+            pass_votes = [
+                v for grp, v in votes.items()
+                if v != 0 and voting_rules.get(grp, {}).get("master_rule", "IGNORE") == "PASS"
+            ]
+            active_votes = fix_votes or pass_votes
             if not active_votes:
                 context["block_reason"] = "Không nhóm nào có tín hiệu (WAIT)"
                 return 0
             final_dir = active_votes[0]
-            for grp, status in votes.items():
-                rule = voting_rules.get(grp, {}).get("master_rule", "IGNORE")
-                if (rule == "FIX" or rule == "PASS") and status != 0 and status != final_dir:
-                    context["block_reason"] = f"Xung đột G0/G1 với {grp} (Luật {rule})"
-                    return 0
             context["block_reason"] = "OK / Ready"
             return final_dir
         

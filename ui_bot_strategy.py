@@ -46,6 +46,7 @@ class BotStrategyUI(ctk.CTkToplevel):
         self.vote_widgets = {}
         self.risk_widgets = {}
         self.tf_vars = {}
+        self.preview_symbol_var = None
 
         self._build_ui()
 
@@ -245,10 +246,43 @@ class BotStrategyUI(ctk.CTkToplevel):
             f,
             "- Preview chỉ đọc context live, không tự quyết định lệnh.\n"
             "- B/S/N là phiếu BUY/SELL/NONE sau khi lọc theo Mode.\n"
-            "- Master Action = kết quả cuối sau rule group + Master Mode.",
+            "- Master Action = final result after group rules + Master Mode.\n"
+            "- FIX = required, PASS = directional vote, IGNORE = skipped.",
             padx=5,
             pady=(0, 10),
         )
+
+        if not self.override_symbol:
+            picker_f = ctk.CTkFrame(f, fg_color="transparent")
+            picker_f.pack(fill="x", pady=(0, 8))
+
+            symbols = list(getattr(config, "COIN_LIST", []))
+            if not symbols:
+                symbols = list(getattr(config, "BOT_ACTIVE_SYMBOLS", []))
+            if not symbols:
+                symbols = [getattr(config, "DEFAULT_SYMBOL", "ETHUSD")]
+
+            active_symbol = getattr(config, "UI_ACTIVE_SYMBOL", None)
+            if not active_symbol:
+                try:
+                    active_symbol = self.master.cbo_symbol.get()
+                except Exception:
+                    active_symbol = symbols[0]
+            if active_symbol not in symbols:
+                symbols.insert(0, active_symbol)
+
+            self.preview_symbol_var = ctk.StringVar(value=active_symbol)
+            ctk.CTkLabel(
+                picker_f,
+                text="Preview Symbol:",
+                font=("Roboto", 12, "bold"),
+            ).pack(side="left", padx=(5, 8))
+            ctk.CTkComboBox(
+                picker_f,
+                values=symbols,
+                variable=self.preview_symbol_var,
+                width=140,
+            ).pack(side="left")
 
         # Header: Master Action
         header_f = ctk.CTkFrame(f, fg_color="#1A1A1A", corner_radius=8, border_width=1, border_color="#333")
@@ -304,7 +338,7 @@ class BotStrategyUI(ctk.CTkToplevel):
                 context = all_ctx.get(self.override_symbol, {})
             else:
                 # UI mẹ: lấy symbol đang chọn trên combobox chính
-                active_symbol = getattr(config, "UI_ACTIVE_SYMBOL", None)
+                active_symbol = self.preview_symbol_var.get() if self.preview_symbol_var else None
                 if not active_symbol:
                     try:
                         active_symbol = self.master.cbo_symbol.get()
@@ -629,8 +663,9 @@ class BotStrategyUI(ctk.CTkToplevel):
 
         self._add_hint_box(
             self.tab_rules,
-            "- Group status dùng chung rule: B/S/N + max_opposite + max_none.\n"
-            "- VETO chặn khi FIX fail hoặc xung đột hướng; VOTING cần đủ Min Votes.\n"
+            "- VETO: FIX must have a signal and must not conflict with another FIX.\n"
+            "- PASS: does not block FIX; used only when no FIX decides.\n"
+            "- IGNORE: skip group; VOTING needs enough Min Votes.\n"
             "- Timeframe G0-G3 quyết định data dùng cho từng group.",
             pady=(5, 10),
         )
