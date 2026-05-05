@@ -217,15 +217,24 @@ class DataEngine:
         try:
             tsl_cfg = settings.get("TSL_CONFIG", getattr(config, "TSL_CONFIG", {}))
             psar_grp = tsl_cfg.get("PSAR_GROUP", "G2")
-            if psar_grp not in dfs: psar_grp = "G2"
-            
-            df_psar = dfs[psar_grp]
-            psar_cols = [c for c in df_psar.columns if c.startswith("PSARl_") or c.startswith("PSARs_")]
-            for col in psar_cols:
-                val = df_psar[col].iloc[-1]
-                if not pd.isna(val):
-                    context["psar"] = float(val)
-                    break
+            if "DYNAMIC" in psar_grp or psar_grp not in dfs:
+                psar_grp = "G2"
+
+            for grp, df_psar in dfs.items():
+                psar_cols = [c for c in df_psar.columns if c.startswith("PSARl_") or c.startswith("PSARs_")]
+                for col in psar_cols:
+                    val = df_psar[col].iloc[-1]
+                    if not pd.isna(val):
+                        context[f"psar_{grp}"] = float(val)
+                        break
+
+            if f"psar_{psar_grp}" in context:
+                context["psar"] = context[f"psar_{psar_grp}"]
+            else:
+                for grp in ["G2", "G1", "G0", "G3"]:
+                    if f"psar_{grp}" in context:
+                        context["psar"] = context[f"psar_{grp}"]
+                        break
         except Exception:
             pass
 

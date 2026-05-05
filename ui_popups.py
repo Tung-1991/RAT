@@ -19,6 +19,27 @@ COL_WARN = "#FFAB00"
 COL_BOT_TAG = "#E040FB"
 
 
+def _add_popup_hint(parent, text, padx=15, pady=(5, 10), wraplength=900):
+    hint_f = ctk.CTkFrame(
+        parent,
+        fg_color="#332B00",
+        corner_radius=6,
+        border_width=1,
+        border_color="#FFD600",
+    )
+    hint_f.pack(fill="x", padx=padx, pady=pady)
+    ctk.CTkLabel(
+        hint_f,
+        text=text,
+        font=("Roboto", 13, "italic"),
+        text_color="#FFD600",
+        justify="left",
+        anchor="w",
+        wraplength=wraplength,
+    ).pack(fill="x", padx=10, pady=6)
+    return hint_f
+
+
 # ==============================================================================
 # 1. POPUP CẤU HÌNH TỪNG CẶP GIAO DỊCH (SYMBOL CONFIG)
 # ==============================================================================
@@ -48,6 +69,15 @@ def open_symbol_config_popup(app, symbol):
     ctk.CTkLabel(
         top, text=f"THIẾT LẬP SAFEGUARD: {symbol}", font=FONT_BOLD, text_color="#2196F3"
     ).pack(pady=10)
+    _add_popup_hint(
+        top,
+        "- Cấu hình này chỉ áp dụng cho symbol đang chọn.\n"
+        "- Fixed Lot > 0 sẽ bỏ qua risk %, dùng lot cố định.\n"
+        "- Watermark/Basket/Max Lot là hàng rào riêng trước khi bot vào hoặc giữ lệnh.",
+        padx=20,
+        pady=(0, 5),
+        wraplength=340,
+    )
 
     f_grid = ctk.CTkFrame(top, fg_color="transparent")
     f_grid.pack(fill="x", padx=20, pady=10)
@@ -200,6 +230,14 @@ def open_bot_setting_popup(app):
         font=FONT_BOLD,
         text_color="#2196F3",
     ).pack(pady=(5, 5))
+    _add_popup_hint(
+        tab_core,
+        "- Watchlist quyết định symbol bot được quét; nút bánh răng là safeguard riêng từng symbol.\n"
+        "- AUTO-TRADING bật/tắt bóp cò thật, nhưng preview/context vẫn có thể chạy để quan sát.\n"
+        "- Cấu hình Global là mặc định; cấu hình riêng theo symbol sẽ ghi đè.",
+        padx=30,
+        pady=(0, 10),
+    )
     f_coins = ctk.CTkFrame(tab_core, fg_color="transparent")
     f_coins.pack(fill="x", padx=30, pady=(0, 10))
     app.bot_coin_vars = {}
@@ -245,6 +283,14 @@ def open_bot_setting_popup(app):
         font=FONT_BOLD,
         text_color="#FFB300",
     ).pack(pady=(5, 5))
+    _add_popup_hint(
+        tab_core,
+        "- Global Brake chặn toàn bot khi chạm ngưỡng lỗ/streak/cooldown.\n"
+        "- Safeguard bảo vệ lợi nhuận, rổ DCA/PCA, SL tối thiểu và điều kiện TP.\n"
+        "- Giá trị 0 thường là tắt giới hạn tương ứng.",
+        padx=30,
+        pady=(0, 10),
+    )
 
     # --- [NEW] LIVE PREVIEW ---
     from core.storage_manager import load_state
@@ -562,7 +608,7 @@ def open_preset_config_popup(app):
     data = config.PRESETS.get(p_name, {})
     top = ctk.CTkToplevel(app)
     top.title(f"Preset: {p_name}")
-    top.geometry("400x500")
+    top.geometry("430x620")
     top.attributes("-topmost", True)
     # top.transient(app)
 
@@ -572,6 +618,15 @@ def open_preset_config_popup(app):
     cp = tick.get("ask", 1000.0) if isinstance(tick, dict) else 1000.0
 
     ctk.CTkLabel(top, text=f"PRESET: {p_name}", font=FONT_BOLD).pack(pady=10)
+    _add_popup_hint(
+        top,
+        "- Preset này dùng cho lệnh manual theo preset đang chọn.\n"
+        "- Risk % + SL % quyết định lot; TP RR tính lời/lỗ theo R.\n"
+        "- SwingPoint nếu bật sẽ ưu tiên cấu trúc giá thay cho % cố định.",
+        padx=20,
+        pady=(0, 10),
+        wraplength=370,
+    )
 
     ctk.CTkLabel(top, text="Risk Per Trade (%):").pack()
     e_risk = ctk.CTkEntry(top, justify="center")
@@ -717,6 +772,15 @@ def open_tsl_popup(app, override_symbol=None):
         return ctk.CTkFrame(parent, fg_color="transparent")
 
     # ================= TAB 1: BASIC =================
+    _add_popup_hint(
+        tab_basic,
+        "- BE kéo SL về hòa/lãi nhẹ khi đạt R trigger.\n"
+        "- PNL Levels khóa lãi theo % win; STEP R bám theo từng bậc R.\n"
+        "- Chỉ tactic được bật ở lệnh/Bot TSL mới dùng các tham số này.",
+        padx=15,
+        pady=(10, 5),
+        wraplength=400,
+    )
     f_be = sec(tab_basic, "1. BREAK-EVEN (BE)")
     f_be.pack(fill="x", padx=15)
     cbo_be = ctk.CTkOptionMenu(f_be, values=["SOFT", "SMART"], width=100)
@@ -771,6 +835,15 @@ def open_tsl_popup(app, override_symbol=None):
     ctk.CTkLabel(f_step, text="Lock(0-1):").pack(side="right", padx=5)
 
     # ================= TAB 2: ADVANCED =================
+    _add_popup_hint(
+        tab_adv,
+        "- Swing/PSAR dùng group được chọn để bám cấu trúc giá.\n"
+        "- CASH trail khóa lãi theo USD/Percent/Point; One-Time chỉ khóa một lần.\n"
+        "- ANTI CASH là hard-stop theo USD hoặc thời gian âm.",
+        padx=15,
+        pady=(10, 5),
+        wraplength=400,
+    )
     f_swing_man = sec(tab_adv, "4. MANUAL SWING (Bám nến)")
     f_swing_man.pack(fill="x", padx=15)
     cbo_swing_grp = ctk.CTkOptionMenu(
@@ -953,7 +1026,15 @@ def open_tsl_popup(app, override_symbol=None):
             f.pack(fill="both", expand=True, padx=5, pady=5)
             
             ctk.CTkLabel(f, text="CẤU HÌNH GHI ĐÈ (PER-SYMBOL OVERRIDE)", font=("Roboto", 14, "bold")).pack(pady=10)
-            ctk.CTkLabel(f, text="Bấm vào cặp tiền để cài đặt TSL riêng. Các cài đặt này sẽ ghi đè lên cấu hình Global.").pack(pady=5)
+            _add_popup_hint(
+                f,
+                "- Symbol có override sẽ dùng TSL riêng thay cho Global.\n"
+                "- Reset override = xóa TSL con, quay về TSL mẹ.\n"
+                "- Override chỉ áp dụng cho symbol được chọn.",
+                padx=10,
+                pady=(0, 10),
+                wraplength=400,
+            )
             
             grid_frame = ctk.CTkFrame(f, fg_color="transparent")
             grid_frame.pack(pady=10)

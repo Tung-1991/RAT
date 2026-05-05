@@ -302,47 +302,118 @@ def update_last_dca_pca_close_time(symbol: str, timestamp: float):
     save_state(state)
 
 def load_brain_settings() -> Dict[str, Any]:
+    sandbox_defaults = getattr(config, "SANDBOX_CONFIG", {})
     default_brain = {
         "MASTER_EVAL_MODE": getattr(config, "MASTER_EVAL_MODE", "VETO"),
         "MIN_MATCHING_VOTES": getattr(config, "MIN_MATCHING_VOTES", 3),
+        "FORCE_ANY_MODE": getattr(config, "FORCE_ANY_MODE", False),
         "G0_TIMEFRAME": getattr(config, "G0_TIMEFRAME", "1d"),
         "G1_TIMEFRAME": getattr(config, "G1_TIMEFRAME", "1h"),
         "G2_TIMEFRAME": getattr(config, "G2_TIMEFRAME", "15m"),
         "G3_TIMEFRAME": getattr(config, "G3_TIMEFRAME", "15m"),
-        "voting_rules": {
+        "BOT_ACTIVE_SYMBOLS": copy.deepcopy(getattr(config, "BOT_ACTIVE_SYMBOLS", [])),
+        "voting_rules": copy.deepcopy(sandbox_defaults.get("voting_rules", {
             "G0": {"max_opposite": 0, "max_none": 0, "master_rule": "PASS"},
             "G1": {"max_opposite": 0, "max_none": 0, "master_rule": "FIX"},
             "G2": {"max_opposite": 0, "max_none": 1, "master_rule": "FIX"},
             "G3": {"max_opposite": 0, "max_none": 1, "master_rule": "IGNORE"}
+        })),
+        "risk_tsl": {
+            "base_risk": getattr(config, "BOT_RISK_PERCENT", 0.3),
+            "base_sl": getattr(config, "BOT_BASE_SL", "G2"),
+            "sl_atr_multiplier": getattr(config, "sl_atr_multiplier", 0.2),
+            "tsl_mode": getattr(config, "TSL_LOGIC_MODE", "STATIC"),
+            "bot_tsl": getattr(config, "BOT_DEFAULT_TSL", "BE+STEP_R+SWING"),
+            "mode_multipliers": {
+                "ANY": 1.0,
+                "TREND": 1.0,
+                "RANGE": 0.5,
+                "BREAKOUT": 1.5,
+                "EXHAUSTION": 1.0,
+            },
+            "strict_risk": getattr(config, "STRICT_RISK_CALC", False),
         },
-        "indicators": getattr(config, "SANDBOX_CONFIG", {}).get("indicators", {})
+        "indicators": copy.deepcopy(sandbox_defaults.get("indicators", {})),
+        "dca_config": copy.deepcopy(getattr(config, "DCA_CONFIG", {})),
+        "pca_config": copy.deepcopy(getattr(config, "PCA_CONFIG", {})),
+        "bot_safeguard": copy.deepcopy(getattr(config, "BOT_SAFEGUARD", {})),
+        "TSL_CONFIG": copy.deepcopy(getattr(config, "TSL_CONFIG", {})),
+        "TSL_LOGIC_MODE": getattr(config, "TSL_LOGIC_MODE", "STATIC"),
+        "symbol_configs": {},
     }
+
+    def merge_dict(dst, src):
+        for key, val in src.items():
+            if isinstance(val, dict) and isinstance(dst.get(key), dict):
+                merge_dict(dst[key], val)
+            else:
+                dst[key] = copy.deepcopy(val)
     
     os.makedirs(os.path.dirname(BRAIN_FILE), exist_ok=True)
     if not os.path.exists(BRAIN_FILE):
-        return default_brain
+        return _normalize_brain_settings_shape(default_brain)
 
     try:
         with open(BRAIN_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
+
+            legacy_sandbox = data.get("SANDBOX_CONFIG", {})
+            if isinstance(legacy_sandbox, dict):
+                if "voting_rules" not in data and isinstance(legacy_sandbox.get("voting_rules"), dict):
+                    merge_dict(default_brain["voting_rules"], legacy_sandbox["voting_rules"])
+                if "indicators" not in data and isinstance(legacy_sandbox.get("indicators"), dict):
+                    merge_dict(default_brain["indicators"], legacy_sandbox["indicators"])
             
-            for key in ["MASTER_EVAL_MODE", "MIN_MATCHING_VOTES", "G0_TIMEFRAME", "G1_TIMEFRAME", "G2_TIMEFRAME", "G3_TIMEFRAME"]:
-                if key in data: default_brain[key] = data[key]
+            for key in [
+                "MASTER_EVAL_MODE",
+                "MIN_MATCHING_VOTES",
+                "FORCE_ANY_MODE",
+                "G0_TIMEFRAME",
+                "G1_TIMEFRAME",
+                "G2_TIMEFRAME",
+                "G3_TIMEFRAME",
+                "BOT_ACTIVE_SYMBOLS",
+                "TSL_LOGIC_MODE",
+            ]:
+                if key in data:
+                    default_brain[key] = copy.deepcopy(data[key])
+
+            if "BOT_SAFEGUARD" in data and "bot_safeguard" not in data:
+                merge_dict(default_brain["bot_safeguard"], data["BOT_SAFEGUARD"])
+            if "TSL_LOGIC_MODE" in data and (
+                "risk_tsl" not in data or "tsl_mode" not in data.get("risk_tsl", {})
+            ):
+                default_brain["risk_tsl"]["tsl_mode"] = data["TSL_LOGIC_MODE"]
             
             if "voting_rules" in data:
                 for grp in ["G0", "G1", "G2", "G3"]:
                     if grp in data["voting_rules"]:
-                        default_brain["voting_rules"][grp] = data["voting_rules"][grp]
+                        merge_dict(default_brain["voting_rules"][grp], data["voting_rules"][grp])
             
             if "indicators" in data:
                 for ind, cfg in data["indicators"].items():
                     if ind in default_brain["indicators"]:
-                        default_brain["indicators"][ind].update(cfg)
+                        merge_dict(default_brain["indicators"][ind], cfg)
                     else:
-                        default_brain["indicators"][ind] = cfg
-            return default_brain
+                        default_brain["indicators"][ind] = copy.deepcopy(cfg)
+
+            for key in [
+                "risk_tsl",
+                "dca_config",
+                "pca_config",
+                "bot_safeguard",
+                "TSL_CONFIG",
+                "symbol_configs",
+            ]:
+                if key in data and isinstance(data[key], dict):
+                    merge_dict(default_brain[key], data[key])
+
+            if default_brain.get("risk_tsl", {}).get("tsl_mode"):
+                default_brain["TSL_LOGIC_MODE"] = default_brain["risk_tsl"]["tsl_mode"]
+
+            return _normalize_brain_settings_shape(default_brain)
     except:
-        return default_brain
+        return _normalize_brain_settings_shape(default_brain)
 
 def save_brain_settings(data: Dict[str, Any]):
     try:
@@ -351,6 +422,47 @@ def save_brain_settings(data: Dict[str, Any]):
             json.dump(data, f, indent=4)
     except:
         pass
+
+def _normalize_brain_settings_shape(data: Dict[str, Any]) -> Dict[str, Any]:
+    indicators = data.get("indicators", {})
+    if not isinstance(indicators, dict):
+        data["indicators"] = {}
+        return data
+
+    valid_groups = {"G0", "G1", "G2", "G3"}
+    valid_macro_roles = {"NONE", "BASE", "BREAKOUT", "EXHAUSTION"}
+    valid_modes = {"ANY", "TREND", "RANGE", "BREAKOUT", "EXHAUSTION"}
+    valid_trigger_modes = {"STRICT_CLOSE", "REALTIME_TICK"}
+
+    for cfg in indicators.values():
+        if not isinstance(cfg, dict):
+            continue
+
+        groups = cfg.get("groups")
+        if groups is None:
+            groups = [cfg.get("group", "G2")]
+        elif isinstance(groups, str):
+            groups = [groups]
+        elif not isinstance(groups, list):
+            groups = list(groups) if isinstance(groups, (tuple, set)) else []
+        groups = [str(g).upper() for g in groups if str(g).upper() in valid_groups]
+        cfg["groups"] = groups or ["G2"]
+
+        modes = cfg.get("active_modes", ["ANY"])
+        if isinstance(modes, str):
+            modes = [modes]
+        elif not isinstance(modes, list):
+            modes = ["ANY"]
+        modes = [str(m).upper() for m in modes if str(m).upper() in valid_modes]
+        cfg["active_modes"] = modes or ["ANY"]
+
+        macro_role = str(cfg.get("macro_role", "NONE")).upper()
+        cfg["macro_role"] = macro_role if macro_role in valid_macro_roles else "NONE"
+
+        trigger_mode = str(cfg.get("trigger_mode", "STRICT_CLOSE")).upper()
+        cfg["trigger_mode"] = trigger_mode if trigger_mode in valid_trigger_modes else "STRICT_CLOSE"
+
+    return data
 
 # =====================================================================
 # [NEW V4.4] SYMBOL OVERRIDES (MẸ - CON)
@@ -381,13 +493,7 @@ def _load_brain_cached() -> Dict[str, Any]:
     if _cache_brain["data"] is not None and (now - _cache_brain["ts"]) < _CACHE_TTL:
         return _cache_brain["data"]
     
-    data = {}
-    try:
-        if os.path.exists(BRAIN_FILE):
-            with open(BRAIN_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-    except Exception:
-        data = load_brain_settings()
+    data = load_brain_settings()
     
     _cache_brain["data"] = data
     _cache_brain["ts"] = now
@@ -446,6 +552,8 @@ def get_brain_settings_for_symbol(symbol: str = None) -> Dict[str, Any]:
             if "risk_tsl" in sb:
                 if "risk_tsl" not in base_brain: base_brain["risk_tsl"] = {}
                 base_brain["risk_tsl"].update(sb["risk_tsl"])
+                if base_brain["risk_tsl"].get("tsl_mode"):
+                    base_brain["TSL_LOGIC_MODE"] = base_brain["risk_tsl"]["tsl_mode"]
                 
             if "indicators" in sb:
                 if "indicators" not in base_brain: base_brain["indicators"] = {}
@@ -472,6 +580,7 @@ def get_brain_settings_for_symbol(symbol: str = None) -> Dict[str, Any]:
             if "TSL_LOGIC_MODE" in tsl:
                 base_brain["TSL_LOGIC_MODE"] = tsl["TSL_LOGIC_MODE"]
 
+    _normalize_brain_settings_shape(base_brain)
     _cache_merged[cache_key] = {"data": base_brain, "ts": now}
     return copy.deepcopy(base_brain)
 

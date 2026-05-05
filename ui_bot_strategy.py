@@ -217,9 +217,38 @@ class BotStrategyUI(ctk.CTkToplevel):
                 command=self.reset_override,
             ).pack(side="right", padx=5)
 
+    def _add_hint_box(self, parent, text, padx=10, pady=(10, 5)):
+        hint_f = ctk.CTkFrame(
+            parent,
+            fg_color="#332B00",
+            corner_radius=6,
+            border_width=1,
+            border_color="#FFD600",
+        )
+        hint_f.pack(fill="x", padx=padx, pady=pady)
+        ctk.CTkLabel(
+            hint_f,
+            text=text,
+            font=("Roboto", 13, "italic"),
+            text_color="#FFD600",
+            justify="left",
+            anchor="w",
+            wraplength=1080,
+        ).pack(fill="x", padx=10, pady=6)
+        return hint_f
+
     def _build_preview_tab(self):
         f = ctk.CTkFrame(self.tab_preview, fg_color="transparent")
         f.pack(fill="both", expand=True, padx=5, pady=5)
+
+        self._add_hint_box(
+            f,
+            "- Preview chỉ đọc context live, không tự quyết định lệnh.\n"
+            "- B/S/N là phiếu BUY/SELL/NONE sau khi lọc theo Mode.\n"
+            "- Master Action = kết quả cuối sau rule group + Master Mode.",
+            padx=5,
+            pady=(0, 10),
+        )
 
         # Header: Master Action
         header_f = ctk.CTkFrame(f, fg_color="#1A1A1A", corner_radius=8, border_width=1, border_color="#333")
@@ -372,7 +401,14 @@ class BotStrategyUI(ctk.CTkToplevel):
         f.pack(fill="both", expand=True, padx=5, pady=5)
         
         ctk.CTkLabel(f, text="CẤU HÌNH GHI ĐÈ (PER-SYMBOL OVERRIDE)", font=("Roboto", 14, "bold")).pack(pady=10)
-        ctk.CTkLabel(f, text="Bấm vào cặp tiền để cài đặt Sandbox riêng. Các cài đặt này sẽ ghi đè lên cấu hình Global.").pack(pady=5)
+        self._add_hint_box(
+            f,
+            "- Symbol có override sẽ dùng Sandbox riêng thay cho Global.\n"
+            "- Reset override = xóa cấu hình con, quay về cấu hình mẹ.\n"
+            "- Override chỉ áp dụng cho symbol được chọn.",
+            padx=10,
+            pady=(0, 10),
+        )
         
         grid_frame = ctk.CTkFrame(f, fg_color="transparent")
         grid_frame.pack(pady=10)
@@ -414,17 +450,12 @@ class BotStrategyUI(ctk.CTkToplevel):
             self.destroy()
 
     def _build_indicators_tab(self):
-        # [HINT UI] Thêm dòng hướng dẫn về quyền lực G0/G1
-        hint_f = ctk.CTkFrame(self.tab_inds, fg_color="#332B00", corner_radius=6, border_width=1, border_color="#FFD600")
-        hint_f.pack(fill="x", padx=10, pady=(10, 5))
-        
-        ctk.CTkLabel(
-            hint_f, 
-            text="💡 MẸO: Chỉ các chỉ báo ở nhóm [G0] hoặc [G1] mới có quyền quyết định MARKET MODE & MACRO DIR.\nCác chỉ báo ở [G2] và [G3] sẽ chạy dựa trên Mode đã được tầng trên xác định.",
-            font=("Roboto", 12, "italic"),
-            text_color="#FFD600",
-            justify="left"
-        ).pack(padx=10, pady=5)
+        self._add_hint_box(
+            self.tab_inds,
+            "- G0 quyết định Market Mode & Macro Direction; không có G0 thì fallback G1.\n"
+            "- Trend Compass chỉ tính UP/DOWN/NONE cho preview/context.\n"
+            "- Macro Role mới quyết định BASE/BREAKOUT/EXHAUSTION; Mode ANY = luôn được xét.",
+        )
 
         scroll_frame = ctk.CTkScrollableFrame(self.tab_inds)
         scroll_frame.pack(fill="both", expand=True, padx=5, pady=5)
@@ -434,7 +465,7 @@ class BotStrategyUI(ctk.CTkToplevel):
             "Chỉ báo",
             "ON",
             "Nhóm (Đa chọn)",
-            "Tính Trend",
+            "Trend Compass",
             "Vai trò Macro",
             "Chạy khi (Mode)",
             "Trigger Mode",
@@ -481,11 +512,11 @@ class BotStrategyUI(ctk.CTkToplevel):
                 ).pack(side="left", padx=2)
                 grp_vars[g] = g_var
 
-            # Tính Trend (La bàn xu hướng)
+            # Trend Compass (La bàn xu hướng)
             is_trend_var = ctk.BooleanVar(value=cfg.get("is_trend", False))
             ctk.CTkCheckBox(
                 scroll_frame,
-                text="Trend",
+                text="Compass",
                 variable=is_trend_var,
                 width=50,
                 text_color="#FFD700",
@@ -588,6 +619,14 @@ class BotStrategyUI(ctk.CTkToplevel):
             top_frame, textvariable=self.min_votes_var, width=60, justify="center"
         ).grid(row=0, column=3, padx=5, pady=5)
 
+        self._add_hint_box(
+            self.tab_rules,
+            "- Group status dùng chung rule: B/S/N + max_opposite + max_none.\n"
+            "- VETO chặn khi FIX fail hoặc xung đột hướng; VOTING cần đủ Min Votes.\n"
+            "- Timeframe G0-G3 quyết định data dùng cho từng group.",
+            pady=(5, 10),
+        )
+
         tf_frame = ctk.CTkFrame(self.tab_rules, fg_color="#1E1E1E", corner_radius=8)
         tf_frame.pack(fill="x", padx=10, pady=10)
 
@@ -679,6 +718,15 @@ class BotStrategyUI(ctk.CTkToplevel):
     def _build_risk_tab(self):
         risk_data = self.brain_data.get("risk_tsl", {})
 
+        self._add_hint_box(
+            self.tab_risk,
+            "- Force ANY Mode bỏ qua macro/mode, phù hợp scalping muốn indicator luôn chạy.\n"
+            "- Base Risk nhân với multiplier theo Market Mode để ra risk thực tế.\n"
+            "- DYNAMIC-G1/G2 dùng G1 khi TREND/BREAKOUT, dùng G2 khi mode khác.",
+            padx=20,
+            pady=(10, 5),
+        )
+
         # --- [NEW] CỤM OPTIONS NÂNG CAO (SCALPING & STRICT RISK) ---
         f_adv = ctk.CTkFrame(self.tab_risk, fg_color="#2b2b2b", corner_radius=8)
         f_adv.pack(fill="x", padx=20, pady=(10, 10))
@@ -708,10 +756,14 @@ class BotStrategyUI(ctk.CTkToplevel):
 
         safe_cfg = {}
         try:
-            _cfg_path = _get_brain_path()
-            if os.path.exists(_cfg_path):
-                with open(_cfg_path, "r", encoding="utf-8") as _f:
-                    safe_cfg = json.load(_f).get("bot_safeguard", {})
+            if self.override_symbol:
+                from core.storage_manager import get_brain_settings_for_symbol
+                safe_cfg = get_brain_settings_for_symbol(self.override_symbol).get("bot_safeguard", {})
+            else:
+                _cfg_path = _get_brain_path()
+                if os.path.exists(_cfg_path):
+                    with open(_cfg_path, "r", encoding="utf-8") as _f:
+                        safe_cfg = json.load(_f).get("bot_safeguard", {})
         except:
             pass
 
@@ -882,6 +934,14 @@ class BotStrategyUI(ctk.CTkToplevel):
     def _build_dca_pca_tab(self):
         dca_cfg = self.brain_data.get("dca_config", {})
         pca_cfg = self.brain_data.get("pca_config", {})
+
+        self._add_hint_box(
+            self.tab_dca_pca,
+            "- DCA nhồi khi giá đi ngược lệnh mẹ theo khoảng ATR.\n"
+            "- PCA nhồi thuận khi lệnh mẹ đang đúng hướng/trend.\n"
+            "- Mini-Brain nếu bật sẽ xác nhận riêng trước khi nhồi.",
+            pady=(10, 5),
+        )
 
         # --- DCA FRAME ---
         dca_frame = ctk.CTkFrame(self.tab_dca_pca, fg_color="#2b2b2b", corner_radius=8)
@@ -1090,6 +1150,13 @@ class BotStrategyUI(ctk.CTkToplevel):
                 overrides = load_symbol_overrides()
                 if self.override_symbol not in overrides:
                     overrides[self.override_symbol] = {}
+                output_data["bot_safeguard"] = {
+                    "CLOSE_ON_REVERSE": self.temp_close_rev,
+                    "CLOSE_ON_REVERSE_MIN_TIME": self.temp_rev_time,
+                    "CLOSE_ON_REVERSE_USE_PNL": self.var_close_rev_pnl.get(),
+                    "REV_CLOSE_MIN_PROFIT": float(self.var_rev_profit.get() or 0.0),
+                    "REV_CLOSE_MAX_LOSS": float(self.var_rev_loss.get() or 0.0),
+                }
                 overrides[self.override_symbol]["sandbox"] = output_data
                 save_symbol_overrides(overrides)
                 messagebox.showinfo("Lưu Override", f"Đã lưu Sandbox riêng cho {self.override_symbol} thành công!", parent=self)

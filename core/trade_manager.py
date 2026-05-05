@@ -1403,7 +1403,10 @@ class TradeManager:
                     )
                 )
 
-                tsl_mode = tsl_cfg.get("TSL_LOGIC_MODE", "STATIC")
+                tsl_mode = brain.get(
+                    "TSL_LOGIC_MODE",
+                    risk_tsl.get("tsl_mode", tsl_cfg.get("TSL_LOGIC_MODE", "STATIC")),
+                )
                 is_trending = context.get("market_mode", "TREND") in [
                     "TREND",
                     "BREAKOUT",

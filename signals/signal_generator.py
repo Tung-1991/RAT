@@ -123,8 +123,9 @@ class SignalGenerator:
             
         rules = voting_rules.get(source_grp, {"max_opposite": 0, "max_none": 0})
         
-        # 2. Phân loại theo Vai trò Macro (Macro Role) & Tick Trend
-        base_inds = {k: v for k, v in macro_inds.items() if v.get("is_trend", False) or v.get("macro_role", "NONE") == "BASE"}
+        # 2. Phân loại theo Vai trò Macro (Macro Role)
+        # Trend Compass (is_trend) chỉ dùng để tính trend_Gx/preview, không quyết định Market Mode.
+        base_inds = {k: v for k, v in macro_inds.items() if v.get("macro_role", "NONE") == "BASE"}
         brk_inds = {k: v for k, v in macro_inds.items() if v.get("macro_role", "NONE") == "BREAKOUT"}
         exh_inds = {k: v for k, v in macro_inds.items() if v.get("macro_role", "NONE") == "EXHAUSTION"}
 
@@ -169,7 +170,7 @@ class SignalGenerator:
                     eval_df = df.iloc[:-1] if trigger_mode == "STRICT_CLOSE" else df
                     if eval_df.empty: continue
                     
-                    if ind_name in ["Fibonacci", "PivotPoints", "SwingPoint"]:
+                    if ind_name in {"fibonacci", "pivot_points", "swing_point", "simple_breakout"}:
                          signal = func(eval_df, params, context)
                     else:
                          signal = func(eval_df, params)

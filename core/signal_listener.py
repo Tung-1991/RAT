@@ -155,11 +155,9 @@ class SignalListener:
                         min_hold = 180.0
                         b_set = {}
                         try:
-                            cpath = _get_brain_file()
-                            if os.path.exists(cpath):
-                                with open(cpath, "r", encoding="utf-8") as cf:
-                                    b_set = json.load(cf)
-                                    min_hold = float(b_set.get("bot_safeguard", {}).get("CLOSE_ON_REVERSE_MIN_TIME", 180))
+                            from core.storage_manager import get_brain_settings_for_symbol
+                            b_set = get_brain_settings_for_symbol(symbol)
+                            min_hold = float(b_set.get("bot_safeguard", {}).get("CLOSE_ON_REVERSE_MIN_TIME", 180))
                         except Exception:
                             pass
 
