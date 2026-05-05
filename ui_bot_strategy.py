@@ -585,9 +585,18 @@ class BotStrategyUI(ctk.CTkToplevel):
             row += 1
 
     def open_ind_setting(self, ind_name):
-        current_params = self.ind_widgets[ind_name]["params"]
+        current_params = dict(self.ind_widgets[ind_name]["params"])
+        if ind_name == "simple_breakout":
+            if "atr_buffer" not in current_params and "buffer_points" in current_params:
+                current_params["atr_buffer"] = current_params["buffer_points"]
+            current_params.pop("buffer_points", None)
+            self.ind_widgets[ind_name]["params"] = current_params
 
         def on_save_params(new_params):
+            if ind_name == "simple_breakout":
+                if "atr_buffer" not in new_params and "buffer_points" in new_params:
+                    new_params["atr_buffer"] = new_params["buffer_points"]
+                new_params.pop("buffer_points", None)
             self.ind_widgets[ind_name]["params"] = new_params
 
         open_indicator_config_popup(self, ind_name, current_params, on_save_params)
@@ -1060,6 +1069,11 @@ class BotStrategyUI(ctk.CTkToplevel):
             mode_val = widgets["mode_var"].get()
             # Trích xuất mảng các Group được chọn
             selected_groups = [g for g, var in widgets["grp_vars"].items() if var.get()]
+            params = dict(widgets["params"])
+            if ind_name == "simple_breakout":
+                if "atr_buffer" not in params and "buffer_points" in params:
+                    params["atr_buffer"] = params["buffer_points"]
+                params.pop("buffer_points", None)
 
             new_inds[ind_name] = {
                 "active": widgets["active_var"].get(),
@@ -1068,7 +1082,7 @@ class BotStrategyUI(ctk.CTkToplevel):
                 "macro_role": widgets["macro_role_var"].get(),
                 "active_modes": [mode_val] if mode_val != "ANY" else ["ANY"],
                 "trigger_mode": widgets["trigger_mode_var"].get(),
-                "params": widgets["params"],
+                "params": params,
             }
 
         new_voting = {}

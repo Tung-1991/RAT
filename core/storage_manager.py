@@ -462,7 +462,7 @@ def _normalize_brain_settings_shape(data: Dict[str, Any]) -> Dict[str, Any]:
     valid_modes = {"ANY", "TREND", "RANGE", "BREAKOUT", "EXHAUSTION"}
     valid_trigger_modes = {"STRICT_CLOSE", "REALTIME_TICK"}
 
-    for cfg in indicators.values():
+    for ind_name, cfg in indicators.items():
         if not isinstance(cfg, dict):
             continue
 
@@ -489,6 +489,15 @@ def _normalize_brain_settings_shape(data: Dict[str, Any]) -> Dict[str, Any]:
 
         trigger_mode = str(cfg.get("trigger_mode", "STRICT_CLOSE")).upper()
         cfg["trigger_mode"] = trigger_mode if trigger_mode in valid_trigger_modes else "STRICT_CLOSE"
+
+        if ind_name == "simple_breakout":
+            params = cfg.get("params", {})
+            if not isinstance(params, dict):
+                params = {}
+            if "atr_buffer" not in params and "buffer_points" in params:
+                params["atr_buffer"] = params["buffer_points"]
+            params.pop("buffer_points", None)
+            cfg["params"] = params
 
     return data
 
