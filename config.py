@@ -138,19 +138,19 @@ BOT_SAFEGUARD = {
     "DCA_PCA_SCAN_INTERVAL": 2.0,
     "LOG_COOLDOWN_MINUTES": 60.0,
     "BOT_USE_TP": True,
-    "BOT_TP_RR_RATIO": 1.5,          # [NEW] Rầu thưởng khi dùng TP theo R (fallback nếu không dùng SwingPoint)
+    "BOT_TP_RR_RATIO": 1.5,  # [NEW] Rầu thưởng khi dùng TP theo R (fallback nếu không dùng SwingPoint)
     "STRICT_MIN_LOT": False,  # [NEW V4.4] Chặn Lot < Min_Vol
     "POST_CLOSE_COOLDOWN": 0,  # [NEW V4.4] Thời gian nghỉ nến sau SL (Giây)
     "CLOSE_ON_REVERSE_MIN_TIME": 180,  # [NEW V4.4] Min Hold Time cho REVERSE_CLOSE
     "DCA_PCA_COOLDOWN_SECONDS": 300,  # [NEW V4.4] Khoảng nghỉ giữa 2 lần nhồi (Giây)
-    "CLOSE_ON_REVERSE_USE_PNL": True, # [NEW V4.4] Bật/Tắt kiểm tra PnL khi đảo chiều
-    "REV_CLOSE_MIN_PROFIT": 0.0,      # Chỉ đảo khi lãi ít nhất X (0 = ko tính)
-    "REV_CLOSE_MAX_LOSS": 0.0,        # Chỉ đảo khi lỗ ko quá Y (âm, ví dụ -10, 0 = ko tính)
-    "WATERMARK_TRIGGER": 0.0,         # [NEW V5] Mức USD bắt đầu kích hoạt Khóa lãi (0 = Tắt)
-    "WATERMARK_DRAWDOWN": 0.0,        # [NEW V5] Mức USD sụt giảm cho phép từ đỉnh
-    "MIN_SL_POINTS": 0,               # [NEW V5] Khoảng cách SL tối thiểu bằng Point
-    "REJECT_ON_MAX_LOT": False,       # [NEW V5] True: Bỏ lệnh nếu vượt trần. False: Ép về Max Lot Cap
-    "MAX_BASKET_DRAWDOWN_USD": 0.0,   # [NEW V5.1] Mức âm tối đa của cả rổ lệnh (Mẹ + DCA/PCA) (0 = Tắt)
+    "CLOSE_ON_REVERSE_USE_PNL": True,  # [NEW V4.4] Bật/Tắt kiểm tra PnL khi đảo chiều
+    "REV_CLOSE_MIN_PROFIT": 0.0,  # Chỉ đảo khi lãi ít nhất X (0 = ko tính)
+    "REV_CLOSE_MAX_LOSS": 0.0,  # Chỉ đảo khi lỗ ko quá Y (âm, ví dụ -10, 0 = ko tính)
+    "WATERMARK_TRIGGER": 0.0,  # [NEW V5] Mức USD bắt đầu kích hoạt Khóa lãi (0 = Tắt)
+    "WATERMARK_DRAWDOWN": 0.0,  # [NEW V5] Mức USD sụt giảm cho phép từ đỉnh
+    "MIN_SL_POINTS": 0,  # [NEW V5] Khoảng cách SL tối thiểu bằng Point
+    "REJECT_ON_MAX_LOT": False,  # [NEW V5] True: Bỏ lệnh nếu vượt trần. False: Ép về Max Lot Cap
+    "MAX_BASKET_DRAWDOWN_USD": 0.0,  # [NEW V5.1] Mức âm tối đa của cả rổ lệnh (Mẹ + DCA/PCA) (0 = Tắt)
 }
 
 # ==============================================================================
@@ -358,10 +358,7 @@ SANDBOX_CONFIG = {
             "is_trend": True,
             "macro_role": "BREAKOUT",
             "active_modes": ["ANY"],
-            "params": {
-                "lookback": 1,
-                "buffer_points": 0.0
-            },
+            "params": {"lookback": 1, "atr_buffer": 0.0},
             "trigger_mode": "STRICT_CLOSE",
         },
     },
@@ -375,7 +372,7 @@ MINI_BRAIN_DEFAULT = {
     "timeframe": "15m",
     "max_opposite": 0,
     "max_none": 0,
-    "indicators": {} # Tái sử dụng cấu trúc indicators của Sandbox
+    "indicators": {},  # Tái sử dụng cấu trúc indicators của Sandbox
 }
 
 DCA_CONFIG = {
@@ -384,7 +381,7 @@ DCA_CONFIG = {
     "STEP_MULTIPLIER": 1.5,
     "DISTANCE_ATR_R": 1.0,
     "COOLDOWN": 60,
-    "MINI_BRAIN": MINI_BRAIN_DEFAULT.copy()
+    "MINI_BRAIN": MINI_BRAIN_DEFAULT.copy(),
 }
 PCA_CONFIG = {
     "ENABLED": False,
@@ -392,5 +389,5 @@ PCA_CONFIG = {
     "STEP_MULTIPLIER": 0.5,
     "DISTANCE_ATR_R": 1.5,
     "CONFIRM_ADX": 23,
-    "MINI_BRAIN": MINI_BRAIN_DEFAULT.copy()
+    "MINI_BRAIN": MINI_BRAIN_DEFAULT.copy(),
 }
