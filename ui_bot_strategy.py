@@ -225,8 +225,11 @@ class BotStrategyUI(ctk.CTkToplevel):
         header_f = ctk.CTkFrame(f, fg_color="#1A1A1A", corner_radius=8, border_width=1, border_color="#333")
         header_f.pack(fill="x", pady=(0, 10))
         
-        self.master_action_lbl = ctk.CTkLabel(header_f, text="MASTER ACTION: WAITING", font=("Roboto", 16, "bold"), text_color="#FFF")
-        self.master_action_lbl.pack(pady=10)
+        self.master_action_lbl = ctk.CTkLabel(header_f, text="MASTER ACTION: WAITING", font=("Roboto", 18, "bold"), text_color="#FFF")
+        self.master_action_lbl.pack(pady=(10, 5))
+        
+        self.market_mode_lbl = ctk.CTkLabel(header_f, text="MODE: --- | XU HƯỚNG CHÍNH (BASE): ---", font=("Roboto", 14, "bold"), text_color="#29B6F6")
+        self.market_mode_lbl.pack(pady=5)
         
         self.master_reason_lbl = ctk.CTkLabel(header_f, text="Trạng thái: Đang chờ tín hiệu...", font=("Roboto", 12), text_color="#AAA")
         self.master_reason_lbl.pack(pady=(0, 10))
@@ -250,31 +253,39 @@ class BotStrategyUI(ctk.CTkToplevel):
             lbl_summary.pack(pady=5)
 
             # Details List (Scrollable)
-            scroll_f = ctk.CTkScrollableFrame(col, fg_color="#1A1A1A", corner_radius=4)
+            scroll_f = ctk.CTkScrollableFrame(col, fg_color="#1A1A1A", corner_radius=4, height=200)
             scroll_f.pack(fill="both", expand=True, padx=5, pady=5)
             
-            lbl_details = ctk.CTkLabel(scroll_f, text="", font=("Roboto", 12), justify="left", anchor="w")
-            lbl_details.pack(fill="x", padx=5, pady=5)
-
             self.preview_cards[grp] = {
                 "title": lbl_title,
                 "summary": lbl_summary,
-                "details": lbl_details,
-                "frame": col
+                "scroll_f": scroll_f,
+                "frame": col,
+                "last_data": "" # Để chống flicker
             }
 
     def update_preview(self):
         """Cập nhật dữ liệu Live Preview từ context của Master (Main App)"""
         try:
-            # Lấy context từ master (Main App hoặc Daemon)
-            context = getattr(self.master, "latest_market_context", {})
+            # [FIX] latest_market_context là dict {symbol: ctx_data}, cần lấy đúng symbol
+            all_ctx = getattr(self.master, "latest_market_context", {})
+
             if self.override_symbol:
-                # Nếu là UI con, tìm context của đúng Symbol
-                all_ctx = getattr(self.master, "all_market_contexts", {})
+                # UI con: lấy context của đúng symbol override
                 context = all_ctx.get(self.override_symbol, {})
+            else:
+                # UI mẹ: lấy symbol đang chọn trên combobox chính
+                active_symbol = getattr(config, "UI_ACTIVE_SYMBOL", None)
+                if not active_symbol:
+                    try:
+                        active_symbol = self.master.cbo_symbol.get()
+                    except Exception:
+                        active_symbol = None
+                context = all_ctx.get(active_symbol, {}) if active_symbol else {}
 
             group_details = context.get("group_details", {})
-            
+
+
             # Cập nhật 4 cột Grid
             colors = {1: "#2E7D32", -1: "#C62828", 0: "#424242"}
             texts = {1: "BUY", -1: "SELL", 0: "WAIT"}
@@ -284,13 +295,45 @@ class BotStrategyUI(ctk.CTkToplevel):
                 card = self.preview_cards[grp]
                 data = group_details.get(grp, {"B": 0, "S": 0, "N": 0, "inds": [], "status": 0})
                 
+                # [NEW] Lấy luật để hiển thị làm Hint
+                rules_cfg = self.brain_data.get("voting_rules", {}).get(grp, {})
+                m_rule = rules_cfg.get("master_rule", "FIX")
+                max_o = rules_cfg.get("max_opposite", 0)
+                max_n = rules_cfg.get("max_none", 0)
+                rule_hint = f"[{m_rule} | O:{max_o}, N:{max_n}]"
+                
                 status_val = data.get("status", 0)
-                card["title"].configure(text=f"{grp}: {texts.get(status_val, 'WAIT')}", fg_color=colors.get(status_val, "#333"))
+                title_text = f"{grp}: {texts.get(status_val, 'WAIT')}\n{rule_hint}"
+                card["title"].configure(text=title_text, fg_color=colors.get(status_val, "#333"))
                 card["summary"].configure(text=f"B: {data.get('B', 0)}  |  S: {data.get('S', 0)}  |  N: {data.get('N', 0)}")
                 
                 inds_list = data.get("inds", [])
-                details_text = "\n".join(inds_list) if inds_list else "-- Chờ dữ liệu --"
-                card["details"].configure(text=details_text)
+                
+                # Chống flicker: Chỉ vẽ lại khi dữ liệu thay đổi
+                current_data_str = json.dumps(inds_list)
+                if card.get("last_data") != current_data_str:
+                    # Xóa widgets cũ
+                    for widget in card["scroll_f"].winfo_children():
+                        widget.destroy()
+                        
+                    if not inds_list:
+                        ctk.CTkLabel(card["scroll_f"], text="-- Chờ dữ liệu --", font=("Roboto", 11), text_color="gray").pack(fill="x", pady=10)
+                    else:
+                        for line in inds_list:
+                            t_color = "#999" # Mặc định xám
+                            if "[BUY]" in line: t_color = "#00C853" # Xanh lá vibrance
+                            elif "[SELL]" in line: t_color = "#FF3D00" # Đỏ rực
+                            
+                            ctk.CTkLabel(
+                                card["scroll_f"], 
+                                text=line, 
+                                font=("Consolas", 14, "bold"), 
+                                text_color=t_color, 
+                                anchor="w", 
+                                justify="left"
+                            ).pack(fill="x", padx=5, pady=1)
+                    
+                    card["last_data"] = current_data_str
 
             # Cập nhật Master Action
             final_sig = context.get("latest_signal", 0)
@@ -298,9 +341,25 @@ class BotStrategyUI(ctk.CTkToplevel):
             act_text = f"MASTER ACTION: {'BUY' if final_sig == 1 else 'SELL' if final_sig == -1 else 'WAIT'}"
             self.master_action_lbl.configure(text=act_text, text_color=act_color)
 
-            # Cập nhật Block Reason
+            # [NEW] Cập nhật Market Mode & Macro
+            m_mode = context.get("market_mode", "ANY")
+            m_src = context.get("mode_source", "---")
+            m_dir = context.get("macro_direction", 0)
+            dir_text = "UP" if m_dir == 1 else "DOWN" if m_dir == -1 else "NONE"
+            
+            # [FIX] Lấy Evaluation Mode trực tiếp từ biến UI để cập nhật Realtime
+            eval_mode = self.master_eval_var.get()
+            
+            mode_color = "#00E676" if m_mode in ["TREND", "BREAKOUT"] else "#FFB300"
+            self.market_mode_lbl.configure(
+                text=f"MARKET MODE: {m_mode} (by {m_src}) | XU HƯỚNG CHÍNH (BASE): {dir_text} | LUẬT: {eval_mode}",
+                text_color=mode_color
+            )
+
+            # Cập nhật Block Reason (Highlight lý do chặn)
             block_reason = context.get("block_reason", "OK / Ready")
-            self.master_reason_lbl.configure(text=f"Trạng thái: {block_reason}")
+            reason_color = "#00C853" if "OK" in block_reason else "#FFAB00"
+            self.master_reason_lbl.configure(text=f"Lý do: {block_reason}", text_color=reason_color)
 
         except Exception as e:
             pass
@@ -355,6 +414,18 @@ class BotStrategyUI(ctk.CTkToplevel):
             self.destroy()
 
     def _build_indicators_tab(self):
+        # [HINT UI] Thêm dòng hướng dẫn về quyền lực G0/G1
+        hint_f = ctk.CTkFrame(self.tab_inds, fg_color="#332B00", corner_radius=6, border_width=1, border_color="#FFD600")
+        hint_f.pack(fill="x", padx=10, pady=(10, 5))
+        
+        ctk.CTkLabel(
+            hint_f, 
+            text="💡 MẸO: Chỉ các chỉ báo ở nhóm [G0] hoặc [G1] mới có quyền quyết định MARKET MODE & MACRO DIR.\nCác chỉ báo ở [G2] và [G3] sẽ chạy dựa trên Mode đã được tầng trên xác định.",
+            font=("Roboto", 12, "italic"),
+            text_color="#FFD600",
+            justify="left"
+        ).pack(padx=10, pady=5)
+
         scroll_frame = ctk.CTkScrollableFrame(self.tab_inds)
         scroll_frame.pack(fill="both", expand=True, padx=5, pady=5)
 

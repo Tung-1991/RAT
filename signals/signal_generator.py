@@ -123,8 +123,8 @@ class SignalGenerator:
             
         rules = voting_rules.get(source_grp, {"max_opposite": 0, "max_none": 0})
         
-        # 2. Phân loại theo Vai trò Macro (Macro Role)
-        base_inds = {k: v for k, v in macro_inds.items() if v.get("macro_role", "NONE") == "BASE"}
+        # 2. Phân loại theo Vai trò Macro (Macro Role) & Tick Trend
+        base_inds = {k: v for k, v in macro_inds.items() if v.get("is_trend", False) or v.get("macro_role", "NONE") == "BASE"}
         brk_inds = {k: v for k, v in macro_inds.items() if v.get("macro_role", "NONE") == "BREAKOUT"}
         exh_inds = {k: v for k, v in macro_inds.items() if v.get("macro_role", "NONE") == "EXHAUSTION"}
 
@@ -175,13 +175,20 @@ class SignalGenerator:
                          signal = func(eval_df, params)
                     
                     votes.append(signal)
-                    # Ghi nhận chi tiết từng Indicator cho UI
+                    
+                    # [V4.5] Nâng cấp thẩm quyền hiển thị - Premium Aesthetics + Tags
+                    ind_display_name = ind_name.replace("_", " ").upper()
+                    m_role = ind_cfg.get("macro_role", "NONE")
+                    a_modes = ",".join(ind_cfg.get("active_modes", ["ANY"]))
+                    
+                    tag_info = f"[{m_role}|{a_modes}]"
+                    
                     if signal == 1:
-                        ind_details.append(f"🟩 {ind_name}")
+                        ind_details.append(f"● [BUY]  {ind_display_name} {tag_info}")
                     elif signal == -1:
-                        ind_details.append(f"🟥 {ind_name}")
+                        ind_details.append(f"● [SELL] {ind_display_name} {tag_info}")
                     else:
-                        ind_details.append(f"⬜ {ind_name}")
+                        ind_details.append(f"○ [WAIT] {ind_display_name} {tag_info}")
                 except Exception as e:
                     logger.error(f"Lỗi tính toán {ind_name}: {e}")
                     votes.append(0)
@@ -232,7 +239,9 @@ class SignalGenerator:
             
             df_grp = dfs.get(grp)
             if df_grp is None or df_grp.empty:
-                if rule == "FIX": return 0 
+                if rule == "FIX":
+                    context["block_reason"] = f"Mất dữ liệu {grp} (Luật FIX - Không có data)"
+                    return 0 
                 continue
 
             status = self._evaluate_group(grp, active_inds[grp], df_grp, context, current_mode, voting_rules.get(grp, {}))
@@ -240,27 +249,40 @@ class SignalGenerator:
 
             if eval_mode == "VETO":
                 if rule == "FIX" and status == 0:
+                    context["block_reason"] = f"Bị chặn bởi {grp} (Luật FIX)"
                     return 0 
                 
                 active_votes = [v for v in votes.values() if v != 0]
                 if len(set(active_votes)) > 1:
+                    context["block_reason"] = "Xung đột hướng giữa các nhóm"
                     return 0 
 
         if eval_mode == "VETO":
             active_votes = [v for v in votes.values() if v != 0]
-            if not active_votes: return 0
+            if not active_votes:
+                context["block_reason"] = "Không nhóm nào có tín hiệu (WAIT)"
+                return 0
             final_dir = active_votes[0]
             for grp, status in votes.items():
                 rule = voting_rules.get(grp, {}).get("master_rule", "IGNORE")
-                if rule == "FIX" and status != final_dir: return 0
+                if (rule == "FIX" or rule == "PASS") and status != 0 and status != final_dir:
+                    context["block_reason"] = f"Xung đột G0/G1 với {grp} (Luật {rule})"
+                    return 0
+            context["block_reason"] = "OK / Ready"
             return final_dir
         
         elif eval_mode == "VOTING":
             buy_votes = sum(1 for v in votes.values() if v == 1)
             sell_votes = sum(1 for v in votes.values() if v == -1)
             
-            if buy_votes >= min_votes and buy_votes > sell_votes: return 1
-            if sell_votes >= min_votes and sell_votes > buy_votes: return -1
+            if buy_votes >= min_votes and buy_votes > sell_votes:
+                context["block_reason"] = "OK / Ready"
+                return 1
+            if sell_votes >= min_votes and sell_votes > buy_votes:
+                context["block_reason"] = "OK / Ready"
+                return -1
+            
+            context["block_reason"] = f"Không đủ phiếu ({max(buy_votes, sell_votes)}/{min_votes})"
             return 0
         
         return 0

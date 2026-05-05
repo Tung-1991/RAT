@@ -143,6 +143,12 @@ class DataEngine:
         df = pd.DataFrame(rates)
         df['time'] = pd.to_datetime(df['time'], unit='s')
         
+        # [FIX]: Đồng bộ hóa cột Volume cho các chỉ báo (MetaTrader 5 dùng tick_volume)
+        if 'tick_volume' in df.columns:
+            df['volume'] = df['tick_volume'].astype(float)
+        elif 'real_volume' in df.columns:
+            df['volume'] = df['real_volume'].astype(float)
+        
         # Chỉ tính những Indicator đang bật
         df = self._apply_ta(df, inds_config, tsl_config)
         
