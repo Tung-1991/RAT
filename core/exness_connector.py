@@ -419,21 +419,6 @@ class ExnessConnector:
                 pass
             return None, 0.0
 
-        except Exception as e:
-            logger.error(
-                f"Lỗi ngoại lệ nghiêm trọng trong calculate_lot_size cho {symbol}: {e}",
-                exc_info=True,
-            )
-            try:
-                symbol_info = mt5.symbol_info(symbol)
-                if symbol_info:
-                    logger.critical(
-                        f"FALLBACK NGOẠI LỆ: Sử dụng lot size tối thiểu cho {symbol} do lỗi không xác định."
-                    )
-                    return symbol_info.volume_min, 0.0  # (THAY ĐỔI)
-            except:
-                pass
-            return None, 0.0  # (THAY ĐỔI)
 
     # --- (HẾT THAY ĐỔI) ---
 

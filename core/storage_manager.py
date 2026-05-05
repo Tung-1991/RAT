@@ -4,6 +4,7 @@ import os
 import csv
 import time
 import copy
+import threading
 from datetime import datetime, timedelta
 from typing import Dict, Any
 import config 
@@ -17,6 +18,21 @@ SYSTEM_META_FILE = "data/system_meta.json"
 
 _active_account_dir = "data"
 _active_account_id = None
+_state_lock = threading.RLock()
+
+def _merge_timestamp_map(state: Dict[str, Any], current_state: Dict[str, Any], key: str):
+    current_map = current_state.get(key, {})
+    next_map = state.setdefault(key, {})
+    if not isinstance(current_map, dict) or not isinstance(next_map, dict):
+        return
+
+    for symbol, current_ts in current_map.items():
+        try:
+            if float(current_ts) > float(next_map.get(symbol, 0.0)):
+                next_map[symbol] = current_ts
+        except (TypeError, ValueError):
+            if symbol not in next_map:
+                next_map[symbol] = current_ts
 
 def set_active_account(account_id: str):
     global _active_account_dir, _active_account_id
@@ -268,11 +284,21 @@ def load_state() -> Dict[str, Any]:
         return default_state
 
 def save_state(state: Dict[str, Any]):
-    try:
-        with open(STATE_FILE, "w") as f:
-            json.dump(state, f, indent=4)
-    except:
-        pass
+    with _state_lock:
+        try:
+            os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
+            if os.path.exists(STATE_FILE):
+                with open(STATE_FILE, "r", encoding="utf-8") as current_file:
+                    current_state = json.load(current_file)
+                _merge_timestamp_map(state, current_state, "last_dca_pca_close_time")
+                _merge_timestamp_map(state, current_state, "last_dca_pca_signal_time")
+
+            tmp_file = f"{STATE_FILE}.tmp"
+            with open(tmp_file, "w", encoding="utf-8") as f:
+                json.dump(state, f, indent=4)
+            os.replace(tmp_file, STATE_FILE)
+        except:
+            pass
 
 def reset_bot_session(reason="Manual"):
     """Dọn dẹp cache bot hiện hành và tạo Session_ID mới"""
@@ -291,15 +317,17 @@ def reset_bot_session(reason="Manual"):
     save_state(state)
 
 def get_last_dca_pca_close_time(symbol: str) -> float:
-    state = load_state()
-    return state.get("last_dca_pca_close_time", {}).get(symbol, 0.0)
+    with _state_lock:
+        state = load_state()
+        return state.get("last_dca_pca_close_time", {}).get(symbol, 0.0)
 
 def update_last_dca_pca_close_time(symbol: str, timestamp: float):
-    state = load_state()
-    if "last_dca_pca_close_time" not in state:
-        state["last_dca_pca_close_time"] = {}
-    state["last_dca_pca_close_time"][symbol] = timestamp
-    save_state(state)
+    with _state_lock:
+        state = load_state()
+        if "last_dca_pca_close_time" not in state:
+            state["last_dca_pca_close_time"] = {}
+        state["last_dca_pca_close_time"][symbol] = timestamp
+        save_state(state)
 
 def load_brain_settings() -> Dict[str, Any]:
     sandbox_defaults = getattr(config, "SANDBOX_CONFIG", {})
@@ -585,12 +613,14 @@ def get_brain_settings_for_symbol(symbol: str = None) -> Dict[str, Any]:
     return copy.deepcopy(base_brain)
 
 def get_last_dca_pca_signal_time(symbol: str) -> float:
-    state = load_state()
-    return state.get("last_dca_pca_signal_time", {}).get(symbol, 0.0)
+    with _state_lock:
+        state = load_state()
+        return state.get("last_dca_pca_signal_time", {}).get(symbol, 0.0)
 
 def update_last_dca_pca_signal_time(symbol: str, timestamp: float):
-    state = load_state()
-    if "last_dca_pca_signal_time" not in state:
-        state["last_dca_pca_signal_time"] = {}
-    state["last_dca_pca_signal_time"][symbol] = timestamp
-    save_state(state)
+    with _state_lock:
+        state = load_state()
+        if "last_dca_pca_signal_time" not in state:
+            state["last_dca_pca_signal_time"] = {}
+        state["last_dca_pca_signal_time"][symbol] = timestamp
+        save_state(state)

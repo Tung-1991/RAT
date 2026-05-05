@@ -1293,7 +1293,7 @@ class TradeManager:
                     market_mode = context.get("market_mode", "ANY")
                     trail_group = "G1" if market_mode in ["TREND", "BREAKOUT"] else "G2"
 
-                psar_val = context.get(f"psar_{trail_group}", context.get("psar"))
+                psar_val = context.get(f"psar_{trail_group}")
                 if psar_val:
                     candidates.append((psar_val, f"PSAR ➔ {psar_val:.2f}"))
                     milestones.append((0, f"PSAR Đợi ➔ {psar_val:.2f}"))
