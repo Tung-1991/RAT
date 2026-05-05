@@ -1128,27 +1128,41 @@ class TradeManager:
 
         is_buy = pos.type == mt5.ORDER_TYPE_BUY
         is_reversed = False
+        safe_cfg = self._get_brain_settings(pos.symbol).get("bot_safeguard", {})
 
         # Logic: Nếu đang BUY mà signal là -1 (SELL) hoặc ngược lại
         if is_buy and current_signal == -1:
             is_reversed = True
         elif not is_buy and current_signal == 1:
             is_reversed = True
+        elif current_signal == 0 and safe_cfg.get("REV_CLOSE_ON_NONE", False):
+            is_reversed = True
 
         if is_reversed:
-            safe_cfg = self._get_brain_settings(pos.symbol).get("bot_safeguard", {})
             min_hold = float(safe_cfg.get("CLOSE_ON_REVERSE_MIN_TIME", 180))
-            min_pnl_rev = float(safe_cfg.get("MIN_PNL_REVERSE", 0.0))
 
             hold_time = time.time() - pos.time
             profit_usd = pos.profit + pos.swap + getattr(pos, "commission", 0.0)
 
-            if hold_time >= min_hold and profit_usd >= min_pnl_rev:
+            pnl_ok = True
+            if safe_cfg.get("CLOSE_ON_REVERSE_USE_PNL", True):
+                min_profit = float(safe_cfg.get("REV_CLOSE_MIN_PROFIT", 0.0))
+                max_loss = -abs(float(safe_cfg.get("REV_CLOSE_MAX_LOSS", 0.0)))
+
+                if profit_usd >= 0:
+                    pnl_ok = profit_usd >= min_profit if min_profit > 0 else True
+                else:
+                    pnl_ok = profit_usd >= max_loss if max_loss != 0 else True
+
+            if hold_time >= min_hold and pnl_ok:
+                reverse_label = "NONE" if current_signal == 0 else ("SELL" if is_buy else "BUY")
                 self.log(
-                    f"  [RECOVERY] Đảo chiều Signal ({'SELL' if is_buy else 'BUY'}) | PnL: ${profit_usd:.2f}! Đóng lệnh #{pos.ticket}",
+                    f"  [RECOVERY] Đảo chiều Signal ({reverse_label}) | PnL: ${profit_usd:.2f}! Đóng lệnh #{pos.ticket}",
                     target="bot",
                 )
-                self.state["exit_reasons"][str(pos.ticket)] = "Recovery_Close"
+                self.state["exit_reasons"][str(pos.ticket)] = (
+                    "Recovery_None" if current_signal == 0 else "Recovery_Close"
+                )
                 threading.Thread(
                     target=self.connector.close_position, args=(pos,), daemon=True
                 ).start()

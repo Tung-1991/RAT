@@ -225,6 +225,13 @@ class StandaloneBotDaemon:
                     "✅ ĐÃ BÓP CÒ SELL" if bot_active else "⏸️ (TEST) Tín hiệu SELL"
                 )
             else:
+                try:
+                    from core.storage_manager import get_brain_settings_for_symbol
+                    none_rev = get_brain_settings_for_symbol(sym).get("bot_safeguard", {}).get("REV_CLOSE_ON_NONE", False)
+                except Exception:
+                    none_rev = False
+                if none_rev:
+                    self._add_signal("NONE", sym, context, "ENTRY")
                 signal_debug_state[sym] = (
                     "⏳ Đang chờ điều kiện bóp cò..."
                     if bot_active

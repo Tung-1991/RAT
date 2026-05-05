@@ -146,17 +146,28 @@ class SignalListener:
             opposite_type = 1 if action == "BUY" else 0  # 1 = SELL, 0 = BUY
 
             for p in positions:
-                if p.symbol == symbol and p.type == opposite_type:
+                b_set = {}
+                try:
+                    from core.storage_manager import get_brain_settings_for_symbol
+                    b_set = get_brain_settings_for_symbol(symbol)
+                except Exception:
+                    pass
+
+                allow_none_close = b_set.get("bot_safeguard", {}).get("REV_CLOSE_ON_NONE", False)
+                is_reverse_match = (
+                    action == "NONE" and allow_none_close
+                ) or (
+                    action != "NONE" and p.type == opposite_type
+                )
+
+                if p.symbol == symbol and is_reverse_match:
                     tactic = self.trade_manager.get_trade_tactic(p.ticket)
-                    if "REVERSE_CLOSE" in tactic:
+                    if "REV_C" in tactic or "REVERSE_CLOSE" in tactic:
                         hold_time = time.time() - p.time
 
                         # Đọc thông số chống nhiễu (Min Hold Time + Min PnL)
                         min_hold = 180.0
-                        b_set = {}
                         try:
-                            from core.storage_manager import get_brain_settings_for_symbol
-                            b_set = get_brain_settings_for_symbol(symbol)
                             min_hold = float(b_set.get("bot_safeguard", {}).get("CLOSE_ON_REVERSE_MIN_TIME", 180))
                         except Exception:
                             pass
@@ -203,6 +214,9 @@ class SignalListener:
                             )
         except Exception as e:
             logger.error(f"[Listener] Lỗi Reverse Check: {e}")
+
+        if action == "NONE":
+            return
 
         if not self.get_auto_trade():
             # [FIX] Thinking Logs (Chống spam)

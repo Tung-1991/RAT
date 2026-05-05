@@ -980,7 +980,6 @@ def open_tsl_popup(app, override_symbol=None):
                 overrides[override_symbol]["tsl"]["TSL_CONFIG"] = output_tsl
                 save_symbol_overrides(overrides)
                 app.log_message(f"✅ TSL Override Saved for {override_symbol}.", target="bot")
-                messagebox.showinfo("Lưu Override", f"Đã lưu cấu hình TSL riêng cho {override_symbol}!", parent=top)
                 top.destroy()
                 return
 
@@ -1007,7 +1006,7 @@ def open_tsl_popup(app, override_symbol=None):
             if override_symbol in overrides and "tsl" in overrides[override_symbol]:
                 del overrides[override_symbol]["tsl"]
                 save_symbol_overrides(overrides)
-                messagebox.showinfo("Reset", f"Đã xóa cấu hình TSL riêng cho {override_symbol}!", parent=top)
+                app.log_message(f"✅ TSL Override Reset for {override_symbol}.", target="bot")
                 top.destroy()
                 
         ctk.CTkButton(

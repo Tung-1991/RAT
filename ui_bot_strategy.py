@@ -446,7 +446,6 @@ class BotStrategyUI(ctk.CTkToplevel):
         if self.override_symbol in overrides and "sandbox" in overrides[self.override_symbol]:
             del overrides[self.override_symbol]["sandbox"]
             save_symbol_overrides(overrides)
-            messagebox.showinfo("Reset", f"Đã xóa cấu hình Sandbox riêng cho {self.override_symbol}!", parent=self)
             self.destroy()
 
     def _build_indicators_tab(self):
@@ -806,6 +805,16 @@ class BotStrategyUI(ctk.CTkToplevel):
             variable=self.var_close_rev_pnl,
             font=("Roboto", 12),
         ).pack(side="left", padx=(15, 5))
+
+        self.var_rev_none = ctk.BooleanVar(
+            value=safe_cfg.get("REV_CLOSE_ON_NONE", False)
+        )
+        ctk.CTkCheckBox(
+            f_rev_time,
+            text="NONE cũng cắt",
+            variable=self.var_rev_none,
+            font=("Roboto", 12),
+        ).pack(side="left", padx=(10, 5))
 
         ctk.CTkLabel(f_rev_time, text="Min Profit ($):").pack(side="left")
         self.var_rev_profit = ctk.StringVar(
@@ -1168,12 +1177,12 @@ class BotStrategyUI(ctk.CTkToplevel):
                     "CLOSE_ON_REVERSE": self.temp_close_rev,
                     "CLOSE_ON_REVERSE_MIN_TIME": self.temp_rev_time,
                     "CLOSE_ON_REVERSE_USE_PNL": self.var_close_rev_pnl.get(),
+                    "REV_CLOSE_ON_NONE": self.var_rev_none.get(),
                     "REV_CLOSE_MIN_PROFIT": float(self.var_rev_profit.get() or 0.0),
                     "REV_CLOSE_MAX_LOSS": float(self.var_rev_loss.get() or 0.0),
                 }
                 overrides[self.override_symbol]["sandbox"] = output_data
                 save_symbol_overrides(overrides)
-                messagebox.showinfo("Lưu Override", f"Đã lưu Sandbox riêng cho {self.override_symbol} thành công!", parent=self)
                 self.destroy()
                 return
 
@@ -1199,6 +1208,7 @@ class BotStrategyUI(ctk.CTkToplevel):
                 self.temp_rev_time
             )
             existing_data["bot_safeguard"]["CLOSE_ON_REVERSE_USE_PNL"] = self.var_close_rev_pnl.get()
+            existing_data["bot_safeguard"]["REV_CLOSE_ON_NONE"] = self.var_rev_none.get()
             existing_data["bot_safeguard"]["REV_CLOSE_MIN_PROFIT"] = float(self.var_rev_profit.get() or 0.0)
             existing_data["bot_safeguard"]["REV_CLOSE_MAX_LOSS"] = float(self.var_rev_loss.get() or 0.0)
 
