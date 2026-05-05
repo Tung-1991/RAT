@@ -1073,7 +1073,7 @@ class TradeManager:
 
     def _check_anti_cash(self, pos):
         tsl_cfg = self._get_brain_settings(pos.symbol).get(
-            "tsl_config", getattr(config, "TSL_CONFIG", {})
+            "TSL_CONFIG", getattr(config, "TSL_CONFIG", {})
         )
         hard_stop_usd = float(tsl_cfg.get("ANTI_CASH_USD", 10.0))
         time_cut_s = int(tsl_cfg.get("ANTI_CASH_TIME", 60))
@@ -1182,7 +1182,7 @@ class TradeManager:
         milestones = []
 
         brain = self._get_brain_settings(pos.symbol)
-        tsl_cfg = brain.get("tsl_config", getattr(config, "TSL_CONFIG", {}))
+        tsl_cfg = brain.get("TSL_CONFIG", getattr(config, "TSL_CONFIG", {}))
 
         # [NEW V4.4] ONE-TIME BE: Bỏ qua BE/BE_CASH nếu SL đã được khoá an toàn
         one_time_be = tsl_cfg.get("ONE_TIME_BE", False)

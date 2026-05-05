@@ -459,6 +459,10 @@ def get_brain_settings_for_symbol(symbol: str = None) -> Dict[str, Any]:
                 if "pca_config" not in base_brain: base_brain["pca_config"] = {}
                 base_brain["pca_config"].update(sb["pca_config"])
                 
+            if "bot_safeguard" in sb:
+                if "bot_safeguard" not in base_brain: base_brain["bot_safeguard"] = {}
+                base_brain["bot_safeguard"].update(sb["bot_safeguard"])
+                
         # Merge TSL config
         if "tsl" in sym_override:
             tsl = sym_override["tsl"]

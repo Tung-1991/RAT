@@ -183,7 +183,7 @@ class DataEngine:
         """Kéo độc lập 4 chuỗi dữ liệu cho G0, G1, G2, G3 và tính Cản/ATR cho tất cả"""
         settings = self._get_brain_settings(symbol)
         inds_config = settings.get("indicators", {})
-        tsl_config = settings.get("tsl_config", getattr(config, "TSL_CONFIG", {}))
+        tsl_config = settings.get("TSL_CONFIG", getattr(config, "TSL_CONFIG", {}))
         
         tfs = {
             "G0": settings.get("G0_TIMEFRAME", getattr(config, "G0_TIMEFRAME", "1d")),
@@ -209,7 +209,7 @@ class DataEngine:
 
         # [NEW V4.4 FINAL] Lấy giá trị PSAR hiện tại cho TSL PSAR_TRAIL
         try:
-            tsl_cfg = settings.get("tsl_config", getattr(config, "TSL_CONFIG", {}))
+            tsl_cfg = settings.get("TSL_CONFIG", getattr(config, "TSL_CONFIG", {}))
             psar_grp = tsl_cfg.get("PSAR_GROUP", "G2")
             if psar_grp not in dfs: psar_grp = "G2"
             
@@ -249,7 +249,7 @@ class DataEngine:
         """HÀM CŨ: Phục vụ chạy Bot Daemon bản cũ tránh crash"""
         settings = self._get_brain_settings(symbol)
         inds_config = settings.get("indicators", {})
-        tsl_config = settings.get("tsl_config", getattr(config, "TSL_CONFIG", {}))
+        tsl_config = settings.get("TSL_CONFIG", getattr(config, "TSL_CONFIG", {}))
         
         tf_entry = settings.get("entry_timeframe", "15m")
         tf_trend = settings.get("trend_timeframe", "1h")
