@@ -149,9 +149,15 @@ class SignalGenerator:
         return mode, source_grp, base_dir
 
     def _evaluate_group(self, group_name, group_indicators, df, context, current_mode, rules):
-        if not group_indicators or df is None or df.empty: return 0
+        if "group_details" not in context:
+            context["group_details"] = {}
+
+        if not group_indicators or df is None or df.empty:
+            context["group_details"][group_name] = {"B": 0, "S": 0, "N": 0, "inds": [], "status": 0}
+            return 0
 
         votes = []
+        ind_details = []
         for ind_name, ind_cfg in group_indicators.items():
             func = self.indicator_map.get(ind_name)
             if func:
@@ -167,12 +173,23 @@ class SignalGenerator:
                          signal = func(eval_df, params, context)
                     else:
                          signal = func(eval_df, params)
+                    
                     votes.append(signal)
+                    # Ghi nhận chi tiết từng Indicator cho UI
+                    if signal == 1:
+                        ind_details.append(f"🟩 {ind_name}")
+                    elif signal == -1:
+                        ind_details.append(f"🟥 {ind_name}")
+                    else:
+                        ind_details.append(f"⬜ {ind_name}")
                 except Exception as e:
                     logger.error(f"Lỗi tính toán {ind_name}: {e}")
                     votes.append(0)
+                    ind_details.append(f"❌ {ind_name}")
 
-        if not votes: return 0
+        if not votes:
+            context["group_details"][group_name] = {"B": 0, "S": 0, "N": 0, "inds": [], "status": 0}
+            return 0
 
         total_buy = sum(1 for v in votes if v == 1)
         total_sell = sum(1 for v in votes if v == -1)
@@ -181,18 +198,30 @@ class SignalGenerator:
         max_opp = rules.get("max_opposite", 0)
         max_none = rules.get("max_none", 1)
 
-        if total_buy > 0 and total_buy >= total_sell:
+        main_direction = 0
+        opp_count = 0  # Khởi tạo sớm để tránh UnboundLocalError
+        if total_buy > 0 and total_buy > total_sell:  # Kaiser: Chặn Buy Bias
             main_direction = 1
             opp_count = total_sell
         elif total_sell > 0 and total_sell > total_buy:
             main_direction = -1
             opp_count = total_buy
-        else:
-            return 0
 
-        if opp_count <= max_opp and total_none <= max_none:
-            return main_direction
-        return 0
+        if main_direction != 0 and opp_count <= max_opp and total_none <= max_none:
+            status = main_direction
+        else:
+            status = 0
+
+        # Ghi vào context để UI vẽ bảng chi tiết
+        context["group_details"][group_name] = {
+            "B": total_buy,
+            "S": total_sell,
+            "N": total_none,
+            "inds": ind_details,
+            "status": status
+        }
+
+        return status
 
     def _evaluate_pipeline_v4(self, dfs, context, current_mode, voting_rules, active_inds, eval_mode="VETO", min_votes=3):
         votes = {}
@@ -290,7 +319,13 @@ class SignalGenerator:
                         if grp in active_inds_by_group:
                             active_inds_by_group[grp][name] = cfg
 
-        # 4. Đẩy vào Phễu Vote
+        # 4. Đóng gói tín hiệu từng Group vào Context (Dùng cho UI Dashboard)
+        context["group_signals"] = {
+            grp: self._evaluate_group(grp, active_inds_by_group[grp], dfs.get(grp), context, current_mode, voting_rules.get(grp, {}))
+            for grp in ["G0", "G1", "G2", "G3"]
+        }
+
+        # 5. Đẩy vào Phễu Vote
         return self._evaluate_pipeline_v4(dfs, context, current_mode, voting_rules, active_inds_by_group, eval_mode, min_votes)
 
     # =========================================================================

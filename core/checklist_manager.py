@@ -321,19 +321,42 @@ class ChecklistManager:
             if "_AUTO_DCA" not in p.comment and "_AUTO_PCA" not in p.comment
         ]
 
-        # 1. Kiểm tra tổng số lệnh Bot (Chỉ tính lệnh Gốc)
-        if signal_class == "ENTRY" and len(parent_bot_pos) >= max_open:
-            checks.append(
-                {
-                    "name": "Trạng thái",
-                    "status": "FAIL",
-                    "msg": f"Tổng Bot đang chạy {len(parent_bot_pos)} lệnh gốc (Max {max_open})",
-                }
-            )
+        # [V5.2] Kiểm tra Cooldown CÁCH LY (Dùng chung cho cả ENTRY/DCA/PCA)
+        # Mode 2 lưu cooldown_time (timestamp tương lai) vào bot_last_fail_times → So sánh trực tiếp
+        isolation_deadline = state.get("bot_last_fail_times", {}).get(symbol, 0)
+        now = time.time()
+
+        try:
+            cooldown_min = float(safeguard_cfg.get("COOLDOWN_MINUTES", 1.0))
+        except:
+            cooldown_min = 1.0
+
+        if isolation_deadline > now:
+            # Phạt nặng Mode 2: vẫn còn trong thời gian cách ly
+            rem_fail = int(isolation_deadline - now)
+            msg = f"{symbol} cách ly (Còn {rem_fail//60}m {rem_fail%60}s)" if rem_fail >= 60 else f"{symbol} cách ly (Còn {rem_fail}s)"
+            checks.append({"name": "Isolation", "status": "FAIL", "msg": msg})
+            all_passed = False
+        elif isolation_deadline > 0 and (now - isolation_deadline) < (cooldown_min * 60):
+            # Phạt nhẹ: lưu timestamp quá khứ, kiểm tra theo COOLDOWN_MINUTES
+            rem_fail = int((cooldown_min * 60) - (now - isolation_deadline))
+            checks.append({"name": "Fail Cooldown", "status": "FAIL", "msg": f"{symbol} vừa lỗi kỹ thuật (Còn {rem_fail}s)"})
             all_passed = False
 
-        # 2. Kiểm tra giới hạn riêng cho từng Symbol (Chỉ tính lệnh Gốc)
+
         if signal_class == "ENTRY":
+            # 1. Kiểm tra tổng số lệnh Bot (Chỉ tính lệnh Gốc)
+            if len(parent_bot_pos) >= max_open:
+                checks.append(
+                    {
+                        "name": "Trạng thái",
+                        "status": "FAIL",
+                        "msg": f"Tổng Bot đang chạy {len(parent_bot_pos)} lệnh gốc (Max {max_open})",
+                    }
+                )
+                all_passed = False
+
+            # 2. Kiểm tra giới hạn riêng cho từng Symbol (Chỉ tính lệnh Gốc)
             symbol_parent_pos = [p for p in parent_bot_pos if p.symbol == symbol]
             if len(symbol_parent_pos) >= max_per_symbol:
                 checks.append(
@@ -346,11 +369,6 @@ class ChecklistManager:
                 all_passed = False
 
             # [NEW] Kiểm tra Cooldown (Thời gian nghỉ giữa 2 lệnh ENTRY của cùng 1 coin)
-            try:
-                cooldown_min = float(safeguard_cfg.get("COOLDOWN_MINUTES", 1.0))
-            except (ValueError, TypeError):
-                cooldown_min = 1.0
-
             last_entry = state.get("bot_last_entry_times", {}).get(symbol, 0)
             elapsed_sec = time.time() - last_entry
 
@@ -361,29 +379,6 @@ class ChecklistManager:
                         "name": "Cooldown",
                         "status": "FAIL",
                         "msg": f"{symbol} đang nghỉ (Còn {rem_sec}s)",
-                    }
-                )
-                all_passed = False
-
-            # [NEW V4.4.1] Kiểm tra Failure Cooldown (Sử dụng chung COOLDOWN_MINUTES của Safeguard)
-            last_fail = state.get("bot_last_fail_times", {}).get(symbol, 0)
-            fail_elapsed = time.time() - last_fail
-
-            # Lấy đúng giá trị Cooldown (phút) mà Ngài đã cài ở UI và quy đổi sang giây
-            try:
-                cooldown_min = float(safeguard_cfg.get("COOLDOWN_MINUTES", 1.0))
-            except:
-                cooldown_min = 1.0
-
-            fail_cd_sec = cooldown_min * 60
-
-            if fail_elapsed < fail_cd_sec:
-                rem_fail = int(fail_cd_sec - fail_elapsed)
-                checks.append(
-                    {
-                        "name": "Fail Cooldown",
-                        "status": "FAIL",
-                        "msg": f"{symbol} vừa lỗi kỹ thuật (Nghỉ theo Safeguard còn {rem_fail}s)",
                     }
                 )
                 all_passed = False

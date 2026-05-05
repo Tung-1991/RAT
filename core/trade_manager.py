@@ -67,7 +67,7 @@ class TradeManager:
     def _get_brain_settings(self, symbol=None):
         return get_brain_settings_for_symbol(symbol)
 
-    def check_and_trigger_cooldown(self):
+    def check_and_trigger_cooldown(self, symbol=None):
         brain = self._get_brain_settings()
         safeguard_cfg = brain.get("bot_safeguard", {})
 
@@ -99,22 +99,22 @@ class TradeManager:
         if triggered:
             from core.storage_manager import reset_bot_session
 
-            cooldown_until = time.time() + (cooldown_hours * 3600)
+            # [NEW V5.2] Xử lý theo GLOBAL_BRAKE_MODE
+            brake_mode = safeguard_cfg.get("GLOBAL_BRAKE_MODE", "Mode 1: Total Freeze")
+            cooldown_time = time.time() + (cooldown_hours * 3600)
 
-            # Đóng tất cả các lệnh bot đang chạy nếu có cấu hình CLOSE_ALL_ON_COOLDOWN (tùy chọn)
-            # Ở đây ta chỉ reset cache và chặn mở lệnh mới. Lệnh cũ vẫn chạy.
+            if "Mode 2" in brake_mode and symbol:
+                # Mode 2: Symbol Isolation (Chỉ phạt mã này)
+                if "bot_last_fail_times" not in self.state:
+                    self.state["bot_last_fail_times"] = {}
+                self.state["bot_last_fail_times"][symbol] = cooldown_time
+                self.log(f"🛑 [SAFEGUARD] {reason}. Bot Phạt Cooldown CÁCH LY {symbol} (Mode 2) trong {cooldown_hours} giờ.", target="bot")
+            else:
+                # Mode 1: Total Freeze (Phạt toàn hệ thống)
+                self.state["cooldown_until"] = cooldown_time
+                self.log(f"🛑 [SAFEGUARD] {reason}. Bot Phạt TOÀN HỆ THỐNG (Mode 1) trong {cooldown_hours} giờ.", target="bot")
 
-            reset_bot_session(f"Hit Limit: {reason}")
-
-            # Cập nhật lại state sau khi reset
-            self.state = load_state()
-            self.state["cooldown_until"] = cooldown_until
             save_state(self.state)
-
-            self.log(
-                f"🛑 [SAFEGUARD] {reason}. Bot bước vào Global Cooldown trong {cooldown_hours} giờ.",
-                target="bot",
-            )
 
     # ====================================================================================
     # [NEW V4.4] HÀM CẮT LỆNH KHI CÓ TÍN HIỆU ĐẢO CHIỀU (REVERSE SIGNAL)
@@ -449,7 +449,7 @@ class TradeManager:
                     self.state.get("trades_today_count", 0) + 1
                 )
                 save_state(self.state)
-                self.check_and_trigger_cooldown()
+                self.check_and_trigger_cooldown(symbol)
 
             return "SUCCESS"
 
@@ -871,7 +871,7 @@ class TradeManager:
                                 )
 
                             if is_bot:
-                                self.check_and_trigger_cooldown()
+                                self.check_and_trigger_cooldown(d_out.symbol)
 
                     if ticket in self.state["active_trades"]:
                         self.state["active_trades"].remove(ticket)
@@ -994,16 +994,19 @@ class TradeManager:
                                         
                             threading.Thread(target=_close_watermark_seq, args=(tracked_positions, sym), daemon=True).start()
                             
-                            # Kích hoạt Cooldown cho Symbol (Phanh nhẹ)
-                            if "bot_last_fail_times" not in self.state:
-                                self.state["bot_last_fail_times"] = {}
-                            self.state["bot_last_fail_times"][sym] = time.time()
-                            
-                            # [NEW V5.1] Kích hoạt Global Cooldown (Phanh gấp toàn sàn) nếu cấu hình cho phép
+                            # [V5.2] Kích hoạt Phanh theo Mode (Watermark)
                             if sg_cfg.get("APPLY_GLOBAL_COOLDOWN_ON_SAFEGUARD", False):
+                                brake_mode = sg_cfg.get("GLOBAL_BRAKE_MODE", "Mode 1: Total Freeze")
                                 hours = float(sg_cfg.get("GLOBAL_COOLDOWN_HOURS", 4.0))
-                                self.state["cooldown_until"] = time.time() + (hours * 3600)
-                                self.log(f"🛑 [GLOBAL BRAKE] Kích hoạt Phanh Toàn Hệ Thống trong {hours} giờ do dính Watermark {sym}!", target="bot")
+                                cooldown_time = time.time() + (hours * 3600)
+                                if "Mode 2" in brake_mode:
+                                    if "bot_last_fail_times" not in self.state:
+                                        self.state["bot_last_fail_times"] = {}
+                                    self.state["bot_last_fail_times"][sym] = cooldown_time
+                                    self.log(f"🛑 [SYMBOL BRAKE] Cách ly {sym} trong {hours} giờ do dính Watermark!", target="bot")
+                                else:
+                                    self.state["cooldown_until"] = cooldown_time
+                                    self.log(f"🛑 [GLOBAL BRAKE] Phanh Toàn Hệ Thống trong {hours} giờ do dính Watermark {sym}!", target="bot")
 
                             # Xóa mốc để chu kỳ mới làm lại
                             self.state["highest_pnl_recorded"][sym] = 0.0
@@ -1044,16 +1047,19 @@ class TradeManager:
                                     
                             threading.Thread(target=_close_basket_seq, args=(basket_pos,), daemon=True).start()
                             
-                            # Kích hoạt Cooldown cho Symbol (Phanh nhẹ)
-                            if "bot_last_fail_times" not in self.state:
-                                self.state["bot_last_fail_times"] = {}
-                            self.state["bot_last_fail_times"][sym] = time.time()
-                            
-                            # [NEW V5.1] Kích hoạt Global Cooldown (Phanh gấp toàn sàn) nếu cấu hình cho phép
+                            # [V5.2] Kích hoạt Phanh theo Mode (Basket)
                             if sg_cfg.get("APPLY_GLOBAL_COOLDOWN_ON_SAFEGUARD", False):
+                                brake_mode = sg_cfg.get("GLOBAL_BRAKE_MODE", "Mode 1: Total Freeze")
                                 hours = float(sg_cfg.get("GLOBAL_COOLDOWN_HOURS", 4.0))
-                                self.state["cooldown_until"] = time.time() + (hours * 3600)
-                                self.log(f"🛑 [GLOBAL BRAKE] Kích hoạt Phanh Toàn Hệ Thống trong {hours} giờ do dính Basket Loss {sym}!", target="bot")
+                                cooldown_time = time.time() + (hours * 3600)
+                                if "Mode 2" in brake_mode:
+                                    if "bot_last_fail_times" not in self.state:
+                                        self.state["bot_last_fail_times"] = {}
+                                    self.state["bot_last_fail_times"][sym] = cooldown_time
+                                    self.log(f"🛑 [SYMBOL BRAKE] Cách ly {sym} trong {hours} giờ do dính Basket Loss!", target="bot")
+                                else:
+                                    self.state["cooldown_until"] = cooldown_time
+                                    self.log(f"🛑 [GLOBAL BRAKE] Phanh Toàn Hệ Thống trong {hours} giờ do dính Basket Loss {sym}!", target="bot")
 
                             needs_save = True
             # ---------------------------------------------------------------

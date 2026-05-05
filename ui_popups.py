@@ -383,6 +383,17 @@ def open_bot_setting_popup(app):
     var_gl_reject_lot = ctk.BooleanVar(value=safe_cfg.get("REJECT_ON_MAX_LOT", False))
     ctk.CTkCheckBox(f_sg_content, text="Hủy lệnh vượt Max Lot", variable=var_gl_reject_lot, font=("Roboto", 11)).grid(row=3, column=2, columnspan=2, sticky="w", padx=10, pady=2)
 
+    # --- [NEW V5.2] GLOBAL BRAKE MODE ---
+    ctk.CTkLabel(f_sg_content, text="Global Brake Mode:").grid(row=4, column=0, sticky="w", padx=10, pady=(10, 0))
+    current_brake_mode = safe_cfg.get("GLOBAL_BRAKE_MODE", "Mode 1: Total Freeze")
+    cbo_brake_mode = ctk.CTkOptionMenu(
+        f_sg_content, 
+        values=["Mode 1: Total Freeze", "Mode 2: Symbol Isolation"],
+        width=200
+    )
+    cbo_brake_mode.set(current_brake_mode)
+    cbo_brake_mode.grid(row=4, column=1, columnspan=3, sticky="w", padx=10, pady=(10, 0))
+
     # --- [GROUP 3: 🛡️ ĐIỀU KIỆN VẬN HÀNH (OPERATIONAL)] ---
     f_op = ctk.CTkFrame(f_safety, border_width=1, border_color="#2196F3")
     f_op.grid(row=2, column=0, columnspan=4, sticky="nsew", padx=5, pady=8)
@@ -509,6 +520,7 @@ def open_bot_setting_popup(app):
                     "MIN_SL_POINTS": int(e_gl_min_sl.get()),
                     "MAX_BASKET_DRAWDOWN_USD": float(e_gl_basket_dd.get()),
                     "REJECT_ON_MAX_LOT": var_gl_reject_lot.get(),
+                    "GLOBAL_BRAKE_MODE": cbo_brake_mode.get(),
                 }
             )
 

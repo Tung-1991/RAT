@@ -172,11 +172,12 @@ class SignalListener:
                             max_loss = float(b_set.get("bot_safeguard", {}).get("REV_CLOSE_MAX_LOSS", 0.0))
 
                             if profit_usd >= 0:
-                                if min_profit > 0 and profit_usd < min_profit:
-                                    pnl_ok = False
+                                # [REFINED] Nếu đang lãi, kiểm tra lợi nhuận tối thiểu để cắt (Tránh phí)
+                                pnl_ok = (profit_usd >= min_profit) if min_profit > 0 else True
                             else:
-                                if max_loss != 0 and profit_usd < max_loss:
-                                    pnl_ok = False
+                                # [REFINED] Nếu đang lỗ, chỉ cắt nếu lỗ chưa vượt quá giới hạn (Chống cắt đáy)
+                                # Ví dụ: -5 >= -10 là True (Cắt), -15 >= -10 là False (Giữ)
+                                pnl_ok = (profit_usd >= max_loss) if max_loss != 0 else True
 
                         if hold_time >= min_hold and pnl_ok:
                             self.log_ui(

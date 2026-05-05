@@ -157,12 +157,18 @@ class BotStrategyUI(ctk.CTkToplevel):
         self.tabview = ctk.CTkTabview(self)
         self.tabview.pack(fill="both", expand=True, padx=10, pady=5)
 
+        # Bắt đầu vòng lặp cập nhật Preview
+        self.after(1000, self.update_preview)
+
+        self.tab_preview = self.tabview.add("Live Preview (Data)")
         self.tab_inds = self.tabview.add("Chỉ báo (Signals)")
         self.tab_rules = self.tabview.add("Cấu trúc & Luật Vote (4-Tier)")
         self.tab_risk = self.tabview.add("Risk & TSL")
         self.tab_dca_pca = self.tabview.add("Nhồi Lệnh (DCA/PCA)")
         if not self.override_symbol:
             self.tab_overwrite = self.tabview.add("Overwrite (Mẹ-Con)")
+
+        self._build_preview_tab()
 
         self._build_indicators_tab()
         self._build_voting_tab()
@@ -210,6 +216,97 @@ class BotStrategyUI(ctk.CTkToplevel):
                 height=40,
                 command=self.reset_override,
             ).pack(side="right", padx=5)
+
+    def _build_preview_tab(self):
+        f = ctk.CTkFrame(self.tab_preview, fg_color="transparent")
+        f.pack(fill="both", expand=True, padx=5, pady=5)
+
+        # Header: Master Action
+        header_f = ctk.CTkFrame(f, fg_color="#1A1A1A", corner_radius=8, border_width=1, border_color="#333")
+        header_f.pack(fill="x", pady=(0, 10))
+        
+        self.master_action_lbl = ctk.CTkLabel(header_f, text="MASTER ACTION: WAITING", font=("Roboto", 16, "bold"), text_color="#FFF")
+        self.master_action_lbl.pack(pady=10)
+        
+        self.master_reason_lbl = ctk.CTkLabel(header_f, text="Trạng thái: Đang chờ tín hiệu...", font=("Roboto", 12), text_color="#AAA")
+        self.master_reason_lbl.pack(pady=(0, 10))
+
+        # Grid 4 Columns
+        grid_f = ctk.CTkFrame(f, fg_color="transparent")
+        grid_f.pack(fill="both", expand=True)
+
+        self.preview_cards = {}
+        for i in range(4):
+            grp = f"G{i}"
+            col = ctk.CTkFrame(grid_f, fg_color="#222", corner_radius=8, border_width=1, border_color="#444")
+            col.pack(side="left", fill="both", expand=True, padx=5)
+
+            # Title
+            lbl_title = ctk.CTkLabel(col, text=f"{grp} STATUS", font=("Roboto", 14, "bold"), fg_color="#333", corner_radius=4)
+            lbl_title.pack(fill="x", padx=5, pady=5)
+
+            # B/S/N summary
+            lbl_summary = ctk.CTkLabel(col, text="B: 0 | S: 0 | N: 0", font=("Roboto", 12, "bold"), text_color="#FFF")
+            lbl_summary.pack(pady=5)
+
+            # Details List (Scrollable)
+            scroll_f = ctk.CTkScrollableFrame(col, fg_color="#1A1A1A", corner_radius=4)
+            scroll_f.pack(fill="both", expand=True, padx=5, pady=5)
+            
+            lbl_details = ctk.CTkLabel(scroll_f, text="", font=("Roboto", 12), justify="left", anchor="w")
+            lbl_details.pack(fill="x", padx=5, pady=5)
+
+            self.preview_cards[grp] = {
+                "title": lbl_title,
+                "summary": lbl_summary,
+                "details": lbl_details,
+                "frame": col
+            }
+
+    def update_preview(self):
+        """Cập nhật dữ liệu Live Preview từ context của Master (Main App)"""
+        try:
+            # Lấy context từ master (Main App hoặc Daemon)
+            context = getattr(self.master, "latest_market_context", {})
+            if self.override_symbol:
+                # Nếu là UI con, tìm context của đúng Symbol
+                all_ctx = getattr(self.master, "all_market_contexts", {})
+                context = all_ctx.get(self.override_symbol, {})
+
+            group_details = context.get("group_details", {})
+            
+            # Cập nhật 4 cột Grid
+            colors = {1: "#2E7D32", -1: "#C62828", 0: "#424242"}
+            texts = {1: "BUY", -1: "SELL", 0: "WAIT"}
+            
+            for i in range(4):
+                grp = f"G{i}"
+                card = self.preview_cards[grp]
+                data = group_details.get(grp, {"B": 0, "S": 0, "N": 0, "inds": [], "status": 0})
+                
+                status_val = data.get("status", 0)
+                card["title"].configure(text=f"{grp}: {texts.get(status_val, 'WAIT')}", fg_color=colors.get(status_val, "#333"))
+                card["summary"].configure(text=f"B: {data.get('B', 0)}  |  S: {data.get('S', 0)}  |  N: {data.get('N', 0)}")
+                
+                inds_list = data.get("inds", [])
+                details_text = "\n".join(inds_list) if inds_list else "-- Chờ dữ liệu --"
+                card["details"].configure(text=details_text)
+
+            # Cập nhật Master Action
+            final_sig = context.get("latest_signal", 0)
+            act_color = "#00C853" if final_sig == 1 else "#FF3D00" if final_sig == -1 else "#777"
+            act_text = f"MASTER ACTION: {'BUY' if final_sig == 1 else 'SELL' if final_sig == -1 else 'WAIT'}"
+            self.master_action_lbl.configure(text=act_text, text_color=act_color)
+
+            # Cập nhật Block Reason
+            block_reason = context.get("block_reason", "OK / Ready")
+            self.master_reason_lbl.configure(text=f"Trạng thái: {block_reason}")
+
+        except Exception as e:
+            pass
+
+        # Lặp lại sau 1 giây
+        self.after(1000, self.update_preview)
 
     def _build_overwrite_tab(self):
         f = ctk.CTkScrollableFrame(self.tab_overwrite)
