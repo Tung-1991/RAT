@@ -241,7 +241,7 @@ class SignalGenerator:
             df_grp = dfs.get(grp)
             if df_grp is None or df_grp.empty:
                 if rule == "FIX":
-                    context["block_reason"] = f"Mất dữ liệu {grp} (Luật FIX - Không có data)"
+                    context["block_reason"] = f"Missing data {grp} (FIX rule)"
                     return 0 
                 continue
 
@@ -250,31 +250,25 @@ class SignalGenerator:
 
             if eval_mode == "VETO":
                 if rule == "FIX" and status == 0:
-                    context["block_reason"] = f"Bị chặn bởi {grp} (Luật FIX)"
+                    context["block_reason"] = f"Blocked by {grp} (FIX rule)"
                     return 0 
                 
-                active_votes = [
-                    v for g, v in votes.items()
-                    if v != 0 and voting_rules.get(g, {}).get("master_rule", "IGNORE") == "FIX"
-                ]
+                active_votes = [v for v in votes.values() if v != 0]
                 if len(set(active_votes)) > 1:
-                    context["block_reason"] = "Xung đột hướng giữa các nhóm"
+                    context["block_reason"] = "Direction conflict between groups"
                     return 0 
 
         if eval_mode == "VETO":
-            fix_votes = [
-                v for grp, v in votes.items()
-                if v != 0 and voting_rules.get(grp, {}).get("master_rule", "IGNORE") == "FIX"
-            ]
-            pass_votes = [
-                v for grp, v in votes.items()
-                if v != 0 and voting_rules.get(grp, {}).get("master_rule", "IGNORE") == "PASS"
-            ]
-            active_votes = fix_votes or pass_votes
+            active_votes = [v for v in votes.values() if v != 0]
             if not active_votes:
-                context["block_reason"] = "Không nhóm nào có tín hiệu (WAIT)"
+                context["block_reason"] = "No group has signal (WAIT)"
                 return 0
             final_dir = active_votes[0]
+            for grp, status in votes.items():
+                rule = voting_rules.get(grp, {}).get("master_rule", "IGNORE")
+                if (rule == "FIX" or rule == "PASS") and status != 0 and status != final_dir:
+                    context["block_reason"] = f"Direction conflict with {grp} ({rule} rule)"
+                    return 0
             context["block_reason"] = "OK / Ready"
             return final_dir
         
@@ -289,7 +283,7 @@ class SignalGenerator:
                 context["block_reason"] = "OK / Ready"
                 return -1
             
-            context["block_reason"] = f"Không đủ phiếu ({max(buy_votes, sell_votes)}/{min_votes})"
+            context["block_reason"] = f"Not enough votes ({max(buy_votes, sell_votes)}/{min_votes})"
             return 0
         
         return 0

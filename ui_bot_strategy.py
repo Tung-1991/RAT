@@ -247,7 +247,7 @@ class BotStrategyUI(ctk.CTkToplevel):
             "- Preview chỉ đọc context live, không tự quyết định lệnh.\n"
             "- B/S/N là phiếu BUY/SELL/NONE sau khi lọc theo Mode.\n"
             "- Master Action = final result after group rules + Master Mode.\n"
-            "- FIX = required, PASS = directional vote, IGNORE = skipped.",
+            "- FIX = required, PASS = allows WAIT but blocks opposite, IGNORE = skipped.",
             padx=5,
             pady=(0, 10),
         )
@@ -663,9 +663,9 @@ class BotStrategyUI(ctk.CTkToplevel):
 
         self._add_hint_box(
             self.tab_rules,
-            "- VETO: FIX must have a signal and must not conflict with another FIX.\n"
-            "- PASS: does not block FIX; used only when no FIX decides.\n"
-            "- IGNORE: skip group; VOTING needs enough Min Votes.\n"
+            "- VETO: FIX must have a signal; PASS may WAIT/NONE.\n"
+            "- PASS with opposite direction blocks the final action; IGNORE skips group.\n"
+            "- VOTING needs enough Min Votes.\n"
             "- Timeframe G0-G3 quyết định data dùng cho từng group.",
             pady=(5, 10),
         )
