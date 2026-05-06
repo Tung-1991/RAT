@@ -494,7 +494,7 @@ def setup_right_panel(app, parent):
         "Targets",
         "CostInfo",
         "RR",
-        "PnL",
+        "PnL_MAE_MFE",
         "Status",
         "X",
     )
@@ -520,7 +520,7 @@ def setup_right_panel(app, parent):
         "Trạng thái",
         "✖",
     ]
-    widths = [180, 180, 500, 300, 350, 450, 180, 500, 50]
+    widths = [180, 180, 500, 300, 350, 450, 300, 500, 50]
     anchors = [
         "center",
         "center",
@@ -534,6 +534,8 @@ def setup_right_panel(app, parent):
     ]
 
     for c, h, w, a in zip(cols, headers, widths, anchors):
+        if c == "PnL_MAE_MFE":
+            h = "PnL / MAE / MFE"
         app.tree.heading(c, text=h)
         app.tree.column(c, width=w, anchor=a, minwidth=w, stretch=False)
 

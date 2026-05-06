@@ -558,7 +558,8 @@ class BotUI(ctk.CTk):
                             "manual_daily_loss_count": 0, "bot_pnl_today": 0.0,
                             "bot_trades_today": 0, "bot_daily_loss_count": 0,
                             "trade_tactics": {}, "cooldown_until": 0.0,
-                            "bot_last_entry_times": {}, "last_close_times": {}
+                            "bot_last_entry_times": {}, "last_close_times": {},
+                            "trade_excursions": {}, "anti_cash_locks": {}
                         }
                         
                         # Reload config trên UI thread
@@ -1071,6 +1072,14 @@ class BotUI(ctk.CTk):
             net_pnl = p.profit + getattr(p, "swap", 0.0)
             if acc_type not in ["PRO", "STANDARD"]:
                 net_pnl -= comm_total_usd
+            excursion = self.trade_mgr.state.get("trade_excursions", {}).get(
+                ticket_str, {}
+            )
+            mae_usd = float(excursion.get("mae_usd", min(net_pnl, 0.0)))
+            mfe_usd = float(excursion.get("mfe_usd", max(net_pnl, 0.0)))
+            pnl_excursion_str = (
+                f"P:{net_pnl:+.2f} | A:{mae_usd:+.2f} | F:{mfe_usd:+.2f}"
+            )
 
             values_data = (
                 display_ticket,
@@ -1079,7 +1088,7 @@ class BotUI(ctk.CTk):
                 targets_str,
                 fee_str,
                 rr_str,
-                f"${net_pnl:.2f}",
+                pnl_excursion_str,
                 stt_txt,
                 "❌",
             )
@@ -1231,6 +1240,8 @@ class BotUI(ctk.CTk):
                     "bot_last_entry_times": {},
                     "bot_last_fail_times": {},
                     "last_close_times": {},
+                    "trade_excursions": {},
+                    "anti_cash_locks": {},
                     "current_session_id": datetime.now().strftime("%Y%m%d_%H%M%S"),
                 }
             )

@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 # FILE: core/trade_manager.py
 # V4.4 (FINAL): UNIFIED TRADE MANAGER - DYNAMIC MACRO, REVERSE CLOSE & CASH TSL (KAISER EDITION)
 
@@ -40,12 +40,51 @@ class TradeManager:
             self.state["child_to_parent"] = {}
         if "initial_r_dist" not in self.state:
             self.state["initial_r_dist"] = {}
+        if "trade_excursions" not in self.state:
+            self.state["trade_excursions"] = {}
+        if "anti_cash_locks" not in self.state:
+            self.state["anti_cash_locks"] = {}
 
         # [NEW V4.4] Tracking chuyên sâu cho Cooldown và Log
         if "exit_reasons" not in self.state:
             self.state["exit_reasons"] = {}
         if "last_close_times" not in self.state:
             self.state["last_close_times"] = {}
+
+    def _position_profit_usd(self, pos):
+        return pos.profit + pos.swap + getattr(pos, "commission", 0.0)
+
+    def _update_trade_excursion(self, pos):
+        s_ticket = str(pos.ticket)
+        profit_usd = self._position_profit_usd(pos)
+        excursions = self.state.setdefault("trade_excursions", {})
+        cur = excursions.get(s_ticket, {})
+        mae = min(float(cur.get("mae_usd", profit_usd)), profit_usd)
+        mfe = max(float(cur.get("mfe_usd", profit_usd)), profit_usd)
+        excursions[s_ticket] = {"mae_usd": mae, "mfe_usd": mfe}
+        return excursions[s_ticket]
+
+    def _anti_cash_lock_key(self, symbol, direction):
+        return f"{symbol}|{direction}"
+
+    def _set_anti_cash_lock(self, pos, ttl_sec):
+        if ttl_sec <= 0:
+            return
+        direction = "BUY" if pos.type == mt5.ORDER_TYPE_BUY else "SELL"
+        key = self._anti_cash_lock_key(pos.symbol, direction)
+        self.state.setdefault("anti_cash_locks", {})[key] = time.time() + ttl_sec
+
+    def _check_anti_cash_reentry_lock(self, symbol, direction):
+        locks = self.state.setdefault("anti_cash_locks", {})
+        key = self._anti_cash_lock_key(symbol, direction)
+        until = float(locks.get(key, 0.0) or 0.0)
+        if until <= 0:
+            return None
+        now = time.time()
+        if until <= now:
+            locks.pop(key, None)
+            return None
+        return until
 
     def log(self, msg, error=False, target=None):
         if self.log_callback:
@@ -198,6 +237,11 @@ class TradeManager:
         safeguard_cfg = brain.get("bot_safeguard", {})
 
         # [NEW V4.4] KIỂM TRA ĐẢO CHIỀU TRƯỚC KHI VÀO LỆNH (Cắt lệnh ngược chiều giải phóng Margin)
+        lock_until = self._check_anti_cash_reentry_lock(symbol, direction)
+        if lock_until:
+            wait_s = max(1, int(lock_until - time.time()))
+            return f"SAFEGUARD_FAIL|AntiCash_Reentry_Lock|{symbol} {direction} bị khóa vào lại sau ANTI CASH, còn {wait_s}s."
+
         close_on_reverse = safeguard_cfg.get("CLOSE_ON_REVERSE", False)
         if close_on_reverse and signal_class == "ENTRY":
             min_hold = safeguard_cfg.get("CLOSE_ON_REVERSE_MIN_TIME", 180)
@@ -837,6 +881,16 @@ class TradeManager:
 
                             # [NEW V5] Trích xuất Tag/Comment từ MT5 để phân biệt Mẹ/Con
                             trigger_signal = deal_in[0].comment if deal_in else "UNK"
+                            parent_ticket = self.state.get("child_to_parent", {}).get(
+                                s_ticket
+                            )
+                            if parent_ticket and "Parent:" not in trigger_signal:
+                                trigger_signal = f"{trigger_signal}|Parent:{parent_ticket}"
+                            excursion = self.state.get("trade_excursions", {}).get(
+                                s_ticket, {}
+                            )
+                            mae_usd = float(excursion.get("mae_usd", min(real_pnl, 0.0)))
+                            mfe_usd = float(excursion.get("mfe_usd", max(real_pnl, 0.0)))
 
                             append_trade_log(
                                 ticket,
@@ -851,11 +905,14 @@ class TradeManager:
                                 exit_reason,
                                 trigger_signal=trigger_signal,
                                 session_id=current_session,
-                                open_time_str=open_time_str
+                                open_time_str=open_time_str,
+                                mae_usd=mae_usd,
+                                mfe_usd=mfe_usd,
                             )
                             log_target = "bot" if is_bot else "manual"
+                            src_txt = f" | Src: {trigger_signal}" if trigger_signal else ""
                             self.log(
-                                f"[DỌN DẸP] Đóng lệnh {pos_type_str} {d_out.symbol} #{ticket} ({exit_reason}) | PnL: {pnl_sign}${real_pnl:.2f}",
+                                f"[DỌN DẸP] Đóng lệnh {pos_type_str} {d_out.symbol} #{ticket} ({exit_reason}) | PnL: {pnl_sign}${real_pnl:.2f}{src_txt}",
                                 target=log_target,
                             )
 
@@ -881,6 +938,7 @@ class TradeManager:
                         "exit_reasons",
                         "initial_costs",
                         "last_tsl_rules",
+                        "trade_excursions",
                     ]:
                         if s_ticket in self.state.get(key, {}):
                             del self.state[key][s_ticket]
@@ -936,6 +994,13 @@ class TradeManager:
             for pos in tracked_positions:
                 if pos.ticket not in self.state["active_trades"]:
                     self.state["active_trades"].append(pos.ticket)
+                    needs_save = True
+
+                before_excursion = self.state.get("trade_excursions", {}).get(
+                    str(pos.ticket), {}
+                ).copy()
+                excursion = self._update_trade_excursion(pos)
+                if excursion != before_excursion:
                     needs_save = True
 
                 sym_ctx = (
@@ -1094,7 +1159,7 @@ class TradeManager:
             self.log(f"❌ Lỗi update loop: {e}", error=True)
         return tsl_status_map
 
-    def _check_anti_cash(self, pos):
+    def _check_anti_cash_legacy(self, pos):
         tsl_cfg = self._get_brain_settings(pos.symbol).get(
             "TSL_CONFIG", getattr(config, "TSL_CONFIG", {})
         )
@@ -1143,6 +1208,96 @@ class TradeManager:
                 threading.Thread(
                     target=self.connector.close_position, args=(pos,), daemon=True
                 ).start()
+
+    def _check_anti_cash(self, pos):
+        tsl_cfg = self._get_brain_settings(pos.symbol).get(
+            "TSL_CONFIG", getattr(config, "TSL_CONFIG", {})
+        )
+        hard_stop_usd = float(tsl_cfg.get("ANTI_CASH_USD", 10.0))
+        time_cut_s = int(tsl_cfg.get("ANTI_CASH_TIME", 60))
+        reentry_lock_s = int(tsl_cfg.get("ANTI_CASH_REENTRY_LOCK_SEC", 0))
+
+        profit_usd = self._position_profit_usd(pos)
+        s_ticket = str(pos.ticket)
+        current_reason = self.state.get("exit_reasons", {}).get(s_ticket, "")
+        if current_reason.startswith("Anti_Cash_"):
+            return
+
+        if "initial_costs" not in self.state:
+            self.state["initial_costs"] = {}
+        if s_ticket not in self.state["initial_costs"]:
+            init_cost = abs(
+                min(0, pos.profit) + pos.swap + getattr(pos, "commission", 0.0)
+            )
+            self.state["initial_costs"][s_ticket] = init_cost
+            save_state(self.state)
+
+        initial_cost = self.state["initial_costs"].get(s_ticket, 0.0)
+        dynamic_threshold = hard_stop_usd + initial_cost
+        hold_time = time.time() - pos.time
+        excursion = self.state.get("trade_excursions", {}).get(s_ticket)
+        if not excursion:
+            excursion = self._update_trade_excursion(pos)
+        mae_usd = float(excursion.get("mae_usd", profit_usd))
+        mfe_usd = float(excursion.get("mfe_usd", profit_usd))
+
+        def close_by_anti_cash(reason, message):
+            self.log(message, target="bot")
+            self.state["exit_reasons"][s_ticket] = reason
+            self._set_anti_cash_lock(pos, reentry_lock_s)
+            save_state(self.state)
+            threading.Thread(
+                target=self.connector.close_position, args=(pos,), daemon=True
+            ).start()
+
+        if profit_usd <= -dynamic_threshold:
+            close_by_anti_cash(
+                "Anti_Cash_Hard_Stop",
+                f"🔥 [ANTI CASH] Hard Stop #{pos.ticket}: PnL ${profit_usd:.2f} <= -${dynamic_threshold:.2f} (-${hard_stop_usd:.2f} + phí ${initial_cost:.2f}).",
+            )
+            return
+
+        if tsl_cfg.get("ANTI_CASH_MFE_ENABLE", True):
+            mfe_trigger = float(tsl_cfg.get("ANTI_CASH_MFE_TRIGGER_USD", 30.0))
+            mfe_giveback = float(tsl_cfg.get("ANTI_CASH_MFE_GIVEBACK_USD", 20.0))
+            mfe_floor = float(tsl_cfg.get("ANTI_CASH_MFE_FLOOR_USD", 0.0))
+            giveback = mfe_usd - profit_usd
+            if mfe_trigger > 0 and mfe_usd >= mfe_trigger:
+                if mfe_giveback > 0 and giveback >= mfe_giveback:
+                    close_by_anti_cash(
+                        "Anti_Cash_MFE_Giveback",
+                        f"💰 [ANTI CASH] MFE Giveback #{pos.ticket}: MFE ${mfe_usd:.2f}, PnL ${profit_usd:.2f}, trả lại ${giveback:.2f}.",
+                    )
+                    return
+                if profit_usd <= mfe_floor:
+                    close_by_anti_cash(
+                        "Anti_Cash_MFE_Floor",
+                        f"💰 [ANTI CASH] MFE Floor #{pos.ticket}: MFE ${mfe_usd:.2f}, PnL ${profit_usd:.2f} <= floor ${mfe_floor:.2f}.",
+                    )
+                    return
+
+        if tsl_cfg.get("ANTI_CASH_MAE_ENABLE", True):
+            mae_max_loss = float(tsl_cfg.get("ANTI_CASH_MAE_MAX_LOSS_USD", 25.0))
+            mae_min_hold = int(tsl_cfg.get("ANTI_CASH_MAE_MIN_HOLD_SEC", 300))
+            low_mfe = float(tsl_cfg.get("ANTI_CASH_MAE_LOW_MFE_USD", 5.0))
+            if (
+                mae_max_loss > 0
+                and profit_usd <= -mae_max_loss
+                and hold_time >= mae_min_hold
+                and mfe_usd < low_mfe
+            ):
+                close_by_anti_cash(
+                    "Anti_Cash_MAE_Stop",
+                    f"🔥 [ANTI CASH] MAE Stop #{pos.ticket}: PnL ${profit_usd:.2f}, MAE ${mae_usd:.2f}, MFE ${mfe_usd:.2f} < ${low_mfe:.2f}.",
+                )
+                return
+
+        if tsl_cfg.get("ANTI_CASH_TIME_ENABLE", True):
+            if hold_time > time_cut_s and profit_usd < 0:
+                close_by_anti_cash(
+                    "Anti_Cash_Time_Cut",
+                    f"⏱ [ANTI CASH] Time Cut #{pos.ticket}: giữ {hold_time:.0f}s > {time_cut_s}s và PnL ${profit_usd:.2f}.",
+                )
 
     def _check_recovery(self, pos, context):
         """[NEW V4.4] Close on Reverse (REV_C) logic"""

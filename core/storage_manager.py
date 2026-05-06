@@ -133,16 +133,17 @@ def get_today_str():
         return prev_day.strftime("%Y-%m-%d")
     return now.strftime("%Y-%m-%d")
 
-def append_trade_log(ticket, symbol, type_str, volume, entry_price, sl, tp, fee, pnl, close_reason, market_mode="ANY", trigger_signal="UNK", session_id="LEGACY", open_time_str=""):
+def append_trade_log(ticket, symbol, type_str, volume, entry_price, sl, tp, fee, pnl, close_reason, market_mode="ANY", trigger_signal="UNK", session_id="LEGACY", open_time_str="", mae_usd=0.0, mfe_usd=0.0):
     file_exists = os.path.isfile(MASTER_LOG_FILE)
     try:
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S") 
         time_display = f"{open_time_str[11:]} -> {now_str[11:]}" if open_time_str else now_str
-        header = ["Time", "Ticket", "Symbol", "Type", "Vol", "Entry", "SL", "TP", "Fee", "PnL ($)", "Reason", "Market Mode", "Trigger", "Session_ID"]
+        header = ["Time", "Ticket", "Symbol", "Type", "Vol", "Entry", "SL", "TP", "Fee", "PnL ($)", "Reason", "Market Mode", "Trigger", "Session_ID", "MAE ($)", "MFE ($)"]
         new_row = [
             time_display, ticket, symbol, type_str, volume,
             f"{entry_price:.5f}", f"{sl:.5f}", f"{tp:.5f}", f"{fee:.2f}",
-            f"{pnl:.2f}", close_reason, market_mode, trigger_signal, session_id
+            f"{pnl:.2f}", close_reason, market_mode, trigger_signal, session_id,
+            f"{mae_usd:.2f}", f"{mfe_usd:.2f}"
         ]
 
         def reason_rank(reason):
@@ -162,6 +163,9 @@ def append_trade_log(ticket, symbol, type_str, volume, entry_price, sl, tp, fee,
                 rows = [r for r in reader if r]
                 if existing_header:
                     header = existing_header
+                    for col in ["MAE ($)", "MFE ($)"]:
+                        if col not in header:
+                            header.append(col)
 
         ticket_str = str(ticket)
         replaced = False
@@ -197,7 +201,8 @@ def delete_session_log(session_id: str):
                 for row in reader:
                     # Nếu có Session_ID (cột cuối) và nó khớp thì bỏ qua (xóa)
                     # Support cả format cũ (10 cột) và mới (14 cột)
-                    if len(row) >= 10 and row[-1] == session_id:
+                    row_session_id = row[13] if len(row) >= 14 else row[-1]
+                    if len(row) >= 10 and row_session_id == session_id:
                         continue
                     rows.append(row)
         
@@ -244,6 +249,8 @@ def load_state() -> Dict[str, Any]:
         "highest_pnl_recorded": {},    # [NEW V5] Đỉnh PnL cho Watermark
         "highest_pnl_tickets": {},     # Ticket set đang tạo mốc Watermark
         "last_rev_log_time": {},       # [NEW V5] Bộ nhớ chống spam log đảo chiều
+        "trade_excursions": {},
+        "anti_cash_locks": {},
         "current_session_id": datetime.now().strftime("%Y%m%d_%H%M%S"),
         "cooldown_until": 0.0
     }
@@ -275,6 +282,8 @@ def load_state() -> Dict[str, Any]:
             if "fee_today" not in state: state["fee_today"] = 0.0
             if "highest_pnl_recorded" not in state: state["highest_pnl_recorded"] = {}
             if "highest_pnl_tickets" not in state: state["highest_pnl_tickets"] = {}
+            if "trade_excursions" not in state: state["trade_excursions"] = {}
+            if "anti_cash_locks" not in state: state["anti_cash_locks"] = {}
 
             current_date = get_today_str()
             saved_date = state.get("date")
@@ -306,6 +315,8 @@ def load_state() -> Dict[str, Any]:
                 state["fee_today"] = 0.0
                 state["highest_pnl_recorded"] = {}
                 state["highest_pnl_tickets"] = {}
+                state["trade_excursions"] = {}
+                state["anti_cash_locks"] = {}
                 
                 # Khởi tạo session mới cho ngày mới
                 state["current_session_id"] = datetime.now().strftime("%Y%m%d_%H%M%S")

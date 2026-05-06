@@ -914,7 +914,9 @@ def open_tsl_popup(app, override_symbol=None):
         tab_adv,
         "- Swing/PSAR dùng group được chọn để bám cấu trúc giá.\n"
         "- CASH trail khóa lãi theo USD/Percent/Point; One-Time chỉ khóa một lần.\n"
-        "- ANTI CASH là hard-stop theo USD hoặc thời gian âm.",
+        "- ANTI CASH giữ tên cũ nhưng có thêm MAE/MFE theo từng ticket.\n"
+        "- MAE = âm sâu nhất của ticket; MFE = lời cao nhất của ticket.\n"
+        "- Hard Stop là cầu dao lỗ; MFE Giveback chống trả lại lợi nhuận.",
         padx=15,
         pady=(10, 5),
         wraplength=400,
@@ -1028,7 +1030,7 @@ def open_tsl_popup(app, override_symbol=None):
     e_psar_min_rr.pack(side="left", padx=5)
     ctk.CTkLabel(f_psar_row3, text="Min RR kích hoạt:").pack(side="left")
 
-    f_anti = sec(tab_adv, "7. ANTI CASH (Cắt lỗ cứng)")
+    f_anti = sec(tab_adv, "7. ANTI CASH")
     f_anti.pack(fill="x", padx=15)
 
     f_anti_row = ctk.CTkFrame(f_anti, fg_color="transparent")
@@ -1049,6 +1051,47 @@ def open_tsl_popup(app, override_symbol=None):
     ctk.CTkCheckBox(
         f_anti_row, text="Dùng Time", variable=var_anti_time_en, width=50
     ).pack(side="right", padx=15)
+
+    f_anti_row2 = ctk.CTkFrame(f_anti, fg_color="transparent")
+    f_anti_row2.pack(fill="x", pady=2)
+    var_anti_mae_en = ctk.BooleanVar(value=tsl_cfg.get("ANTI_CASH_MAE_ENABLE", True))
+    ctk.CTkCheckBox(f_anti_row2, text="MAE Guard", variable=var_anti_mae_en, width=90).pack(side="left", padx=5)
+    e_anti_mae_loss = ctk.CTkEntry(f_anti_row2, width=60)
+    e_anti_mae_loss.insert(0, str(tsl_cfg.get("ANTI_CASH_MAE_MAX_LOSS_USD", 25.0)))
+    e_anti_mae_loss.pack(side="left", padx=5)
+    ctk.CTkLabel(f_anti_row2, text="Max Loss($)").pack(side="left")
+    e_anti_mae_hold = ctk.CTkEntry(f_anti_row2, width=60)
+    e_anti_mae_hold.insert(0, str(tsl_cfg.get("ANTI_CASH_MAE_MIN_HOLD_SEC", 300)))
+    e_anti_mae_hold.pack(side="left", padx=5)
+    ctk.CTkLabel(f_anti_row2, text="Hold(s)").pack(side="left")
+    e_anti_mae_low_mfe = ctk.CTkEntry(f_anti_row2, width=60)
+    e_anti_mae_low_mfe.insert(0, str(tsl_cfg.get("ANTI_CASH_MAE_LOW_MFE_USD", 5.0)))
+    e_anti_mae_low_mfe.pack(side="right", padx=5)
+    ctk.CTkLabel(f_anti_row2, text="Low MFE($)").pack(side="right")
+
+    f_anti_row3 = ctk.CTkFrame(f_anti, fg_color="transparent")
+    f_anti_row3.pack(fill="x", pady=2)
+    var_anti_mfe_en = ctk.BooleanVar(value=tsl_cfg.get("ANTI_CASH_MFE_ENABLE", True))
+    ctk.CTkCheckBox(f_anti_row3, text="MFE Guard", variable=var_anti_mfe_en, width=90).pack(side="left", padx=5)
+    e_anti_mfe_trig = ctk.CTkEntry(f_anti_row3, width=60)
+    e_anti_mfe_trig.insert(0, str(tsl_cfg.get("ANTI_CASH_MFE_TRIGGER_USD", 30.0)))
+    e_anti_mfe_trig.pack(side="left", padx=5)
+    ctk.CTkLabel(f_anti_row3, text="Trigger($)").pack(side="left")
+    e_anti_mfe_giveback = ctk.CTkEntry(f_anti_row3, width=60)
+    e_anti_mfe_giveback.insert(0, str(tsl_cfg.get("ANTI_CASH_MFE_GIVEBACK_USD", 20.0)))
+    e_anti_mfe_giveback.pack(side="left", padx=5)
+    ctk.CTkLabel(f_anti_row3, text="Giveback($)").pack(side="left")
+    e_anti_mfe_floor = ctk.CTkEntry(f_anti_row3, width=60)
+    e_anti_mfe_floor.insert(0, str(tsl_cfg.get("ANTI_CASH_MFE_FLOOR_USD", 0.0)))
+    e_anti_mfe_floor.pack(side="right", padx=5)
+    ctk.CTkLabel(f_anti_row3, text="Floor($)").pack(side="right")
+
+    f_anti_row4 = ctk.CTkFrame(f_anti, fg_color="transparent")
+    f_anti_row4.pack(fill="x", pady=2)
+    e_anti_reentry = ctk.CTkEntry(f_anti_row4, width=70)
+    e_anti_reentry.insert(0, str(tsl_cfg.get("ANTI_CASH_REENTRY_LOCK_SEC", 900)))
+    e_anti_reentry.pack(side="left", padx=5)
+    ctk.CTkLabel(f_anti_row4, text="Re-entry Lock(s) sau khi ANTI CASH cắt cùng chiều").pack(side="left")
 
     def save():
         try:
@@ -1082,6 +1125,15 @@ def open_tsl_popup(app, override_symbol=None):
                 "ANTI_CASH_USD": float(e_anti_usd.get()),
                 "ANTI_CASH_TIME": int(e_anti_time.get()),
                 "ANTI_CASH_TIME_ENABLE": var_anti_time_en.get(),
+                "ANTI_CASH_MAE_ENABLE": var_anti_mae_en.get(),
+                "ANTI_CASH_MAE_MAX_LOSS_USD": float(e_anti_mae_loss.get()),
+                "ANTI_CASH_MAE_MIN_HOLD_SEC": int(e_anti_mae_hold.get()),
+                "ANTI_CASH_MAE_LOW_MFE_USD": float(e_anti_mae_low_mfe.get()),
+                "ANTI_CASH_MFE_ENABLE": var_anti_mfe_en.get(),
+                "ANTI_CASH_MFE_TRIGGER_USD": float(e_anti_mfe_trig.get()),
+                "ANTI_CASH_MFE_GIVEBACK_USD": float(e_anti_mfe_giveback.get()),
+                "ANTI_CASH_MFE_FLOOR_USD": float(e_anti_mfe_floor.get()),
+                "ANTI_CASH_REENTRY_LOCK_SEC": int(e_anti_reentry.get()),
             }
             
             if override_symbol:
@@ -1515,6 +1567,9 @@ def show_history_popup(app):
         "TP",
         "Fee",
         "PnL ($)",
+        "MAE",
+        "MFE",
+        "Trigger",
         "Reason",
     )
     tr = ttk.Treeview(top, columns=cols, show="tree headings")
@@ -1529,7 +1584,7 @@ def show_history_popup(app):
     tr.column("#0", width=160, anchor="w")
     tr.heading("#0", text="Session")
 
-    widths = [140, 90, 80, 80, 60, 80, 80, 80, 60, 80, 120]
+    widths = [140, 90, 80, 80, 60, 80, 80, 80, 60, 80, 80, 80, 170, 120]
     for c, w in zip(cols, widths):
         tr.heading(c, text=c)
         tr.column(c, width=w, anchor="center")
@@ -1637,6 +1692,9 @@ def show_history_popup(app):
                         fee_str,
                         pnl_str,
                         "",
+                        "",
+                        "",
+                        "",
                     ),
                 )
 
@@ -1658,6 +1716,9 @@ def show_history_popup(app):
                                 row[7],
                                 row[8],
                                 row[9],
+                                row[14] if len(row) > 14 else "",
+                                row[15] if len(row) > 15 else "",
+                                row[12] if len(row) > 12 else "",
                                 row[10],
                             ),
                         )

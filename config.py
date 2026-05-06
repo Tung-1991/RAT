@@ -179,6 +179,15 @@ TSL_CONFIG = {
     "ANTI_CASH_USD": 10.0,  # [NEW V4.4] Ngưỡng cắt lỗ USD cứng
     "ANTI_CASH_TIME": 3600,  # [NEW V4.4] Thời gian âm tối đa (giây) - 1 Giờ
     "ANTI_CASH_TIME_ENABLE": True,  # Bật/tắt Time Cut
+    "ANTI_CASH_MAE_ENABLE": True,
+    "ANTI_CASH_MAE_MAX_LOSS_USD": 25.0,
+    "ANTI_CASH_MAE_MIN_HOLD_SEC": 300,
+    "ANTI_CASH_MAE_LOW_MFE_USD": 5.0,
+    "ANTI_CASH_MFE_ENABLE": True,
+    "ANTI_CASH_MFE_TRIGGER_USD": 30.0,
+    "ANTI_CASH_MFE_GIVEBACK_USD": 20.0,
+    "ANTI_CASH_MFE_FLOOR_USD": 0.0,
+    "ANTI_CASH_REENTRY_LOCK_SEC": 900,
 }
 
 # ==============================================================================
