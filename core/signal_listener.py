@@ -176,9 +176,28 @@ class SignalListener:
 
                         # [NEW V4.4] REFINED PNL CHECK
                         pnl_ok = True
-                        if b_set.get("bot_safeguard", {}).get("CLOSE_ON_REVERSE_USE_PNL", True):
-                            min_profit = float(b_set.get("bot_safeguard", {}).get("REV_CLOSE_MIN_PROFIT", 0.0))
-                            max_loss = float(b_set.get("bot_safeguard", {}).get("REV_CLOSE_MAX_LOSS", 0.0))
+                        safe_cfg = b_set.get("bot_safeguard", {})
+                        if safe_cfg.get("CLOSE_ON_REVERSE_USE_PNL", True):
+                            equity = 0.0
+                            try:
+                                acc = self.trade_manager.connector.get_account_info()
+                                equity = acc.get("equity", 0.0) if acc else 0.0
+                            except Exception:
+                                pass
+                            min_profit = self.trade_manager._resolve_money_value(
+                                safe_cfg.get("REV_CLOSE_MIN_PROFIT", 0.0),
+                                safe_cfg.get("REV_CLOSE_MIN_PROFIT_UNIT", "USD"),
+                                pos=p,
+                                equity=equity,
+                            )
+                            max_loss = -abs(
+                                self.trade_manager._resolve_money_value(
+                                    safe_cfg.get("REV_CLOSE_MAX_LOSS", 0.0),
+                                    safe_cfg.get("REV_CLOSE_MAX_LOSS_UNIT", "USD"),
+                                    pos=p,
+                                    equity=equity,
+                                )
+                            )
 
                             if profit_usd >= 0:
                                 # [REFINED] Nếu đang lãi, kiểm tra lợi nhuận tối thiểu để cắt (Tránh phí)

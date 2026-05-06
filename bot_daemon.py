@@ -307,9 +307,9 @@ class StandaloneBotDaemon:
             
             # [NEW V5] Check Cooldown DCA/PCA theo Signal Time (Chống xả lệnh liên thanh)
             from core.storage_manager import get_last_dca_pca_signal_time
-            cd_time = dca_cfg.get("COOLDOWN", 60)
-            if time.time() - get_last_dca_pca_signal_time(symbol, "DCA") < cd_time:
-                continue
+            now = time.time()
+            dca_cd_time = dca_cfg.get("COOLDOWN", 60)
+            pca_cd_time = pca_cfg.get("COOLDOWN", dca_cd_time)
 
             current_price = context.get("current_price", 0)
             
@@ -342,6 +342,7 @@ class StandaloneBotDaemon:
                 dca_cfg.get("ENABLED", False)
                 and profit_points < 0
                 and len(pos_list) < dca_cfg.get("MAX_STEPS", 3)
+                and now - get_last_dca_pca_signal_time(symbol, "DCA") >= dca_cd_time
             ):
                 if abs(profit_points) >= (dca_cfg.get("DISTANCE_ATR_R", 1.0) * atr_val):
                     # ==========================================
@@ -383,6 +384,7 @@ class StandaloneBotDaemon:
                 pca_cfg.get("ENABLED", False)
                 and profit_points > 0
                 and len(pos_list) < pca_cfg.get("MAX_STEPS", 2)
+                and now - get_last_dca_pca_signal_time(symbol, "PCA") >= pca_cd_time
             ):
                 is_safe = (
                     is_buy and first_pos.sl > first_pos.price_open

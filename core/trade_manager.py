@@ -40,6 +40,8 @@ class TradeManager:
             self.state["child_to_parent"] = {}
         if "initial_r_dist" not in self.state:
             self.state["initial_r_dist"] = {}
+        if "initial_r_usd" not in self.state:
+            self.state["initial_r_usd"] = {}
         if "trade_excursions" not in self.state:
             self.state["trade_excursions"] = {}
         if "anti_cash_locks" not in self.state:
@@ -53,6 +55,46 @@ class TradeManager:
 
     def _position_profit_usd(self, pos):
         return pos.profit + pos.swap + getattr(pos, "commission", 0.0)
+
+    def _calc_risk_usd(self, symbol, order_type, volume, entry_price, sl_price):
+        if not sl_price or sl_price <= 0:
+            return 0.0
+        side = "LONG" if order_type == mt5.ORDER_TYPE_BUY else "SHORT"
+        risk = self.connector.calculate_profit(symbol, side, volume, entry_price, sl_price)
+        return abs(float(risk or 0.0))
+
+    def _get_ticket_risk_usd(self, pos):
+        s_ticket = str(pos.ticket)
+        risk_usd = float(self.state.get("initial_r_usd", {}).get(s_ticket, 0.0) or 0.0)
+        if risk_usd > 0:
+            return risk_usd
+
+        one_r_dist = float(self.state.get("initial_r_dist", {}).get(s_ticket, 0.0) or 0.0)
+        if one_r_dist <= 0:
+            return 0.0
+        is_buy = pos.type == mt5.ORDER_TYPE_BUY
+        initial_sl = pos.price_open - one_r_dist if is_buy else pos.price_open + one_r_dist
+        risk_usd = self._calc_risk_usd(pos.symbol, pos.type, pos.volume, pos.price_open, initial_sl)
+        if risk_usd > 0:
+            self.state.setdefault("initial_r_usd", {})[s_ticket] = risk_usd
+        return risk_usd
+
+    def _resolve_money_value(self, value, unit, pos=None, equity=None):
+        raw = float(value or 0.0)
+        unit = (unit or "USD").upper().replace(" ", "")
+        if unit in ["%R", "R", "PERCENT_R"]:
+            risk_usd = self._get_ticket_risk_usd(pos) if pos else 0.0
+            if risk_usd <= 0:
+                return raw
+            return risk_usd * raw / 100.0
+        if unit in ["%EQUITY", "EQUITY", "PERCENT_EQUITY"]:
+            if equity is None:
+                acc = self.connector.get_account_info()
+                equity = acc.get("equity", 0.0) if acc else 0.0
+            if not equity or equity <= 0:
+                return raw
+            return float(equity or 0.0) * raw / 100.0
+        return raw
 
     def _update_trade_excursion(self, pos):
         s_ticket = str(pos.ticket)
@@ -185,8 +227,22 @@ class TradeManager:
                 # [NEW V4.4] REFINED PNL CHECK
                 pnl_ok = True
                 if safe_cfg.get("CLOSE_ON_REVERSE_USE_PNL", True):
-                    min_profit = float(safe_cfg.get("REV_CLOSE_MIN_PROFIT", 0.0))
-                    max_loss = -abs(float(safe_cfg.get("REV_CLOSE_MAX_LOSS", 0.0)))
+                    acc = self.connector.get_account_info()
+                    equity = acc.get("equity", 0.0) if acc else 0.0
+                    min_profit = self._resolve_money_value(
+                        safe_cfg.get("REV_CLOSE_MIN_PROFIT", 0.0),
+                        safe_cfg.get("REV_CLOSE_MIN_PROFIT_UNIT", "USD"),
+                        pos=p,
+                        equity=equity,
+                    )
+                    max_loss = -abs(
+                        self._resolve_money_value(
+                            safe_cfg.get("REV_CLOSE_MAX_LOSS", 0.0),
+                            safe_cfg.get("REV_CLOSE_MAX_LOSS_UNIT", "USD"),
+                            pos=p,
+                            equity=equity,
+                        )
+                    )
 
                     if profit_usd >= 0:
                         if min_profit > 0 and profit_usd < min_profit:
@@ -469,6 +525,9 @@ class TradeManager:
 
             self.update_trade_tactic(ticket_id, bot_tactic)
             self.state["initial_r_dist"][str(ticket_id)] = sl_distance
+            self.state.setdefault("initial_r_usd", {})[str(ticket_id)] = self._calc_risk_usd(
+                symbol, order_type, lot_size, current_price, sl_price
+            )
 
             if parent_pos and signal_class in ["DCA", "PCA"]:
                 s_parent = str(parent_pos.ticket)
@@ -723,6 +782,9 @@ class TradeManager:
         if result and result.retcode == 10009:
             self.update_trade_tactic(result.order, tactic_str)
             self.state["initial_r_dist"][str(result.order)] = abs(price - sl_price)
+            self.state.setdefault("initial_r_usd", {})[str(result.order)] = self._calc_risk_usd(
+                symbol, order_type, lot_size, price, sl_price
+            )
 
             self.state["manual_trades_today"] = (
                 self.state.get("manual_trades_today", 0) + 1
@@ -959,6 +1021,7 @@ class TradeManager:
                     for key in [
                         "trade_tactics",
                         "initial_r_dist",
+                        "initial_r_usd",
                         "exit_reasons",
                         "initial_costs",
                         "last_tsl_rules",
@@ -1063,13 +1126,31 @@ class TradeManager:
                     sym_cfg = brain.get("symbol_configs", {}).get(sym, {})
                     sg_cfg = brain.get("bot_safeguard", getattr(config, "BOT_SAFEGUARD", {}))
                     
-                    wm_trigger = float(sym_cfg.get("watermark_trigger", 0.0))
+                    acc = self.connector.get_account_info()
+                    equity = acc.get("equity", 0.0) if acc else 0.0
+                    wm_trigger = self._resolve_money_value(
+                        sym_cfg.get("watermark_trigger", 0.0),
+                        sym_cfg.get("watermark_trigger_unit", sg_cfg.get("WATERMARK_TRIGGER_UNIT", "USD")),
+                        equity=equity,
+                    )
                     if wm_trigger <= 0:
-                        wm_trigger = float(sg_cfg.get("WATERMARK_TRIGGER", 0.0))
+                        wm_trigger = self._resolve_money_value(
+                            sg_cfg.get("WATERMARK_TRIGGER", 0.0),
+                            sg_cfg.get("WATERMARK_TRIGGER_UNIT", "USD"),
+                            equity=equity,
+                        )
                         
-                    wm_dd = float(sym_cfg.get("watermark_drawdown", 0.0))
+                    wm_dd = self._resolve_money_value(
+                        sym_cfg.get("watermark_drawdown", 0.0),
+                        sym_cfg.get("watermark_drawdown_unit", sg_cfg.get("WATERMARK_DRAWDOWN_UNIT", "USD")),
+                        equity=equity,
+                    )
                     if wm_dd <= 0:
-                        wm_dd = float(sg_cfg.get("WATERMARK_DRAWDOWN", 0.0))
+                        wm_dd = self._resolve_money_value(
+                            sg_cfg.get("WATERMARK_DRAWDOWN", 0.0),
+                            sg_cfg.get("WATERMARK_DRAWDOWN_UNIT", "USD"),
+                            equity=equity,
+                        )
 
                     if wm_trigger > 0 and wm_dd > 0:
                         ticket_key = "|".join(sorted(symbol_tickets.get(sym, [])))
@@ -1141,9 +1222,19 @@ class TradeManager:
                     sym_cfg = brain.get("symbol_configs", {}).get(sym, {})
                     sg_cfg = brain.get("bot_safeguard", getattr(config, "BOT_SAFEGUARD", {}))
                     
-                    max_basket_loss = float(sym_cfg.get("max_basket_drawdown", 0.0))
+                    acc = self.connector.get_account_info()
+                    equity = acc.get("equity", 0.0) if acc else 0.0
+                    max_basket_loss = self._resolve_money_value(
+                        sym_cfg.get("max_basket_drawdown", 0.0),
+                        sym_cfg.get("max_basket_drawdown_unit", sg_cfg.get("MAX_BASKET_DRAWDOWN_UNIT", "USD")),
+                        equity=equity,
+                    )
                     if max_basket_loss <= 0:
-                        max_basket_loss = float(sg_cfg.get("MAX_BASKET_DRAWDOWN_USD", 0.0))
+                        max_basket_loss = self._resolve_money_value(
+                            sg_cfg.get("MAX_BASKET_DRAWDOWN_USD", 0.0),
+                            sg_cfg.get("MAX_BASKET_DRAWDOWN_UNIT", "USD"),
+                            equity=equity,
+                        )
                         
                     if max_basket_loss > 0:
                         total_basket_pnl = sum((p.profit + p.swap + getattr(p, "commission", 0.0)) for p in basket_pos)
@@ -1240,6 +1331,8 @@ class TradeManager:
         hard_stop_usd = float(tsl_cfg.get("ANTI_CASH_USD", 10.0))
         time_cut_s = int(tsl_cfg.get("ANTI_CASH_TIME", 60))
         reentry_lock_s = int(tsl_cfg.get("ANTI_CASH_REENTRY_LOCK_SEC", 0))
+        acc_info = self.connector.get_account_info()
+        equity = acc_info.get("equity", 0.0) if acc_info else 0.0
 
         profit_usd = self._position_profit_usd(pos)
         s_ticket = str(pos.ticket)
@@ -1257,7 +1350,13 @@ class TradeManager:
             save_state(self.state)
 
         initial_cost = self.state["initial_costs"].get(s_ticket, 0.0)
-        dynamic_threshold = hard_stop_usd + initial_cost
+        hard_stop_limit = self._resolve_money_value(
+            hard_stop_usd,
+            tsl_cfg.get("ANTI_CASH_HARD_STOP_UNIT", "USD"),
+            pos=pos,
+            equity=equity,
+        )
+        dynamic_threshold = hard_stop_limit + initial_cost
         hold_time = time.time() - pos.time
         excursion = self.state.get("trade_excursions", {}).get(s_ticket)
         if not excursion:
@@ -1277,14 +1376,29 @@ class TradeManager:
         if profit_usd <= -dynamic_threshold:
             close_by_anti_cash(
                 "Anti_Cash_Hard_Stop",
-                f"🔥 [ANTI CASH] Hard Stop #{pos.ticket}: PnL ${profit_usd:.2f} <= -${dynamic_threshold:.2f} (-${hard_stop_usd:.2f} + phí ${initial_cost:.2f}).",
+                f"🔥 [ANTI CASH] Hard Stop #{pos.ticket}: PnL ${profit_usd:.2f} <= -${dynamic_threshold:.2f} (-${hard_stop_limit:.2f} + phí ${initial_cost:.2f}).",
             )
             return
 
         if tsl_cfg.get("ANTI_CASH_MFE_ENABLE", True):
-            mfe_trigger = float(tsl_cfg.get("ANTI_CASH_MFE_TRIGGER_USD", 30.0))
-            mfe_giveback = float(tsl_cfg.get("ANTI_CASH_MFE_GIVEBACK_USD", 20.0))
-            mfe_floor = float(tsl_cfg.get("ANTI_CASH_MFE_FLOOR_USD", 0.0))
+            mfe_trigger = self._resolve_money_value(
+                tsl_cfg.get("ANTI_CASH_MFE_TRIGGER_USD", 30.0),
+                tsl_cfg.get("ANTI_CASH_MFE_TRIGGER_UNIT", "USD"),
+                pos=pos,
+                equity=equity,
+            )
+            mfe_giveback = self._resolve_money_value(
+                tsl_cfg.get("ANTI_CASH_MFE_GIVEBACK_USD", 20.0),
+                tsl_cfg.get("ANTI_CASH_MFE_GIVEBACK_UNIT", "USD"),
+                pos=pos,
+                equity=equity,
+            )
+            mfe_floor = self._resolve_money_value(
+                tsl_cfg.get("ANTI_CASH_MFE_FLOOR_USD", 0.0),
+                tsl_cfg.get("ANTI_CASH_MFE_FLOOR_UNIT", "USD"),
+                pos=pos,
+                equity=equity,
+            )
             giveback = mfe_usd - profit_usd
             if mfe_trigger > 0 and mfe_usd >= mfe_trigger:
                 if mfe_giveback > 0 and giveback >= mfe_giveback:
@@ -1301,9 +1415,19 @@ class TradeManager:
                     return
 
         if tsl_cfg.get("ANTI_CASH_MAE_ENABLE", True):
-            mae_max_loss = float(tsl_cfg.get("ANTI_CASH_MAE_MAX_LOSS_USD", 25.0))
+            mae_max_loss = self._resolve_money_value(
+                tsl_cfg.get("ANTI_CASH_MAE_MAX_LOSS_USD", 25.0),
+                tsl_cfg.get("ANTI_CASH_MAE_MAX_LOSS_UNIT", "USD"),
+                pos=pos,
+                equity=equity,
+            )
             mae_min_hold = int(tsl_cfg.get("ANTI_CASH_MAE_MIN_HOLD_SEC", 300))
-            low_mfe = float(tsl_cfg.get("ANTI_CASH_MAE_LOW_MFE_USD", 5.0))
+            low_mfe = self._resolve_money_value(
+                tsl_cfg.get("ANTI_CASH_MAE_LOW_MFE_USD", 5.0),
+                tsl_cfg.get("ANTI_CASH_MAE_LOW_MFE_UNIT", "USD"),
+                pos=pos,
+                equity=equity,
+            )
             if (
                 mae_max_loss > 0
                 and profit_usd <= -mae_max_loss
@@ -1348,8 +1472,22 @@ class TradeManager:
 
             pnl_ok = True
             if safe_cfg.get("CLOSE_ON_REVERSE_USE_PNL", True):
-                min_profit = float(safe_cfg.get("REV_CLOSE_MIN_PROFIT", 0.0))
-                max_loss = -abs(float(safe_cfg.get("REV_CLOSE_MAX_LOSS", 0.0)))
+                acc = self.connector.get_account_info()
+                equity = acc.get("equity", 0.0) if acc else 0.0
+                min_profit = self._resolve_money_value(
+                    safe_cfg.get("REV_CLOSE_MIN_PROFIT", 0.0),
+                    safe_cfg.get("REV_CLOSE_MIN_PROFIT_UNIT", "USD"),
+                    pos=pos,
+                    equity=equity,
+                )
+                max_loss = -abs(
+                    self._resolve_money_value(
+                        safe_cfg.get("REV_CLOSE_MAX_LOSS", 0.0),
+                        safe_cfg.get("REV_CLOSE_MAX_LOSS_UNIT", "USD"),
+                        pos=pos,
+                        equity=equity,
+                    )
+                )
 
                 if profit_usd >= 0:
                     pnl_ok = profit_usd >= min_profit if min_profit > 0 else True

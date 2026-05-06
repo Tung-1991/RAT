@@ -858,6 +858,11 @@ class BotStrategyUI(ctk.CTkToplevel):
         ctk.CTkEntry(
             f_rev_time, textvariable=self.var_rev_profit, width=50, justify="center"
         ).pack(side="left", padx=5)
+        self.cbo_rev_profit_unit = ctk.CTkOptionMenu(
+            f_rev_time, values=["USD", "%R", "%Equity"], width=85
+        )
+        self.cbo_rev_profit_unit.set(safe_cfg.get("REV_CLOSE_MIN_PROFIT_UNIT", "USD"))
+        self.cbo_rev_profit_unit.pack(side="left", padx=(0, 5))
 
         ctk.CTkLabel(f_rev_time, text="Max Loss (-$):").pack(side="left", padx=(10, 0))
         self.var_rev_loss = ctk.StringVar(
@@ -866,6 +871,11 @@ class BotStrategyUI(ctk.CTkToplevel):
         ctk.CTkEntry(
             f_rev_time, textvariable=self.var_rev_loss, width=50, justify="center"
         ).pack(side="left", padx=5)
+        self.cbo_rev_loss_unit = ctk.CTkOptionMenu(
+            f_rev_time, values=["USD", "%R", "%Equity"], width=85
+        )
+        self.cbo_rev_loss_unit.set(safe_cfg.get("REV_CLOSE_MAX_LOSS_UNIT", "USD"))
+        self.cbo_rev_loss_unit.pack(side="left", padx=(0, 5))
         # -------------------------------------------------------------
 
         f_base = ctk.CTkFrame(self.tab_risk, fg_color="transparent")
@@ -1235,7 +1245,9 @@ class BotStrategyUI(ctk.CTkToplevel):
                     "CLOSE_ON_REVERSE_USE_PNL": self.var_close_rev_pnl.get(),
                     "REV_CLOSE_ON_NONE": self.var_rev_none.get(),
                     "REV_CLOSE_MIN_PROFIT": float(self.var_rev_profit.get() or 0.0),
+                    "REV_CLOSE_MIN_PROFIT_UNIT": self.cbo_rev_profit_unit.get(),
                     "REV_CLOSE_MAX_LOSS": float(self.var_rev_loss.get() or 0.0),
+                    "REV_CLOSE_MAX_LOSS_UNIT": self.cbo_rev_loss_unit.get(),
                 }
                 overrides[self.override_symbol]["sandbox"] = output_data
                 save_symbol_overrides(overrides)
@@ -1266,7 +1278,9 @@ class BotStrategyUI(ctk.CTkToplevel):
             existing_data["bot_safeguard"]["CLOSE_ON_REVERSE_USE_PNL"] = self.var_close_rev_pnl.get()
             existing_data["bot_safeguard"]["REV_CLOSE_ON_NONE"] = self.var_rev_none.get()
             existing_data["bot_safeguard"]["REV_CLOSE_MIN_PROFIT"] = float(self.var_rev_profit.get() or 0.0)
+            existing_data["bot_safeguard"]["REV_CLOSE_MIN_PROFIT_UNIT"] = self.cbo_rev_profit_unit.get()
             existing_data["bot_safeguard"]["REV_CLOSE_MAX_LOSS"] = float(self.var_rev_loss.get() or 0.0)
+            existing_data["bot_safeguard"]["REV_CLOSE_MAX_LOSS_UNIT"] = self.cbo_rev_loss_unit.get()
 
             with open(brain_path, "w", encoding="utf-8") as f:
                 json.dump(existing_data, f, indent=4)

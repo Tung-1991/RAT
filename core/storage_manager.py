@@ -238,6 +238,7 @@ def load_state() -> Dict[str, Any]:
         "daily_history": [],
         "trade_tactics": {},        
         "initial_r_dist": {},
+        "initial_r_usd": {},
         "parent_baskets": {},       
         "child_to_parent": {},       
         "last_child_bar_time": {},
@@ -268,6 +269,7 @@ def load_state() -> Dict[str, Any]:
             if "tsl_disabled_tickets" not in state: state["tsl_disabled_tickets"] = []
             if "trade_tactics" not in state: state["trade_tactics"] = {} 
             if "initial_r_dist" not in state: state["initial_r_dist"] = {}       
+            if "initial_r_usd" not in state: state["initial_r_usd"] = {}
             if "parent_baskets" not in state: state["parent_baskets"] = {} 
             if "child_to_parent" not in state: state["child_to_parent"] = {}
             if "last_child_bar_time" not in state: state["last_child_bar_time"] = {} 
@@ -669,15 +671,23 @@ def get_brain_settings_for_symbol(symbol: str = None) -> Dict[str, Any]:
     _cache_merged[cache_key] = {"data": base_brain, "ts": now}
     return copy.deepcopy(base_brain)
 
-def get_last_dca_pca_signal_time(symbol: str) -> float:
+def _dca_pca_signal_key(symbol: str, signal_class: str = None) -> str:
+    if not signal_class:
+        return symbol
+    return f"{symbol}|{str(signal_class).upper()}"
+
+def get_last_dca_pca_signal_time(symbol: str, signal_class: str = None) -> float:
     with _state_lock:
         state = load_state()
-        return state.get("last_dca_pca_signal_time", {}).get(symbol, 0.0)
+        signals = state.get("last_dca_pca_signal_time", {})
+        key = _dca_pca_signal_key(symbol, signal_class)
+        return signals.get(key, signals.get(symbol, 0.0))
 
-def update_last_dca_pca_signal_time(symbol: str, timestamp: float):
+def update_last_dca_pca_signal_time(symbol: str, timestamp: float, signal_class: str = None):
     with _state_lock:
         state = load_state()
         if "last_dca_pca_signal_time" not in state:
             state["last_dca_pca_signal_time"] = {}
-        state["last_dca_pca_signal_time"][symbol] = timestamp
+        key = _dca_pca_signal_key(symbol, signal_class)
+        state["last_dca_pca_signal_time"][key] = timestamp
         save_state(state)

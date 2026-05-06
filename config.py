@@ -147,12 +147,17 @@ BOT_SAFEGUARD = {
     "CLOSE_ON_REVERSE_USE_PNL": True,  # [NEW V4.4] Bật/Tắt kiểm tra PnL khi đảo chiều
     "REV_CLOSE_ON_NONE": False,  # Nếu True: Master Action NONE cũng được phép cắt theo reverse guard
     "REV_CLOSE_MIN_PROFIT": 0.0,  # Chỉ đảo khi lãi ít nhất X (0 = ko tính)
+    "REV_CLOSE_MIN_PROFIT_UNIT": "USD",
     "REV_CLOSE_MAX_LOSS": 0.0,  # Chỉ đảo khi lỗ ko quá Y (âm, ví dụ -10, 0 = ko tính)
+    "REV_CLOSE_MAX_LOSS_UNIT": "USD",
     "WATERMARK_TRIGGER": 0.0,  # [NEW V5] Mức USD bắt đầu kích hoạt Khóa lãi (0 = Tắt)
+    "WATERMARK_TRIGGER_UNIT": "USD",
     "WATERMARK_DRAWDOWN": 0.0,  # [NEW V5] Mức USD sụt giảm cho phép từ đỉnh
+    "WATERMARK_DRAWDOWN_UNIT": "USD",
     "MIN_SL_POINTS": 0,  # [NEW V5] Khoảng cách SL tối thiểu bằng Point
     "REJECT_ON_MAX_LOT": False,  # [NEW V5] True: Bỏ lệnh nếu vượt trần. False: Ép về Max Lot Cap
     "MAX_BASKET_DRAWDOWN_USD": 0.0,  # [NEW V5.1] Mức âm tối đa của cả rổ lệnh (Mẹ + DCA/PCA) (0 = Tắt)
+    "MAX_BASKET_DRAWDOWN_UNIT": "USD",
 }
 
 # ==============================================================================
@@ -178,16 +183,22 @@ TSL_CONFIG = {
     "PSAR_STEP": 0.02,
     "PSAR_MAX": 0.2,
     "ANTI_CASH_USD": 10.0,  # [NEW V4.4] Ngưỡng cắt lỗ USD cứng
+    "ANTI_CASH_HARD_STOP_UNIT": "USD",
     "ANTI_CASH_TIME": 3600,  # [NEW V4.4] Thời gian âm tối đa (giây) - 1 Giờ
     "ANTI_CASH_TIME_ENABLE": True,  # Bật/tắt Time Cut
     "ANTI_CASH_MAE_ENABLE": True,
     "ANTI_CASH_MAE_MAX_LOSS_USD": 25.0,
+    "ANTI_CASH_MAE_MAX_LOSS_UNIT": "USD",
     "ANTI_CASH_MAE_MIN_HOLD_SEC": 300,
     "ANTI_CASH_MAE_LOW_MFE_USD": 5.0,
+    "ANTI_CASH_MAE_LOW_MFE_UNIT": "USD",
     "ANTI_CASH_MFE_ENABLE": True,
     "ANTI_CASH_MFE_TRIGGER_USD": 30.0,
+    "ANTI_CASH_MFE_TRIGGER_UNIT": "USD",
     "ANTI_CASH_MFE_GIVEBACK_USD": 20.0,
+    "ANTI_CASH_MFE_GIVEBACK_UNIT": "USD",
     "ANTI_CASH_MFE_FLOOR_USD": 0.0,
+    "ANTI_CASH_MFE_FLOOR_UNIT": "USD",
     "ANTI_CASH_REENTRY_LOCK_SEC": 900,
 }
 

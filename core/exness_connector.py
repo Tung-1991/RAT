@@ -204,7 +204,20 @@ class ExnessConnector:
         )
         return None
 
-    def modify_position(self, ticket_id: int, sl_price: float, tp_price: float) -> bool:
+    def modify_position(
+        self,
+        ticket_id: int,
+        sl_price: float = None,
+        tp_price: float = None,
+        **kwargs,
+    ) -> bool:
+        if sl_price is None:
+            sl_price = kwargs.pop("sl", None)
+        if tp_price is None:
+            tp_price = kwargs.pop("tp", None)
+        if kwargs or sl_price is None or tp_price is None:
+            logger.error(f"Invalid modify_position params for ticket #{ticket_id}: {kwargs}")
+            return False
         if not self._is_connected:
             return False
         request = {
