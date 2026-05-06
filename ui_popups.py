@@ -293,7 +293,7 @@ def open_bot_setting_popup(app):
     )
 
     # --- [NEW] LIVE PREVIEW ---
-    from core.storage_manager import load_state
+    from core.storage_manager import load_state, save_state
     import time
 
     st = load_state()
@@ -327,6 +327,71 @@ def open_bot_setting_popup(app):
         f_preview, text=preview_text, font=("Consolas", 12, "bold"), text_color=pnl_color
     )
     lbl_preview.pack(side="left", padx=10, pady=8)
+
+    f_iso = ctk.CTkFrame(tab_core, fg_color="#171717", corner_radius=8)
+    f_iso.pack(fill="x", padx=15, pady=(0, 10))
+
+    def render_isolation_preview():
+        for child in f_iso.winfo_children():
+            child.destroy()
+
+        latest_state = load_state()
+        now_ts = time.time()
+        active_iso = []
+        for sym, deadline in latest_state.get("bot_last_fail_times", {}).items():
+            try:
+                deadline = float(deadline)
+            except (TypeError, ValueError):
+                continue
+            if deadline > now_ts:
+                rem = int(deadline - now_ts)
+                active_iso.append((sym, rem))
+
+        ctk.CTkLabel(
+            f_iso,
+            text="Isolation:",
+            font=("Roboto", 11, "bold"),
+            text_color="#FFB300" if active_iso else "#757575",
+        ).pack(side="left", padx=(10, 6), pady=6)
+
+        if not active_iso:
+            ctk.CTkLabel(
+                f_iso,
+                text="Không có",
+                font=("Consolas", 11),
+                text_color="#757575",
+            ).pack(side="left", padx=4, pady=6)
+            return
+
+        def reset_symbol(sym):
+            latest = load_state()
+            latest.get("bot_last_fail_times", {}).pop(sym, None)
+            save_state(latest)
+            if hasattr(app, "trade_mgr"):
+                app.trade_mgr.state = latest
+            if hasattr(app, "log_message"):
+                app.log_message(f"✅ Đã reset isolation cho {sym}.", target="bot")
+            render_isolation_preview()
+
+        for sym, rem in active_iso:
+            time_str = f"{rem // 3600}h{(rem % 3600) // 60}m" if rem >= 3600 else f"{rem // 60}m"
+            ctk.CTkLabel(
+                f_iso,
+                text=f"{sym} {time_str}",
+                font=("Consolas", 11, "bold"),
+                text_color="#FF5252",
+            ).pack(side="left", padx=(8, 3), pady=6)
+            ctk.CTkButton(
+                f_iso,
+                text="Reset",
+                width=54,
+                height=24,
+                fg_color="#424242",
+                hover_color="#616161",
+                command=lambda s=sym: reset_symbol(s),
+            ).pack(side="left", padx=(0, 6), pady=6)
+
+    render_isolation_preview()
 
     f_safety = ctk.CTkFrame(tab_core, fg_color="#2b2b2b", corner_radius=8)
     f_safety.pack(fill="x", padx=15, pady=5)
@@ -521,8 +586,18 @@ def open_bot_setting_popup(app):
     # [HINT / LEGEND AT BOTTOM]
     f_hint = ctk.CTkFrame(f_safety, fg_color="#212121")
     f_hint.grid(row=4, column=0, columnspan=4, sticky="nsew", padx=5, pady=5)
-    hint_text = "🔴: Phanh Global | 🟢: Bảo vệ | 🔵: Điều kiện | ⚪: Hệ thống"
-    ctk.CTkLabel(f_hint, text=hint_text, font=("Roboto", 10, "italic"), text_color="#BDBDBD").pack(pady=2)
+    for text, color in [
+        ("Phanh Global", "#F44336"),
+        ("Bảo vệ", "#00C853"),
+        ("Điều kiện", "#2196F3"),
+        ("Hệ thống", "#BDBDBD"),
+    ]:
+        ctk.CTkLabel(
+            f_hint,
+            text=f"● {text}",
+            font=("Roboto", 10, "italic"),
+            text_color=color,
+        ).pack(side="left", padx=(10, 2), pady=2)
 
     def save():
         try:
@@ -1480,7 +1555,13 @@ def show_history_popup(app):
                 if not header:
                     return
 
-                records = list(reader)
+                raw_records = list(reader)
+                records_by_ticket = {}
+                for row in raw_records:
+                    if len(row) < 14:
+                        continue
+                    records_by_ticket[row[1]] = row
+                records = list(records_by_ticket.values())
                 for row in records:
                     if len(row) < 14:
                         continue  # Format mới có 14 cột

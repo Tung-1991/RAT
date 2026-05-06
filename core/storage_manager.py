@@ -138,16 +138,48 @@ def append_trade_log(ticket, symbol, type_str, volume, entry_price, sl, tp, fee,
     try:
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S") 
         time_display = f"{open_time_str[11:]} -> {now_str[11:]}" if open_time_str else now_str
-        with open(MASTER_LOG_FILE, mode='a', newline='', encoding='utf-8') as f:
+        header = ["Time", "Ticket", "Symbol", "Type", "Vol", "Entry", "SL", "TP", "Fee", "PnL ($)", "Reason", "Market Mode", "Trigger", "Session_ID"]
+        new_row = [
+            time_display, ticket, symbol, type_str, volume,
+            f"{entry_price:.5f}", f"{sl:.5f}", f"{tp:.5f}", f"{fee:.2f}",
+            f"{pnl:.2f}", close_reason, market_mode, trigger_signal, session_id
+        ]
+
+        def reason_rank(reason):
+            if reason in ("Manual_Close", "Watermark_Hit", "Basket_Drawdown_Hit"):
+                return 100
+            if reason.startswith("SL_") or reason in ("Hit_TP", "Basket_TP", "Hit_SL", "Stop_Out"):
+                return 80
+            if reason in ("Bot_Close", "Closed"):
+                return 10
+            return 50
+
+        rows = []
+        if file_exists:
+            with open(MASTER_LOG_FILE, mode='r', newline='', encoding='utf-8') as f:
+                reader = csv.reader(f)
+                existing_header = next(reader, None)
+                rows = [r for r in reader if r]
+                if existing_header:
+                    header = existing_header
+
+        ticket_str = str(ticket)
+        replaced = False
+        for idx, row in enumerate(rows):
+            if len(row) >= 2 and str(row[1]) == ticket_str:
+                old_reason = row[10] if len(row) > 10 else ""
+                if reason_rank(close_reason) >= reason_rank(old_reason):
+                    rows[idx] = [str(v) for v in new_row]
+                replaced = True
+                break
+
+        if not replaced:
+            rows.append([str(v) for v in new_row])
+
+        with open(MASTER_LOG_FILE, mode='w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
-            if not file_exists:
-                # [NEW V5] Thêm cột Entry, SL, TP, Fee
-                writer.writerow(["Time", "Ticket", "Symbol", "Type", "Vol", "Entry", "SL", "TP", "Fee", "PnL ($)", "Reason", "Market Mode", "Trigger", "Session_ID"])
-            writer.writerow([
-                time_display, ticket, symbol, type_str, volume, 
-                f"{entry_price:.5f}", f"{sl:.5f}", f"{tp:.5f}", f"{fee:.2f}", 
-                f"{pnl:.2f}", close_reason, market_mode, trigger_signal, session_id
-            ])
+            writer.writerow(header)
+            writer.writerows(rows)
     except:
         pass
 
