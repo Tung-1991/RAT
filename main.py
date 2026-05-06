@@ -1061,13 +1061,26 @@ class BotUI(ctk.CTk):
                 stt_txt = "PCA Child"
             else:
                 tactic_info = self.trade_mgr.get_trade_tactic(p.ticket)
+                tactic_badges = []
+                if "BE_CASH" in tactic_info:
+                    tactic_badges.append("BE_CASH")
+                elif "BE" in tactic_info:
+                    tactic_badges.append("BE")
+                if "PSAR_TRAIL" in tactic_info:
+                    tactic_badges.append("PSAR")
+                if "ANTI_CASH" in tactic_info:
+                    tactic_badges.append("ANTI")
+                if "REV_C" in tactic_info:
+                    tactic_badges.append("REV")
                 stt_extras = []
                 if "AUTO_DCA" in tactic_info:
                     stt_extras.append("DCA")
                 if "AUTO_PCA" in tactic_info:
                     stt_extras.append("PCA")
                 if stt_extras:
-                    stt_txt += f" | +{'/'.join(stt_extras)}"
+                    tactic_badges.append("+".join(stt_extras))
+                if tactic_badges:
+                    stt_txt += f" | {'+'.join(tactic_badges)}"
 
             net_pnl = p.profit + getattr(p, "swap", 0.0)
             if acc_type not in ["PRO", "STANDARD"]:
@@ -1246,6 +1259,31 @@ class BotUI(ctk.CTk):
                 }
             )
             save_state(self.trade_mgr.state)
+            try:
+                import core.storage_manager as storage_manager
+
+                signal_file = os.path.join(
+                    storage_manager._active_account_dir, "live_signals.json"
+                )
+                if os.path.exists(signal_file):
+                    with open(signal_file, "r", encoding="utf-8") as f:
+                        signal_payload = json.load(f)
+                    signal_payload["pending_signals"] = []
+                    with open(signal_file, "w", encoding="utf-8") as f:
+                        json.dump(signal_payload, f, indent=4, ensure_ascii=False)
+            except Exception:
+                pass
+            if hasattr(self, "signal_listener"):
+                self.signal_listener.processed_signals.clear()
+                self.signal_listener.last_safeguard_reason.clear()
+                self.signal_listener.last_safeguard_time.clear()
+            if self.daemon_process:
+                try:
+                    self.daemon_process.terminate()
+                    self.daemon_process.wait(timeout=5)
+                except Exception:
+                    pass
+                self.start_daemon_process()
             self.log_message("🔄 Đã xóa Cache và tạo Phiên/Group mới.", target="bot")
 
     def close_all_trades(self):

@@ -1114,7 +1114,7 @@ def open_tsl_popup(app, override_symbol=None):
         value=tsl_cfg.get("ANTI_CASH_TIME_ENABLE", True)
     )
     ctk.CTkCheckBox(
-        f_anti_grid, text="Dung Time", variable=var_anti_time_en, width=105
+        f_anti_grid, text="Dùng Time Cut", variable=var_anti_time_en, width=130
     ).grid(row=0, column=5, padx=(6, 10), pady=6, sticky="w")
 
     var_anti_mae_en = ctk.BooleanVar(value=tsl_cfg.get("ANTI_CASH_MAE_ENABLE", True))
@@ -1171,7 +1171,7 @@ def open_tsl_popup(app, override_symbol=None):
     )
     ctk.CTkLabel(
         f_anti_grid,
-        text="sau khi ANTI CASH cat cung chieu",
+        text="sau khi ANTI CASH cắt cùng chiều",
         text_color="#BDBDBD",
     ).grid(row=3, column=2, columnspan=4, padx=(0, 10), pady=6, sticky="w")
 

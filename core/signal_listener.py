@@ -286,6 +286,10 @@ class SignalListener:
             del self.last_thinking_signal[symbol]
 
         def run_bot_trade():
+            self.log_ui(
+                f"📡 [SIGNAL] Bot nhận {sig_class}: {action} {symbol}. Đang kiểm tra safeguard...",
+                error=False,
+            )
             # Truyền đẩy đủ Context và Signal Class sang TradeManager
             result = self.trade_manager.execute_bot_trade(
                 direction=action,
