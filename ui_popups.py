@@ -1066,98 +1066,114 @@ def open_tsl_popup(app, override_symbol=None):
 
     f_anti = sec(tab_adv, "7. ANTI CASH")
     f_anti.pack(fill="x", padx=15)
+    _add_popup_hint(
+        f_anti,
+        "- Hard Stop: cắt lỗ cứng theo ngưỡng đã chọn.\n"
+        "- MAE Guard: chỉ cắt khi lệnh âm đủ sâu, giữ đủ lâu và MFE cao nhất vẫn thấp hơn Low MFE.\n"
+        "- MFE Guard: bảo vệ lãi nổi, cắt khi lệnh trả lại quá nhiều hoặc tụt về Floor.",
+        padx=8,
+        pady=(4, 8),
+        wraplength=820,
+    )
 
-    def anti_field(parent, label, value, col, width=82):
+    def anti_field(parent, row, col, label, value, width=82):
         ctk.CTkLabel(parent, text=label).grid(
-            row=0, column=col, padx=(10, 4), pady=5, sticky="e"
+            row=row, column=col, padx=(8, 4), pady=6, sticky="e"
         )
         entry = ctk.CTkEntry(parent, width=width)
         entry.insert(0, str(value))
-        entry.grid(row=0, column=col + 1, padx=(0, 12), pady=5, sticky="w")
+        entry.grid(row=row, column=col + 1, padx=(0, 10), pady=6, sticky="w")
         return entry
 
-    def anti_money_field(parent, label, value, unit, col):
-        entry = anti_field(parent, label, value, col, width=78)
-        unit_menu = ctk.CTkOptionMenu(parent, values=["USD", "%R", "%Equity"], width=92)
+    def anti_money_field(parent, row, col, label, value, unit):
+        entry = anti_field(parent, row, col, label, value, width=74)
+        unit_menu = ctk.CTkOptionMenu(parent, values=["USD", "%R", "%Equity"], width=86)
         unit_menu.set(unit or "USD")
-        unit_menu.grid(row=0, column=col + 2, padx=(0, 12), pady=5, sticky="w")
+        unit_menu.grid(row=row, column=col + 2, padx=(0, 12), pady=6, sticky="w")
         return entry, unit_menu
 
-    f_anti_row = ctk.CTkFrame(f_anti, fg_color="transparent")
-    f_anti_row.pack(fill="x", pady=2)
+    f_anti_grid = ctk.CTkFrame(f_anti, fg_color="transparent")
+    f_anti_grid.pack(fill="x", pady=(4, 2))
+    for col in range(10):
+        f_anti_grid.grid_columnconfigure(col, weight=0)
+
     e_anti_usd, cbo_anti_usd_unit = anti_money_field(
-        f_anti_row,
+        f_anti_grid,
+        0,
+        0,
         "Hard Stop:",
         tsl_cfg.get("ANTI_CASH_USD", 10.0),
         tsl_cfg.get("ANTI_CASH_HARD_STOP_UNIT", "USD"),
-        0,
     )
 
-    e_anti_time = anti_field(f_anti_row, "Time Cut (s):", tsl_cfg.get("ANTI_CASH_TIME", 60), 3)
+    e_anti_time = anti_field(
+        f_anti_grid, 0, 3, "Time Cut (s):", tsl_cfg.get("ANTI_CASH_TIME", 60), width=86
+    )
 
     var_anti_time_en = ctk.BooleanVar(
         value=tsl_cfg.get("ANTI_CASH_TIME_ENABLE", True)
     )
     ctk.CTkCheckBox(
-        f_anti_row, text="Dung Time", variable=var_anti_time_en, width=105
-    ).grid(row=0, column=5, padx=10, pady=5, sticky="w")
+        f_anti_grid, text="Dung Time", variable=var_anti_time_en, width=105
+    ).grid(row=0, column=5, padx=(6, 10), pady=6, sticky="w")
 
-    f_anti_row2 = ctk.CTkFrame(f_anti, fg_color="transparent")
-    f_anti_row2.pack(fill="x", pady=2)
     var_anti_mae_en = ctk.BooleanVar(value=tsl_cfg.get("ANTI_CASH_MAE_ENABLE", True))
-    ctk.CTkCheckBox(f_anti_row2, text="MAE Guard", variable=var_anti_mae_en, width=105).grid(row=0, column=0, padx=10, pady=5, sticky="w")
+    ctk.CTkCheckBox(f_anti_grid, text="MAE Guard", variable=var_anti_mae_en, width=120).grid(row=1, column=0, columnspan=2, padx=(8, 10), pady=6, sticky="w")
     e_anti_mae_loss, cbo_anti_mae_loss_unit = anti_money_field(
-        f_anti_row2,
+        f_anti_grid,
+        1,
+        2,
         "Max Loss:",
         tsl_cfg.get("ANTI_CASH_MAE_MAX_LOSS_USD", 25.0),
         tsl_cfg.get("ANTI_CASH_MAE_MAX_LOSS_UNIT", "USD"),
-        1,
     )
-    e_anti_mae_hold = anti_field(f_anti_row2, "Hold(s):", tsl_cfg.get("ANTI_CASH_MAE_MIN_HOLD_SEC", 300), 4)
-
-    f_anti_row2b = ctk.CTkFrame(f_anti, fg_color="transparent")
-    f_anti_row2b.pack(fill="x", pady=2)
+    e_anti_mae_hold = anti_field(
+        f_anti_grid, 1, 5, "Hold(s):", tsl_cfg.get("ANTI_CASH_MAE_MIN_HOLD_SEC", 300), width=86
+    )
     e_anti_mae_low_mfe, cbo_anti_mae_low_mfe_unit = anti_money_field(
-        f_anti_row2b,
+        f_anti_grid,
+        1,
+        7,
         "Low MFE:",
         tsl_cfg.get("ANTI_CASH_MAE_LOW_MFE_USD", 5.0),
         tsl_cfg.get("ANTI_CASH_MAE_LOW_MFE_UNIT", "USD"),
-        1,
     )
 
-    f_anti_row3 = ctk.CTkFrame(f_anti, fg_color="transparent")
-    f_anti_row3.pack(fill="x", pady=2)
     var_anti_mfe_en = ctk.BooleanVar(value=tsl_cfg.get("ANTI_CASH_MFE_ENABLE", True))
-    ctk.CTkCheckBox(f_anti_row3, text="MFE Guard", variable=var_anti_mfe_en, width=105).grid(row=0, column=0, padx=10, pady=5, sticky="w")
+    ctk.CTkCheckBox(f_anti_grid, text="MFE Guard", variable=var_anti_mfe_en, width=120).grid(row=2, column=0, columnspan=2, padx=(8, 10), pady=6, sticky="w")
     e_anti_mfe_trig, cbo_anti_mfe_trig_unit = anti_money_field(
-        f_anti_row3,
+        f_anti_grid,
+        2,
+        2,
         "Trigger:",
         tsl_cfg.get("ANTI_CASH_MFE_TRIGGER_USD", 30.0),
         tsl_cfg.get("ANTI_CASH_MFE_TRIGGER_UNIT", "USD"),
-        1,
     )
     e_anti_mfe_giveback, cbo_anti_mfe_giveback_unit = anti_money_field(
-        f_anti_row3,
+        f_anti_grid,
+        2,
+        5,
         "Giveback:",
         tsl_cfg.get("ANTI_CASH_MFE_GIVEBACK_USD", 20.0),
         tsl_cfg.get("ANTI_CASH_MFE_GIVEBACK_UNIT", "USD"),
-        4,
     )
-
-    f_anti_row3b = ctk.CTkFrame(f_anti, fg_color="transparent")
-    f_anti_row3b.pack(fill="x", pady=2)
     e_anti_mfe_floor, cbo_anti_mfe_floor_unit = anti_money_field(
-        f_anti_row3b,
+        f_anti_grid,
+        2,
+        7,
         "Floor:",
         tsl_cfg.get("ANTI_CASH_MFE_FLOOR_USD", 0.0),
         tsl_cfg.get("ANTI_CASH_MFE_FLOOR_UNIT", "USD"),
-        1,
     )
 
-    f_anti_row4 = ctk.CTkFrame(f_anti, fg_color="transparent")
-    f_anti_row4.pack(fill="x", pady=2)
-    e_anti_reentry = anti_field(f_anti_row4, "Re-entry Lock(s):", tsl_cfg.get("ANTI_CASH_REENTRY_LOCK_SEC", 900), 0)
-    ctk.CTkLabel(f_anti_row4, text="sau khi ANTI CASH cat cung chieu", text_color="#BDBDBD").grid(row=0, column=2, padx=(0, 10), pady=5, sticky="w")
+    e_anti_reentry = anti_field(
+        f_anti_grid, 3, 0, "Re-entry Lock(s):", tsl_cfg.get("ANTI_CASH_REENTRY_LOCK_SEC", 900), width=86
+    )
+    ctk.CTkLabel(
+        f_anti_grid,
+        text="sau khi ANTI CASH cat cung chieu",
+        text_color="#BDBDBD",
+    ).grid(row=3, column=2, columnspan=4, padx=(0, 10), pady=6, sticky="w")
 
     def save():
         try:
@@ -1232,10 +1248,10 @@ def open_tsl_popup(app, override_symbol=None):
         top,
         text="LƯU TSL LOGIC",
         fg_color=COL_GREEN,
-        height=40,
-        font=FONT_BOLD,
+        height=48,
+        font=("Roboto", 14, "bold"),
         command=save,
-    ).pack(pady=(0, 15), fill="x", padx=40)
+    ).pack(pady=(8, 16), fill="x", padx=70)
 
     if override_symbol:
         def reset_tsl_override():

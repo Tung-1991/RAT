@@ -1534,6 +1534,7 @@ class TradeManager:
 
         candidates = []
         milestones = []
+        tracking_modes = []
 
         brain = self._get_brain_settings(pos.symbol)
         tsl_cfg = brain.get("TSL_CONFIG", getattr(config, "TSL_CONFIG", {}))
@@ -1722,7 +1723,7 @@ class TradeManager:
                 psar_val = context.get(f"psar_{trail_group}")
                 if psar_val:
                     candidates.append((psar_val, f"PSAR ➔ {psar_val:.2f}"))
-                    milestones.append((0, f"PSAR Đợi ➔ {psar_val:.2f}"))
+                    tracking_modes.append("PSAR")
 
         if "BE" in active_modes:
             trig_r = tsl_cfg.get("BE_OFFSET_RR", 0.8)
@@ -1863,7 +1864,7 @@ class TradeManager:
                         )
 
                 candidates.append((swing_sl, f"SWING ➔ {swing_sl:.2f}"))
-                milestones.append((0, f"SWING Đợi ➔ {swing_sl:.2f}"))
+                tracking_modes.append("SWING")
 
         valid_moves = []
         min_stop_dist = getattr(sym_info, "trade_stops_level", 0) * point
@@ -1900,5 +1901,8 @@ class TradeManager:
 
         if milestones:
             return sorted(milestones, key=lambda x: x[0])[0][1]
+
+        if tracking_modes:
+            return "Theo dõi: " + "/".join(tracking_modes)
 
         return "Tracking..."
