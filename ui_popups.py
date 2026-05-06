@@ -915,6 +915,14 @@ def open_tsl_popup(app, override_symbol=None):
     e_cash_min_lock.insert(0, str(tsl_cfg.get("BE_CASH_MIN_LOCK", 0.0)))
     e_cash_min_lock.pack(side="left", padx=2)
 
+    ctk.CTkLabel(
+        f_cash,
+        text="SOFT LOCK: khóa = target - buffer; Min Lock là sàn khóa tối thiểu nếu kết quả còn dương.",
+        text_color="#B0BEC5",
+        font=("Roboto", 11, "italic"),
+        wraplength=440,
+    ).pack(anchor="w", padx=8, pady=(4, 0))
+
     f_psar = sec(tab_adv, "6. PSAR TRAILING (Đuổi chấm)")
     f_psar.pack(fill="x", padx=15)
 
