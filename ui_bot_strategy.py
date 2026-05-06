@@ -990,6 +990,7 @@ class BotStrategyUI(ctk.CTkToplevel):
 
         self._add_hint_box(
             self.tab_dca_pca,
+            "- SL lenh con co the bam SL me hoac lay SwingPoint theo Nguon cam SL; SwingPoint khong cong ATR buffer.\n"
             "- DCA nhồi khi giá đi ngược lệnh mẹ theo khoảng ATR.\n"
             "- PCA nhồi thuận khi lệnh mẹ đang đúng hướng/trend.\n"
             "- Mini-Brain nếu bật sẽ xác nhận riêng trước khi nhồi.",
@@ -1044,6 +1045,15 @@ class BotStrategyUI(ctk.CTkToplevel):
             row=1, column=5, padx=10, pady=5
         )
 
+        self.dca_use_parent_sl = ctk.BooleanVar(value=dca_cfg.get("USE_PARENT_SL", True))
+        ctk.CTkCheckBox(
+            dca_frame,
+            text="DCA dung SL lenh me (bo tick = SwingPoint theo nguon SL, khong ATR buffer)",
+            variable=self.dca_use_parent_sl,
+            font=("Roboto", 11),
+            text_color="#BDBDBD",
+        ).grid(row=2, column=0, columnspan=7, padx=10, pady=(2, 10), sticky="w")
+
         # --- PCA FRAME ---
         pca_frame = ctk.CTkFrame(self.tab_dca_pca, fg_color="#2b2b2b", corner_radius=8)
         pca_frame.pack(fill="x", padx=10, pady=10)
@@ -1091,6 +1101,15 @@ class BotStrategyUI(ctk.CTkToplevel):
         ctk.CTkEntry(pca_frame, textvariable=self.pca_atr, width=70).grid(
             row=1, column=5, padx=10, pady=5
         )
+
+        self.pca_use_parent_sl = ctk.BooleanVar(value=pca_cfg.get("USE_PARENT_SL", True))
+        ctk.CTkCheckBox(
+            pca_frame,
+            text="PCA dung SL lenh me (bo tick = SwingPoint theo nguon SL, khong ATR buffer)",
+            variable=self.pca_use_parent_sl,
+            font=("Roboto", 11),
+            text_color="#BDBDBD",
+        ).grid(row=2, column=0, columnspan=7, padx=10, pady=(2, 10), sticky="w")
 
         # --- COOLDOWN FRAME ---
         cd_frame = ctk.CTkFrame(self.tab_dca_pca, fg_color="#2b2b2b", corner_radius=8)
@@ -1162,6 +1181,7 @@ class BotStrategyUI(ctk.CTkToplevel):
             "MAX_STEPS": int(self.dca_steps.get() or 3),
             "STEP_MULTIPLIER": float(self.dca_mult.get() or 1.5),
             "DISTANCE_ATR_R": float(self.dca_atr.get() or 1.0),
+            "USE_PARENT_SL": self.dca_use_parent_sl.get(),
             "COOLDOWN": int(self.dca_pca_cooldown.get() or 60),
             "MINI_BRAIN": getattr(self, "dca_mb_cfg", {})
         }
@@ -1170,6 +1190,7 @@ class BotStrategyUI(ctk.CTkToplevel):
             "MAX_STEPS": int(self.pca_steps.get() or 2),
             "STEP_MULTIPLIER": float(self.pca_mult.get() or 0.5),
             "DISTANCE_ATR_R": float(self.pca_atr.get() or 1.5),
+            "USE_PARENT_SL": self.pca_use_parent_sl.get(),
             "CONFIRM_ADX": getattr(config, "PCA_CONFIG", {}).get("CONFIRM_ADX", 23),
             "MINI_BRAIN": getattr(self, "pca_mb_cfg", {})
         }

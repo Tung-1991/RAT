@@ -396,6 +396,7 @@ DCA_CONFIG = {
     "MAX_STEPS": 3,
     "STEP_MULTIPLIER": 1.5,
     "DISTANCE_ATR_R": 1.0,
+    "USE_PARENT_SL": True,
     "COOLDOWN": 60,
     "MINI_BRAIN": MINI_BRAIN_DEFAULT.copy(),
 }
@@ -404,6 +405,7 @@ PCA_CONFIG = {
     "MAX_STEPS": 2,
     "STEP_MULTIPLIER": 0.5,
     "DISTANCE_ATR_R": 1.5,
+    "USE_PARENT_SL": True,
     "CONFIRM_ADX": 23,
     "MINI_BRAIN": MINI_BRAIN_DEFAULT.copy(),
 }

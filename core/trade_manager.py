@@ -299,6 +299,7 @@ class TradeManager:
         )
         buffer_atr = atr_val * sl_mult
 
+        raw_swing_sl = swing_l if direction == "BUY" else swing_h
         sl_price = swing_l - buffer_atr if direction == "BUY" else swing_h + buffer_atr
         sl_distance = abs(current_price - sl_price)
 
@@ -399,10 +400,23 @@ class TradeManager:
         if max_lot_cap > 0:
             lot_size = min(lot_size, max_lot_cap)
 
+        child_sl_source = "CALCULATED"
+        child_uses_parent_sl = False
+
         # TÍNH TP
         if parent_pos and signal_class in ["DCA", "PCA"]:
+            cfg_key = "dca_config" if signal_class == "DCA" else "pca_config"
+            child_cfg = brain.get(cfg_key, getattr(config, f"{signal_class}_CONFIG", {}))
+            use_parent_sl = child_cfg.get("USE_PARENT_SL", True)
             tp_price = parent_pos.tp
-            sl_price = parent_pos.sl
+            if use_parent_sl:
+                sl_price = parent_pos.sl
+                child_sl_source = f"PARENT#{parent_pos.ticket}"
+                child_uses_parent_sl = True
+            else:
+                sl_price = raw_swing_sl
+                sl_distance = abs(current_price - sl_price)
+                child_sl_source = f"SWINGPOINT_{sl_group}"
         else:
             use_swing_tp = safeguard_cfg.get("BOT_USE_SWING_TP", False)
             use_rr_tp = safeguard_cfg.get("BOT_USE_RR_TP", True)
@@ -463,13 +477,16 @@ class TradeManager:
                     self.state["parent_baskets"][s_parent] = []
                 self.state["parent_baskets"][s_parent].append(s_child)
                 self.state["child_to_parent"][s_child] = s_parent
-                self.state["initial_r_dist"][s_child] = self.state[
-                    "initial_r_dist"
-                ].get(s_parent, sl_distance)
+                if child_uses_parent_sl:
+                    self.state["initial_r_dist"][s_child] = self.state[
+                        "initial_r_dist"
+                    ].get(s_parent, sl_distance)
+                else:
+                    self.state["initial_r_dist"][s_child] = sl_distance
                 save_state(self.state)
 
                 self.log(
-                    f"🔥 [{signal_class}] Mẹ #{s_parent} đẻ Con #{s_child} | Vol: {lot_size:.2f}",
+                    f"🔥 [{signal_class}] Mẹ #{s_parent} đẻ Con #{s_child} | Vol: {lot_size:.2f} | Entry: {current_price:.5f} | SL: {sl_price:.5f} ({child_sl_source}) | TP: {tp_price:.5f}",
                     target="bot",
                 )
                 if signal_class == "DCA":
@@ -480,7 +497,7 @@ class TradeManager:
                     ).start()
             else:
                 self.log(
-                    f"🚀 [BOT EXEC] {direction} {symbol} #{ticket_id} | Lot: {lot_size:.2f} | TSL: {bot_tactic}",
+                    f"🚀 [BOT EXEC] {direction} {symbol} #{ticket_id} | Lot: {lot_size:.2f} | Entry: {current_price:.5f} | SL: {sl_price:.5f} | TP: {tp_price:.5f} | TSL: {bot_tactic}",
                     target="bot",
                 )
                 if signal_class == "ENTRY":
@@ -891,6 +908,12 @@ class TradeManager:
                             )
                             mae_usd = float(excursion.get("mae_usd", min(real_pnl, 0.0)))
                             mfe_usd = float(excursion.get("mfe_usd", max(real_pnl, 0.0)))
+                            close_context = (
+                                all_market_contexts.get(d_out.symbol, {})
+                                if isinstance(all_market_contexts, dict)
+                                else {}
+                            )
+                            market_mode = close_context.get("market_mode", "ANY")
 
                             append_trade_log(
                                 ticket,
@@ -903,6 +926,7 @@ class TradeManager:
                                 fee,
                                 real_pnl,
                                 exit_reason,
+                                market_mode=market_mode,
                                 trigger_signal=trigger_signal,
                                 session_id=current_session,
                                 open_time_str=open_time_str,
