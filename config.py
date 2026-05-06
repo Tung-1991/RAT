@@ -137,6 +137,7 @@ BOT_SAFEGUARD = {
     "DAEMON_LOOP_DELAY": 15.0,
     "DCA_PCA_SCAN_INTERVAL": 2.0,
     "LOG_COOLDOWN_MINUTES": 60.0,
+    "MANUAL_SIGNAL_LOG_ENABLE": False,
     "BOT_USE_TP": True,
     "BOT_TP_RR_RATIO": 1.5,  # [NEW] Rầu thưởng khi dùng TP theo R (fallback nếu không dùng SwingPoint)
     "STRICT_MIN_LOT": False,  # [NEW V4.4] Chặn Lot < Min_Vol

@@ -53,6 +53,32 @@ class StandaloneBotDaemon:
         self.last_dca_pca_scan = 0
         self.pending_signals = []
         self.heartbeat_contexts = {}
+        self.last_entry_signal_times = {}
+
+    def _get_entry_signal_cooldown(self, symbol):
+        try:
+            brain = get_brain_settings_for_symbol(symbol)
+            cooldown_min = float(brain.get("bot_safeguard", {}).get("COOLDOWN_MINUTES", 1.0))
+            return max(0.0, cooldown_min * 60)
+        except Exception:
+            return 60.0
+
+    def _entry_signal_on_cooldown(self, action, symbol):
+        if action == "NONE":
+            return False
+
+        cooldown_sec = self._get_entry_signal_cooldown(symbol)
+        if cooldown_sec <= 0:
+            return False
+
+        key = f"{symbol}_{action}"
+        now = time.time()
+        last_time = self.last_entry_signal_times.get(key, 0)
+        if now - last_time < cooldown_sec:
+            return True
+
+        self.last_entry_signal_times[key] = now
+        return False
 
     def _atomic_write_signals(self, active_symbols):
         payload = {
@@ -95,6 +121,10 @@ class StandaloneBotDaemon:
             pass
 
     def _add_signal(self, action, symbol, context, signal_class="ENTRY"):
+        if signal_class == "ENTRY" and self._entry_signal_on_cooldown(action, symbol):
+            logger.debug(f"Cooldown signal ENTRY {action} {symbol}: skip duplicate")
+            return False
+
         sig_id = str(uuid.uuid4())
         self.pending_signals.append(
             {
@@ -112,6 +142,7 @@ class StandaloneBotDaemon:
         live_cfg = self._read_live_config()
         syms = live_cfg.get("BOT_ACTIVE_SYMBOLS", getattr(config, "SYMBOLS", []))
         self._atomic_write_signals(syms)
+        return True
 
     def _read_live_config(self):
         try:
@@ -277,7 +308,7 @@ class StandaloneBotDaemon:
             # [NEW V5] Check Cooldown DCA/PCA theo Signal Time (Chống xả lệnh liên thanh)
             from core.storage_manager import get_last_dca_pca_signal_time
             cd_time = dca_cfg.get("COOLDOWN", 60)
-            if time.time() - get_last_dca_pca_signal_time(symbol) < cd_time:
+            if time.time() - get_last_dca_pca_signal_time(symbol, "DCA") < cd_time:
                 continue
 
             current_price = context.get("current_price", 0)
@@ -337,7 +368,7 @@ class StandaloneBotDaemon:
                             "DCA",
                         )
                         from core.storage_manager import update_last_dca_pca_signal_time
-                        update_last_dca_pca_signal_time(symbol, time.time())
+                        update_last_dca_pca_signal_time(symbol, time.time(), "DCA")
                         time.sleep(0.5)
                         continue
                     else:
@@ -383,7 +414,7 @@ class StandaloneBotDaemon:
                             "PCA",
                         )
                         from core.storage_manager import update_last_dca_pca_signal_time
-                        update_last_dca_pca_signal_time(symbol, time.time())
+                        update_last_dca_pca_signal_time(symbol, time.time(), "PCA")
                         time.sleep(0.5)
                     else:
                         mb_log_key = f"mb_pca_reject_{symbol}"

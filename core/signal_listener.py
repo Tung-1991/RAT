@@ -219,12 +219,42 @@ class SignalListener:
             return
 
         if not self.get_auto_trade():
+            try:
+                cpath = _get_brain_file()
+                manual_log_enable = getattr(config, "BOT_SAFEGUARD", {}).get(
+                    "MANUAL_SIGNAL_LOG_ENABLE", False
+                )
+                manual_log_cooldown = float(
+                    getattr(config, "BOT_SAFEGUARD", {}).get(
+                        "LOG_COOLDOWN_MINUTES", 60.0
+                    )
+                )
+                if os.path.exists(cpath):
+                    with open(cpath, "r", encoding="utf-8") as cf:
+                        b_set = json.load(cf)
+                        safe_cfg = b_set.get("bot_safeguard", {})
+                        manual_log_enable = safe_cfg.get(
+                            "MANUAL_SIGNAL_LOG_ENABLE", manual_log_enable
+                        )
+                        manual_log_cooldown = float(
+                            safe_cfg.get(
+                                "LOG_COOLDOWN_MINUTES",
+                                manual_log_cooldown,
+                            )
+                        )
+            except Exception:
+                manual_log_enable = False
+                manual_log_cooldown = 60.0
+
+            if not manual_log_enable:
+                return
+
             # [FIX] Thinking Logs (Chống spam)
             now = time.time()
             last_sig = self.last_thinking_signal.get(symbol, {"action": "", "time": 0})
 
-            # Chỉ báo cáo khi đổi hướng hoặc sau mỗi 15 phút (900s)
-            if last_sig["action"] != action or (now - last_sig["time"] > 900):
+            cooldown_s = max(0.0, manual_log_cooldown * 60.0)
+            if last_sig["action"] != action or (now - last_sig["time"] > cooldown_s):
                 self.log_ui(
                     f"📡 [SIGNAL] Phát hiện {action} {symbol}. (Chế độ: MANUAL - Bỏ qua)",
                     error=False,
