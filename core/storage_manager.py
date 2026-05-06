@@ -210,6 +210,7 @@ def load_state() -> Dict[str, Any]:
         "last_dca_pca_close_time": {}, # [NEW V4.4] Tracking DCA/PCA Cooldown
         "last_dca_pca_signal_time": {},# [NEW V5] Tracking Cooldown theo tín hiệu bóp cò
         "highest_pnl_recorded": {},    # [NEW V5] Đỉnh PnL cho Watermark
+        "highest_pnl_tickets": {},     # Ticket set đang tạo mốc Watermark
         "last_rev_log_time": {},       # [NEW V5] Bộ nhớ chống spam log đảo chiều
         "current_session_id": datetime.now().strftime("%Y%m%d_%H%M%S"),
         "cooldown_until": 0.0
@@ -240,6 +241,8 @@ def load_state() -> Dict[str, Any]:
             if "bot_daily_loss_count" not in state: state["bot_daily_loss_count"] = 0
             if "daily_loss_count" not in state: state["daily_loss_count"] = 0    
             if "fee_today" not in state: state["fee_today"] = 0.0
+            if "highest_pnl_recorded" not in state: state["highest_pnl_recorded"] = {}
+            if "highest_pnl_tickets" not in state: state["highest_pnl_tickets"] = {}
 
             current_date = get_today_str()
             saved_date = state.get("date")
@@ -269,6 +272,8 @@ def load_state() -> Dict[str, Any]:
                 state["manual_trades_today"] = 0
                 state["manual_daily_loss_count"] = 0
                 state["fee_today"] = 0.0
+                state["highest_pnl_recorded"] = {}
+                state["highest_pnl_tickets"] = {}
                 
                 # Khởi tạo session mới cho ngày mới
                 state["current_session_id"] = datetime.now().strftime("%Y%m%d_%H%M%S")

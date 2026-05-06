@@ -742,7 +742,7 @@ def open_tsl_popup(app, override_symbol=None):
     if override_symbol:
         title += f" - CẤU HÌNH CON: {override_symbol}"
     top.title(title)
-    top.geometry("450x700")
+    top.geometry("500x760")
     top.attributes("-topmost", True)
     top.resizable(True, True)  # Khôi phục tính năng co giãn/phóng to
     if override_symbol:
@@ -860,6 +860,8 @@ def open_tsl_popup(app, override_symbol=None):
     f_cash_r1.pack(fill="x")
     f_cash_r2 = ctk.CTkFrame(f_cash, fg_color="transparent")
     f_cash_r2.pack(fill="x", pady=(5, 0))
+    f_cash_r3 = ctk.CTkFrame(f_cash, fg_color="transparent")
+    f_cash_r3.pack(fill="x", pady=(5, 0))
 
     cbo_cash_type = ctk.CTkOptionMenu(
         f_cash_r1, values=["USD", "PERCENT", "POINT"], width=80
@@ -878,15 +880,40 @@ def open_tsl_popup(app, override_symbol=None):
     e_cash_val.pack(side="left", padx=2)
 
     cbo_cash_strat = ctk.CTkOptionMenu(
-        f_cash_r1, values=["TRAILING (Gap)", "LOCK (Tight)"], width=110
+        f_cash_r1,
+        values=["TRAILING (Gap)", "LOCK (Tight)", "SOFT LOCK (Buffer)"],
+        width=145,
     )
     cbo_cash_strat.set(tsl_cfg.get("BE_CASH_STRAT", "TRAILING (Gap)"))
     cbo_cash_strat.pack(side="left", padx=5)
+
+    var_cash_fee_protect = ctk.BooleanVar(
+        value=tsl_cfg.get("BE_CASH_FEE_PROTECT", True)
+    )
+    ctk.CTkCheckBox(
+        f_cash_r2, text="Fee Protect", variable=var_cash_fee_protect, width=60
+    ).pack(side="left", padx=5)
 
     var_be_one_time = ctk.BooleanVar(value=tsl_cfg.get("ONE_TIME_BE", False))
     ctk.CTkCheckBox(
         f_cash_r2, text="One-Time (Chỉ khóa mốc 1)", variable=var_be_one_time, width=60
     ).pack(side="left", padx=5)
+
+    ctk.CTkLabel(f_cash_r3, text="Buffer:").pack(side="left", padx=2)
+    cbo_cash_buffer_type = ctk.CTkOptionMenu(
+        f_cash_r3, values=["USD", "PERCENT", "POINT", "ATR"], width=90
+    )
+    cbo_cash_buffer_type.set(tsl_cfg.get("BE_CASH_SOFT_BUFFER_TYPE", "USD"))
+    cbo_cash_buffer_type.pack(side="left", padx=2)
+
+    e_cash_buffer = ctk.CTkEntry(f_cash_r3, width=55)
+    e_cash_buffer.insert(0, str(tsl_cfg.get("BE_CASH_SOFT_BUFFER", 3.0)))
+    e_cash_buffer.pack(side="left", padx=2)
+
+    ctk.CTkLabel(f_cash_r3, text="Min Lock:").pack(side="left", padx=(10, 2))
+    e_cash_min_lock = ctk.CTkEntry(f_cash_r3, width=55)
+    e_cash_min_lock.insert(0, str(tsl_cfg.get("BE_CASH_MIN_LOCK", 0.0)))
+    e_cash_min_lock.pack(side="left", padx=2)
 
     f_psar = sec(tab_adv, "6. PSAR TRAILING (Đuổi chấm)")
     f_psar.pack(fill="x", padx=15)
@@ -947,6 +974,10 @@ def open_tsl_popup(app, override_symbol=None):
                 "BE_TRIGGER": float(e_cash_trig.get()),
                 "BE_VALUE": float(e_cash_val.get()),
                 "BE_CASH_STRAT": cbo_cash_strat.get(),
+                "BE_CASH_FEE_PROTECT": var_cash_fee_protect.get(),
+                "BE_CASH_SOFT_BUFFER_TYPE": cbo_cash_buffer_type.get(),
+                "BE_CASH_SOFT_BUFFER": float(e_cash_buffer.get()),
+                "BE_CASH_MIN_LOCK": float(e_cash_min_lock.get()),
                 "BE_MODE": cbo_be.get(),
                 "BE_OFFSET_RR": float(e_be_rr.get()),
                 "ONE_TIME_BE": var_be_one_time.get(),

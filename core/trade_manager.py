@@ -954,9 +954,20 @@ class TradeManager:
             # --- [NEW V5] WATERMARK DYNAMIC PNL ---
             if tracked_positions:
                 symbol_pnl = {}
+                symbol_tickets = {}
                 for p in tracked_positions:
                     profit = p.profit + p.swap + getattr(p, "commission", 0.0)
                     symbol_pnl[p.symbol] = symbol_pnl.get(p.symbol, 0.0) + profit
+                    symbol_tickets.setdefault(p.symbol, []).append(str(p.ticket))
+
+                self.state.setdefault("highest_pnl_recorded", {})
+                self.state.setdefault("highest_pnl_tickets", {})
+                active_symbols = set(symbol_pnl)
+                for stale_sym in list(self.state["highest_pnl_recorded"].keys()):
+                    if stale_sym not in active_symbols:
+                        self.state["highest_pnl_recorded"].pop(stale_sym, None)
+                        self.state["highest_pnl_tickets"].pop(stale_sym, None)
+                        needs_save = True
 
                 for sym, current_pnl in symbol_pnl.items():
                     brain = self._get_brain_settings(sym)
@@ -972,17 +983,24 @@ class TradeManager:
                         wm_dd = float(sg_cfg.get("WATERMARK_DRAWDOWN", 0.0))
 
                     if wm_trigger > 0 and wm_dd > 0:
-                        if "highest_pnl_recorded" not in self.state:
-                            self.state["highest_pnl_recorded"] = {}
-                        
-                        highest = self.state["highest_pnl_recorded"].get(sym, 0.0)
+                        ticket_key = "|".join(sorted(symbol_tickets.get(sym, [])))
+                        prev_ticket_key = self.state["highest_pnl_tickets"].get(sym)
+
+                        if prev_ticket_key != ticket_key:
+                            self.state["highest_pnl_tickets"][sym] = ticket_key
+                            self.state["highest_pnl_recorded"][sym] = max(current_pnl, 0.0)
+                            highest = self.state["highest_pnl_recorded"][sym]
+                            needs_save = True
+                        else:
+                            highest = self.state["highest_pnl_recorded"].get(sym, 0.0)
                         
                         if current_pnl > highest:
                             self.state["highest_pnl_recorded"][sym] = current_pnl
                             highest = current_pnl
+                            needs_save = True
                             
                         # Kích hoạt Watermark
-                        if highest >= wm_trigger and current_pnl <= (highest - wm_dd):
+                        if highest >= wm_trigger and current_pnl > 0 and current_pnl <= (highest - wm_dd):
                             self.log(f"💧 [WATERMARK] {sym} Sụt giảm từ đỉnh (+${highest:.2f}) xuống (+${current_pnl:.2f})! Đạt giới hạn Drawdown (${wm_dd:.2f}). KÍCH HOẠT ĐÓNG TOÀN BỘ!", target="bot")
                             
                             def _close_watermark_seq(positions, symbol):
@@ -1010,7 +1028,12 @@ class TradeManager:
 
                             # Xóa mốc để chu kỳ mới làm lại
                             self.state["highest_pnl_recorded"][sym] = 0.0
+                            self.state["highest_pnl_tickets"].pop(sym, None)
                             needs_save = True
+            elif self.state.get("highest_pnl_recorded") or self.state.get("highest_pnl_tickets"):
+                self.state["highest_pnl_recorded"] = {}
+                self.state["highest_pnl_tickets"] = {}
+                needs_save = True
             # ---------------------------------------
 
             # --- [NEW V5.1] MAX BASKET DRAWDOWN (PHANH KHẨN CẤP RỔ LỆNH) ---
@@ -1234,9 +1257,12 @@ class TradeManager:
 
             if trigger_usd > 0:
                 # Tính tổng phí hao hụt (Commission + Spread) để cắt hòa vốn không bị âm
-                total_fee = abs(getattr(pos, "commission", 0.0)) + (
-                    sym_info.spread * point * pos.volume * sym_info.trade_contract_size
-                )
+                fee_protect = bool(tsl_cfg.get("BE_CASH_FEE_PROTECT", True))
+                total_fee = 0.0
+                if fee_protect:
+                    total_fee = abs(getattr(pos, "commission", 0.0)) + (
+                        sym_info.spread * point * pos.volume * sym_info.trade_contract_size
+                    )
 
                 if profit_usd >= trigger_usd:
                     locked_profit_usd = (
@@ -1251,10 +1277,79 @@ class TradeManager:
                     if steps >= 1:
                         if cash_strat == "LOCK (Tight)":
                             locked_profit_usd = trigger_usd + (steps * step_usd)
+                        elif cash_strat == "SOFT LOCK (Buffer)":
+                            target_profit_usd = trigger_usd + (steps * step_usd)
+                            buffer_type = tsl_cfg.get("BE_CASH_SOFT_BUFFER_TYPE", "USD")
+                            buffer_val = float(tsl_cfg.get("BE_CASH_SOFT_BUFFER", 3.0))
+                            if buffer_type == "PERCENT":
+                                buffer_usd = bal * (buffer_val / 100.0)
+                            elif buffer_type == "POINT":
+                                buffer_usd = (
+                                    buffer_val
+                                    * point
+                                    * pos.volume
+                                    * sym_info.trade_contract_size
+                                )
+                            elif buffer_type == "ATR":
+                                atr_group = tsl_cfg.get("SWING_GROUP", "G2")
+                                if "DYNAMIC" in atr_group:
+                                    market_mode = context.get("market_mode", "ANY")
+                                    atr_group = "G1" if market_mode in ["TREND", "BREAKOUT"] else "G2"
+                                atr_val = float(context.get(f"atr_{atr_group}", 0.0) or 0.0)
+                                buffer_usd = (
+                                    buffer_val
+                                    * atr_val
+                                    * pos.volume
+                                    * sym_info.trade_contract_size
+                                )
+                            else:
+                                buffer_usd = buffer_val
+
+                            min_lock_usd = float(tsl_cfg.get("BE_CASH_MIN_LOCK", 0.0))
+                            raw_lock_usd = target_profit_usd - buffer_usd
+                            locked_profit_usd = (
+                                max(raw_lock_usd, min_lock_usd)
+                                if raw_lock_usd > 0
+                                else 0.0
+                            )
                         else:
                             locked_profit_usd = trigger_usd + ((steps - 1) * step_usd)
                     elif cash_strat == "LOCK (Tight)":
                         locked_profit_usd = trigger_usd
+                    elif cash_strat == "SOFT LOCK (Buffer)":
+                        buffer_type = tsl_cfg.get("BE_CASH_SOFT_BUFFER_TYPE", "USD")
+                        buffer_val = float(tsl_cfg.get("BE_CASH_SOFT_BUFFER", 3.0))
+                        if buffer_type == "PERCENT":
+                            buffer_usd = bal * (buffer_val / 100.0)
+                        elif buffer_type == "POINT":
+                            buffer_usd = (
+                                buffer_val
+                                * point
+                                * pos.volume
+                                * sym_info.trade_contract_size
+                            )
+                        elif buffer_type == "ATR":
+                            atr_group = tsl_cfg.get("SWING_GROUP", "G2")
+                            if "DYNAMIC" in atr_group:
+                                market_mode = context.get("market_mode", "ANY")
+                                atr_group = "G1" if market_mode in ["TREND", "BREAKOUT"] else "G2"
+                            atr_val = float(context.get(f"atr_{atr_group}", 0.0) or 0.0)
+                            buffer_usd = (
+                                buffer_val
+                                * atr_val
+                                * pos.volume
+                                * sym_info.trade_contract_size
+                            )
+                        else:
+                            buffer_usd = buffer_val
+
+                        min_lock_usd = float(tsl_cfg.get("BE_CASH_MIN_LOCK", 0.0))
+                        raw_lock_usd = trigger_usd - buffer_usd
+                        locked_profit_usd = (
+                            max(raw_lock_usd, min_lock_usd)
+                            if raw_lock_usd > 0
+                            else 0.0
+                        )
 
                     # Quy đổi lợi nhuận USD muốn khóa ra khoảng cách giá (Price Distance)
                     lock_dist_price = locked_profit_usd / (

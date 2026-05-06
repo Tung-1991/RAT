@@ -160,6 +160,11 @@ BOT_SAFEGUARD = {
 TSL_CONFIG = {
     "BE_CASH_TYPE": "USD",  # [NEW V4.4] Tùy chọn: USD, PERCENT, POINT
     "BE_VALUE": 5.0,  # [NEW V4.4] Target khóa lãi cứng
+    "BE_CASH_STRAT": "TRAILING (Gap)",
+    "BE_CASH_FEE_PROTECT": True,
+    "BE_CASH_SOFT_BUFFER_TYPE": "USD",
+    "BE_CASH_SOFT_BUFFER": 3.0,
+    "BE_CASH_MIN_LOCK": 0.0,
     "BE_MODE": "SOFT",
     "BE_OFFSET_RR": 0.8,
     "BE_OFFSET_POINTS": 0,
