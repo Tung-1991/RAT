@@ -242,11 +242,19 @@ class BotUI(ctk.CTk):
                 if isinstance(val, (int, float, str, bool, list, dict)):
                     # [FIX]: CẤM ghi đè các cụm Key thuộc thẩm quyền của Sandbox
                     if k not in [
+                        "SANDBOX_CONFIG",
                         "indicators",
                         "voting_rules",
                         "risk_tsl",
                         "dca_config",
                         "pca_config",
+                        "MASTER_EVAL_MODE",
+                        "MIN_MATCHING_VOTES",
+                        "FORCE_ANY_MODE",
+                        "G0_TIMEFRAME",
+                        "G1_TIMEFRAME",
+                        "G2_TIMEFRAME",
+                        "G3_TIMEFRAME",
                     ]:
                         existing_data[k] = val
 

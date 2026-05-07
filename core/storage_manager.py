@@ -540,6 +540,24 @@ def _normalize_brain_settings_shape(data: Dict[str, Any]) -> Dict[str, Any]:
         trigger_mode = str(cfg.get("trigger_mode", "STRICT_CLOSE")).upper()
         cfg["trigger_mode"] = trigger_mode if trigger_mode in valid_trigger_modes else "STRICT_CLOSE"
 
+        group_trigger_modes = cfg.get("group_trigger_modes", {})
+        if not isinstance(group_trigger_modes, dict):
+            group_trigger_modes = {}
+        cfg["group_trigger_modes"] = {
+            str(g).upper(): str(mode).upper()
+            for g, mode in group_trigger_modes.items()
+            if str(g).upper() in valid_groups and str(mode).upper() in valid_trigger_modes
+        }
+
+        group_params = cfg.get("group_params", {})
+        if not isinstance(group_params, dict):
+            group_params = {}
+        cfg["group_params"] = {
+            str(g).upper(): params
+            for g, params in group_params.items()
+            if str(g).upper() in valid_groups and isinstance(params, dict)
+        }
+
         if ind_name == "simple_breakout":
             params = cfg.get("params", {})
             if not isinstance(params, dict):
@@ -548,6 +566,10 @@ def _normalize_brain_settings_shape(data: Dict[str, Any]) -> Dict[str, Any]:
                 params["atr_buffer"] = params["buffer_points"]
             params.pop("buffer_points", None)
             cfg["params"] = params
+            for params in cfg["group_params"].values():
+                if "atr_buffer" not in params and "buffer_points" in params:
+                    params["atr_buffer"] = params["buffer_points"]
+                params.pop("buffer_points", None)
 
     return data
 

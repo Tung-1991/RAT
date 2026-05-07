@@ -5,6 +5,7 @@
 import logging
 import json
 import os
+import copy
 import config
 from core.storage_manager import get_brain_settings_for_symbol
 
@@ -163,8 +164,15 @@ class SignalGenerator:
             func = self.indicator_map.get(ind_name)
             if func:
                 try:
-                    params = ind_cfg.get("params", {})
+                    params = copy.deepcopy(ind_cfg.get("params", {}))
+                    group_params = ind_cfg.get("group_params", {})
+                    if isinstance(group_params, dict):
+                        params.update(group_params.get(group_name, {}))
+
+                    group_trigger_modes = ind_cfg.get("group_trigger_modes", {})
                     trigger_mode = ind_cfg.get("trigger_mode", "STRICT_CLOSE")
+                    if isinstance(group_trigger_modes, dict):
+                        trigger_mode = group_trigger_modes.get(group_name, trigger_mode)
                     
                     # Cắt đuôi nến nếu là STRICT_CLOSE để khóa cản tĩnh, chống repaint
                     eval_df = df.iloc[:-1] if trigger_mode == "STRICT_CLOSE" else df

@@ -704,6 +704,15 @@ class BotStrategyUI(ctk.CTkToplevel):
                 command=lambda n=ind_name: self.open_ind_setting(n),
             )
             btn_cfg.grid(row=row, column=7, padx=5, pady=5)
+            btn_reset_cfg = ctk.CTkButton(
+                scroll_frame,
+                text="Reset",
+                width=48,
+                fg_color="#5D4037",
+                hover_color="#4E342E",
+                command=lambda n=ind_name: self.reset_ind_overrides(n),
+            )
+            btn_reset_cfg.grid(row=row, column=8, padx=(0, 5), pady=5)
 
             self.ind_widgets[ind_name] = {
                 "active_var": active_var,
@@ -713,7 +722,12 @@ class BotStrategyUI(ctk.CTkToplevel):
                 "mode_var": mode_var,
                 "trigger_mode_var": trigger_mode_var,
                 "params": cfg.get("params", {}),
+                "group_params": cfg.get("group_params", {}),
+                "group_trigger_modes": cfg.get("group_trigger_modes", {}),
+                "config_btn": btn_cfg,
+                "reset_config_btn": btn_reset_cfg,
             }
+            self._refresh_indicator_config_button(ind_name)
             row += 1
 
     def open_ind_setting(self, ind_name):
@@ -724,14 +738,58 @@ class BotStrategyUI(ctk.CTkToplevel):
             current_params.pop("buffer_points", None)
             self.ind_widgets[ind_name]["params"] = current_params
 
-        def on_save_params(new_params):
+        def on_save_params(new_params, group_params=None, group_trigger_modes=None):
             if ind_name == "simple_breakout":
                 if "atr_buffer" not in new_params and "buffer_points" in new_params:
                     new_params["atr_buffer"] = new_params["buffer_points"]
                 new_params.pop("buffer_points", None)
+                if isinstance(group_params, dict):
+                    for params in group_params.values():
+                        if "atr_buffer" not in params and "buffer_points" in params:
+                            params["atr_buffer"] = params["buffer_points"]
+                        params.pop("buffer_points", None)
             self.ind_widgets[ind_name]["params"] = new_params
+            if group_params is not None:
+                self.ind_widgets[ind_name]["group_params"] = group_params
+            if group_trigger_modes is not None:
+                self.ind_widgets[ind_name]["group_trigger_modes"] = group_trigger_modes
+            self._refresh_indicator_config_button(ind_name)
 
-        open_indicator_config_popup(self, ind_name, current_params, on_save_params)
+        open_indicator_config_popup(
+            self,
+            ind_name,
+            current_params,
+            on_save_params,
+            group_params=self.ind_widgets[ind_name].get("group_params", {}),
+            global_trigger_mode=self.ind_widgets[ind_name]["trigger_mode_var"].get(),
+            group_trigger_modes=self.ind_widgets[ind_name].get("group_trigger_modes", {}),
+            group_labels={g: self._group_label(g) for g in ["G0", "G1", "G2", "G3"]},
+        )
+
+    def _has_indicator_overrides(self, ind_name):
+        widgets = self.ind_widgets.get(ind_name, {})
+        return bool(widgets.get("group_params")) or bool(widgets.get("group_trigger_modes"))
+
+    def _refresh_indicator_config_button(self, ind_name):
+        widgets = self.ind_widgets.get(ind_name, {})
+        btn = widgets.get("config_btn")
+        if not btn:
+            return
+        if self._has_indicator_overrides(ind_name):
+            btn.configure(text="* Cai dat", fg_color="#1565C0", hover_color="#0D47A1")
+        else:
+            btn.configure(text="Cai dat", fg_color="#424242", hover_color="#616161")
+        reset_btn = widgets.get("reset_config_btn")
+        if reset_btn:
+            reset_btn.configure(state="normal" if self._has_indicator_overrides(ind_name) else "disabled")
+
+    def reset_ind_overrides(self, ind_name):
+        widgets = self.ind_widgets.get(ind_name)
+        if not widgets:
+            return
+        widgets["group_params"] = {}
+        widgets["group_trigger_modes"] = {}
+        self._refresh_indicator_config_button(ind_name)
 
     def _build_voting_tab(self):
         top_frame = ctk.CTkFrame(self.tab_rules, fg_color="transparent")
@@ -1257,6 +1315,8 @@ class BotStrategyUI(ctk.CTkToplevel):
                 "active_modes": [mode_val] if mode_val != "ANY" else ["ANY"],
                 "trigger_mode": widgets["trigger_mode_var"].get(),
                 "params": params,
+                "group_params": dict(widgets.get("group_params", {})),
+                "group_trigger_modes": dict(widgets.get("group_trigger_modes", {})),
             }
 
         new_voting = {}
@@ -1425,6 +1485,9 @@ class BotStrategyUI(ctk.CTkToplevel):
                 self.vote_widgets = {}
                 self.risk_widgets = {}
                 self.tf_vars = {}
+                self.group_label_widgets = []
+                self.preview_status_cache = {}
+                self.preview_last_symbol = None
 
                 for widget in self.winfo_children():
                     widget.destroy()
