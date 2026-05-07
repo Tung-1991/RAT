@@ -62,7 +62,7 @@ class SignalListener:
         # [NEW V4.3.1] Trí nhớ dài hạn cho Safeguard Log
         self.last_safeguard_reason = {}
         self.last_safeguard_time = {}
-        self.last_auto_signal_log = {}
+        self.last_bot_log_time = {}
 
     def start(self):
         if not self.running:
@@ -131,9 +131,7 @@ class SignalListener:
 
             time.sleep(0.5)  # Quét nhanh mỗi 0.5s để bắt nhịp DCA/PCA
 
-    def _should_log_auto_signal(self, symbol: str, sig_class: str, action: str) -> bool:
-        log_key = f"{symbol}_{sig_class}_{action}"
-        now = time.time()
+    def _get_log_cooldown_seconds(self) -> float:
         try:
             cpath = _get_brain_file()
             cooldown_min = float(
@@ -153,12 +151,15 @@ class SignalListener:
             cooldown_min = float(
                 getattr(config, "BOT_SAFEGUARD", {}).get("LOG_COOLDOWN_MINUTES", 60.0)
             )
+        return max(0.0, cooldown_min * 60.0)
 
-        last_log = self.last_auto_signal_log.get(log_key, 0)
-        if now - last_log < max(0.0, cooldown_min * 60.0):
+    def _should_log_bot_status(self, key: str) -> bool:
+        now = time.time()
+        last_log = self.last_bot_log_time.get(key, 0)
+        if now - last_log < self._get_log_cooldown_seconds():
             return False
 
-        self.last_auto_signal_log[log_key] = now
+        self.last_bot_log_time[key] = now
         return True
 
     def _process_signal(self, signal: dict):
@@ -258,10 +259,13 @@ class SignalListener:
                             ).start()
                         else:
                             reason = "HoldTime" if hold_time < min_hold else "PnL_Filter"
-                            self.log_ui(
-                                f"⏳ [REVERSE TACTIC] Tín hiệu {action} nhưng giữ lệnh #{p.ticket} ({reason} | PnL: ${profit_usd:.2f})",
-                                False,
-                            )
+                            if self._should_log_bot_status(
+                                f"reverse_hold_{symbol}_{p.ticket}_{reason}"
+                            ):
+                                self.log_ui(
+                                    f"⏳ [REVERSE TACTIC] Tín hiệu {action} nhưng giữ lệnh #{p.ticket} ({reason} | PnL: ${profit_usd:.2f})",
+                                    False,
+                                )
         except Exception as e:
             logger.error(f"[Listener] Lỗi Reverse Check: {e}")
 
@@ -317,7 +321,9 @@ class SignalListener:
             del self.last_thinking_signal[symbol]
 
         def run_bot_trade():
-            auto_log_enabled = self._should_log_auto_signal(symbol, sig_class, action)
+            auto_log_enabled = self._should_log_bot_status(
+                f"signal_seen_{symbol}_{sig_class}_{action}"
+            )
             if auto_log_enabled:
                 self.log_ui(
                     f"📡 [SIGNAL] Bot nhận {sig_class}: {action} {symbol}. Đang kiểm tra safeguard...",
@@ -346,21 +352,9 @@ class SignalListener:
                     last_time = self.last_safeguard_time.get(track_key, 0)
                     now = time.time()
 
-                    try:
-                        cpath = _get_brain_file()
-                        cmin = 30.0  # Mặc định 30 phút cho đỡ spam
-                        if os.path.exists(cpath):
-                            with open(cpath, "r", encoding="utf-8") as cf:
-                                b_set = json.load(cf)
-                                cmin = float(
-                                    b_set.get("bot_safeguard", {}).get(
-                                        "LOG_COOLDOWN_MINUTES", 30.0
-                                    )
-                                )
-                    except:
-                        cmin = 30.0
-
-                    is_cooldown_expired = (now - last_time) >= (cmin * 60)
+                    is_cooldown_expired = (
+                        now - last_time
+                    ) >= self._get_log_cooldown_seconds()
 
                     # [KAISER FIX] Tránh edgecase khi reason flap (VD: Ping,MaxOrders -> MaxOrders) làm bypass cooldown
                     # Chúng ta sẽ block theo track_key (Symbol + Class). Chỉ báo log mới nếu HẾT COOLDOWN.
@@ -376,11 +370,13 @@ class SignalListener:
                         self.last_safeguard_reason[track_key] = reason_key
                         self.last_safeguard_time[track_key] = now
                 else:
-                    self.log_ui(
-                        f"🤖 Bot chuẩn bị bóp cò {sig_class}: {action} {symbol}",
-                        error=False,
-                    )
-                    self.log_ui(f"❌ Bot vào lệnh thất bại: {result}", error=True)
+                    fail_key = f"bot_trade_fail_{symbol}_{sig_class}_{result}"
+                    if self._should_log_bot_status(fail_key):
+                        self.log_ui(
+                            f"🤖 Bot chuẩn bị bóp cò {sig_class}: {action} {symbol}",
+                            error=False,
+                        )
+                        self.log_ui(f"❌ Bot vào lệnh thất bại: {result}", error=True)
             else:
                 # [V4.3.1] Không xóa bộ nhớ lỗi khi thành công nữa để giữ vững Cooldown Log
                 pass

@@ -274,7 +274,8 @@ class TradeManager:
                     # [NEW V5] Chống spam log đảo chiều (15 phút / lần)
                     s_ticket = str(p.ticket)
                     last_log = self.state.get("last_rev_log_time", {}).get(s_ticket, 0)
-                    if time.time() - last_log > 900:
+                    log_cooldown = float(safe_cfg.get("LOG_COOLDOWN_MINUTES", 60.0)) * 60.0
+                    if time.time() - last_log > log_cooldown:
                         reason = "HoldTime" if hold_time < min_hold_time else "PnL_Filter"
                         self.log(f"⏳ [REVERSE] Tín hiệu ngược nhưng chưa đủ điều kiện cắt #{p.ticket} ({reason}). Đang theo dõi ngầm...", target="bot")
                         if "last_rev_log_time" not in self.state: self.state["last_rev_log_time"] = {}
