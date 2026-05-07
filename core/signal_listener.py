@@ -237,7 +237,8 @@ class SignalListener:
                             else:
                                 # [REFINED] Nếu đang lỗ, chỉ cắt nếu lỗ chưa vượt quá giới hạn (Chống cắt đáy)
                                 # Ví dụ: -5 >= -10 là True (Cắt), -15 >= -10 là False (Giữ)
-                                pnl_ok = (profit_usd >= max_loss) if max_loss != 0 else True
+                                # Current behavior: -15 > -20 -> hold, -20 <= -20 -> close.
+                                pnl_ok = (profit_usd <= max_loss) if max_loss != 0 else True
 
                         if hold_time >= min_hold and pnl_ok:
                             self.log_ui(

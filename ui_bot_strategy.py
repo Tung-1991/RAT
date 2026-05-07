@@ -5,6 +5,7 @@
 import customtkinter as ctk
 import json
 import os
+import time
 import config
 from tkinter import messagebox, filedialog
 from ui_indicators_config import open_indicator_config_popup
@@ -47,6 +48,9 @@ class BotStrategyUI(ctk.CTkToplevel):
         self.risk_widgets = {}
         self.tf_vars = {}
         self.preview_symbol_var = None
+        self.group_label_widgets = []
+        self.preview_status_cache = {}
+        self.preview_last_symbol = None
 
         self._build_ui()
 
@@ -238,6 +242,76 @@ class BotStrategyUI(ctk.CTkToplevel):
         ).pack(fill="x", padx=10, pady=6)
         return hint_f
 
+    def _get_group_timeframe(self, grp):
+        if grp in self.tf_vars:
+            return str(self.tf_vars[grp].get())
+        return str(self.brain_data.get(f"{grp}_TIMEFRAME", "15m"))
+
+    def _format_tf_label(self, timeframe):
+        tf = str(timeframe).strip().lower()
+        if tf.endswith("m"):
+            return f"M{tf[:-1]}"
+        if tf.endswith("h"):
+            return f"H{tf[:-1]}"
+        if tf.endswith("d"):
+            return f"D{tf[:-1]}"
+        return tf.upper()
+
+    def _group_label(self, grp):
+        return f"{grp}({self._format_tf_label(self._get_group_timeframe(grp))})"
+
+    def _format_duration(self, seconds):
+        seconds = max(0, int(seconds or 0))
+        minutes = seconds // 60
+        hours = minutes // 60
+        days = hours // 24
+        if days:
+            rem_hours = hours % 24
+            return f"{days}d {rem_hours}h" if rem_hours else f"{days}d"
+        if hours:
+            return f"{hours}h"
+        if minutes:
+            return f"{minutes}m"
+        return "0m"
+
+    def _status_text(self, status):
+        return {1: "BUY", -1: "SELL", 0: "WAIT"}.get(status, "WAIT")
+
+    def _update_preview_status_timer(self, symbol, grp, status):
+        if not symbol:
+            return "0m", ""
+
+        now = time.time()
+        key = f"{symbol}:{grp}"
+        state = self.preview_status_cache.get(key)
+
+        if not state:
+            state = {"status": status, "since": now, "last_duration": {}}
+            self.preview_status_cache[key] = state
+        elif state.get("status") != status:
+            prev_status = state.get("status", 0)
+            state.setdefault("last_duration", {})[prev_status] = now - state.get("since", now)
+            state["status"] = status
+            state["since"] = now
+
+        current_duration = self._format_duration(now - state.get("since", now))
+        prev_parts = []
+        for prev_status in [1, -1, 0]:
+            if prev_status == status:
+                continue
+            duration = state.get("last_duration", {}).get(prev_status)
+            if duration is not None:
+                prev_parts.append(f"{self._status_text(prev_status)} - {self._format_duration(duration)}")
+
+        return current_duration, "Truoc: " + " | ".join(prev_parts) if prev_parts else "Truoc: --"
+
+    def _refresh_group_labels(self, *_):
+        for widget, template, grp in self.group_label_widgets:
+            try:
+                widget.configure(text=template.format(label=self._group_label(grp), grp=grp))
+            except Exception:
+                pass
+
     def _build_preview_tab(self):
         f = ctk.CTkFrame(self.tab_preview, fg_color="transparent")
         f.pack(fill="both", expand=True, padx=5, pady=5)
@@ -315,6 +389,9 @@ class BotStrategyUI(ctk.CTkToplevel):
             lbl_summary = ctk.CTkLabel(col, text="B: 0 | S: 0 | N: 0", font=("Roboto", 12, "bold"), text_color="#FFF")
             lbl_summary.pack(pady=5)
 
+            lbl_prev = ctk.CTkLabel(col, text="Truoc: --", font=("Roboto", 11), text_color="#BDBDBD")
+            lbl_prev.pack(pady=(0, 5))
+
             # Details List (Scrollable)
             scroll_f = ctk.CTkScrollableFrame(col, fg_color="#1A1A1A", corner_radius=4, height=200)
             scroll_f.pack(fill="both", expand=True, padx=5, pady=5)
@@ -322,6 +399,7 @@ class BotStrategyUI(ctk.CTkToplevel):
             self.preview_cards[grp] = {
                 "title": lbl_title,
                 "summary": lbl_summary,
+                "prev": lbl_prev,
                 "scroll_f": scroll_f,
                 "frame": col,
                 "last_data": "" # Để chống flicker
@@ -335,6 +413,7 @@ class BotStrategyUI(ctk.CTkToplevel):
 
             if self.override_symbol:
                 # UI con: lấy context của đúng symbol override
+                active_symbol = self.override_symbol
                 context = all_ctx.get(self.override_symbol, {})
             else:
                 # UI mẹ: lấy symbol đang chọn trên combobox chính
@@ -345,6 +424,13 @@ class BotStrategyUI(ctk.CTkToplevel):
                     except Exception:
                         active_symbol = None
                 context = all_ctx.get(active_symbol, {}) if active_symbol else {}
+
+            if active_symbol != self.preview_last_symbol:
+                self.preview_status_cache.clear()
+                self.preview_last_symbol = active_symbol
+            no_context = not bool(context)
+            if no_context:
+                self.preview_status_cache.clear()
 
             group_details = context.get("group_details", {})
 
@@ -366,9 +452,14 @@ class BotStrategyUI(ctk.CTkToplevel):
                 rule_hint = f"[{m_rule} | O:{max_o}, N:{max_n}]"
                 
                 status_val = data.get("status", 0)
-                title_text = f"{grp}: {texts.get(status_val, 'WAIT')}\n{rule_hint}"
+                if no_context:
+                    current_duration, prev_duration = "0m", "Truoc: --"
+                else:
+                    current_duration, prev_duration = self._update_preview_status_timer(active_symbol, grp, status_val)
+                title_text = f"{self._group_label(grp)}: {texts.get(status_val, 'WAIT')} - {current_duration}\n{rule_hint}"
                 card["title"].configure(text=title_text, fg_color=colors.get(status_val, "#333"))
                 card["summary"].configure(text=f"B: {data.get('B', 0)}  |  S: {data.get('S', 0)}  |  N: {data.get('N', 0)}")
+                card["prev"].configure(text=prev_duration)
                 
                 inds_list = data.get("inds", [])
                 
@@ -490,6 +581,12 @@ class BotStrategyUI(ctk.CTkToplevel):
             "- Macro Role mới quyết định BASE/BREAKOUT/EXHAUSTION; Mode ANY = luôn được xét.",
         )
 
+        self._add_hint_box(
+            self.tab_inds,
+            "- Trigger Mode ap dung chung cho indicator nay o moi group da tick.",
+            pady=(0, 5),
+        )
+
         scroll_frame = ctk.CTkScrollableFrame(self.tab_inds)
         scroll_frame.pack(fill="both", expand=True, padx=5, pady=5)
 
@@ -540,9 +637,11 @@ class BotStrategyUI(ctk.CTkToplevel):
             saved_groups = cfg.get("groups", [cfg.get("group", "G2")])
             for g in ["G0", "G1", "G2", "G3"]:
                 g_var = ctk.BooleanVar(value=(g in saved_groups))
-                ctk.CTkCheckBox(
-                    f_groups, text=g, variable=g_var, width=40, font=("Roboto", 11)
-                ).pack(side="left", padx=2)
+                chk_group = ctk.CTkCheckBox(
+                    f_groups, text=self._group_label(g), variable=g_var, width=64, font=("Roboto", 11)
+                )
+                chk_group.pack(side="left", padx=2)
+                self.group_label_widgets.append((chk_group, "{label}", g))
                 grp_vars[g] = g_var
 
             # Trend Compass (La bàn xu hướng)
@@ -689,7 +788,7 @@ class BotStrategyUI(ctk.CTkToplevel):
                 value=str(self.brain_data.get(f"{grp}_TIMEFRAME", "15m"))
             )
             ctk.CTkComboBox(
-                tf_frame, values=tfs_options, variable=tf_var, width=70
+                tf_frame, values=tfs_options, variable=tf_var, width=70, command=self._refresh_group_labels
             ).grid(row=1, column=idx * 2 + 1, padx=5, pady=10)
             self.tf_vars[grp] = tf_var
 
@@ -718,12 +817,14 @@ class BotStrategyUI(ctk.CTkToplevel):
             frame = ctk.CTkFrame(scroll_rules, fg_color="#2b2b2b", corner_radius=8)
             frame.pack(fill="x", padx=10, pady=5)
 
-            ctk.CTkLabel(
+            lbl_rule_title = ctk.CTkLabel(
                 frame,
-                text=titles[grp],
+                text=f"{self._group_label(grp)}: {titles[grp].split(':', 1)[1].strip()}",
                 font=("Roboto", 13, "bold"),
                 text_color=colors[grp],
-            ).grid(row=0, column=0, columnspan=4, pady=5, sticky="w", padx=10)
+            )
+            lbl_rule_title.grid(row=0, column=0, columnspan=4, pady=5, sticky="w", padx=10)
+            self.group_label_widgets.append((lbl_rule_title, "{label}: " + titles[grp].split(":", 1)[1].strip(), grp))
 
             ctk.CTkLabel(frame, text="Max Opposite (Nghịch):").grid(
                 row=1, column=0, padx=10, pady=5, sticky="w"

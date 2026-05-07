@@ -250,8 +250,8 @@ class TradeManager:
                             pnl_ok = False
                     else:
                         if (
-                            max_loss != 0 and profit_usd < max_loss
-                        ):  # Ví dụ: -15 < -10 -> False
+                            max_loss != 0 and profit_usd > max_loss
+                        ):  # Example: -15 > -20 -> hold, -20 <= -20 -> close
                             pnl_ok = False
 
                 if hold_time >= min_hold_time and pnl_ok:
@@ -1498,7 +1498,7 @@ class TradeManager:
                 if profit_usd >= 0:
                     pnl_ok = profit_usd >= min_profit if min_profit > 0 else True
                 else:
-                    pnl_ok = profit_usd >= max_loss if max_loss != 0 else True
+                    pnl_ok = profit_usd <= max_loss if max_loss != 0 else True
 
             if hold_time >= min_hold and pnl_ok:
                 reverse_label = "NONE" if current_signal == 0 else ("SELL" if is_buy else "BUY")
