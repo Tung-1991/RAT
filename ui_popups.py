@@ -1064,6 +1064,27 @@ def open_tsl_popup(app, override_symbol=None):
     e_psar_min_rr.pack(side="left", padx=5)
     ctk.CTkLabel(f_psar_row3, text="Min RR kích hoạt:").pack(side="left")
 
+    f_psar_row4 = ctk.CTkFrame(f_psar, fg_color="transparent")
+    f_psar_row4.pack(fill="x", pady=2)
+    var_psar_profit_only = ctk.BooleanVar(
+        value=tsl_cfg.get("PSAR_PROFIT_ONLY", True)
+    )
+    ctk.CTkCheckBox(
+        f_psar_row4,
+        text="PSAR chi keo SL khi da hoa von",
+        variable=var_psar_profit_only,
+        width=220,
+    ).pack(side="left", padx=5)
+
+    f_psar_row5 = ctk.CTkFrame(f_psar, fg_color="transparent")
+    f_psar_row5.pack(fill="x", pady=2)
+    e_psar_profit_buffer = ctk.CTkEntry(f_psar_row5, width=60)
+    e_psar_profit_buffer.insert(
+        0, str(tsl_cfg.get("PSAR_PROFIT_BUFFER_POINTS", 0))
+    )
+    e_psar_profit_buffer.pack(side="left", padx=5)
+    ctk.CTkLabel(f_psar_row5, text="BE Buffer Points:").pack(side="left")
+
     f_anti = sec(tab_adv, "7. ANTI CASH")
     f_anti.pack(fill="x", padx=15)
     _add_popup_hint(
@@ -1204,6 +1225,8 @@ def open_tsl_popup(app, override_symbol=None):
                 "PSAR_STEP": float(e_psar_step.get()),
                 "PSAR_MAX": float(e_psar_max.get()),
                 "PSAR_MIN_RR": float(e_psar_min_rr.get()),
+                "PSAR_PROFIT_ONLY": var_psar_profit_only.get(),
+                "PSAR_PROFIT_BUFFER_POINTS": float(e_psar_profit_buffer.get()),
                 "ANTI_CASH_USD": float(e_anti_usd.get()),
                 "ANTI_CASH_HARD_STOP_UNIT": cbo_anti_usd_unit.get(),
                 "ANTI_CASH_TIME": int(e_anti_time.get()),
@@ -1669,7 +1692,7 @@ def show_history_popup(app):
     tr.pack(fill="both", expand=True)
 
     # Cột Tree (chứa Session Name)
-    tr.column("#0", width=160, anchor="w")
+    tr.column("#0", width=230, anchor="w")
     tr.heading("#0", text="Session")
 
     widths = [140, 90, 80, 80, 60, 80, 80, 80, 60, 80, 80, 80, 170, 120]

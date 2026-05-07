@@ -23,6 +23,23 @@ COIN_LIST = [
 ]
 DEFAULT_SYMBOL = "ETHUSD"
 BOT_ACTIVE_SYMBOLS = ["ETHUSD"]
+CRYPTO_SYMBOLS = ["BTCUSD", "ETHUSD"]
+WEEKDAY_ONLY_SYMBOLS = [
+    "XAUUSD",
+    "USOIL",
+    "UKOIL",
+    "EURUSD",
+    "GBPUSD",
+    "USDJPY",
+    "USDCHF",
+    "AUDUSD",
+    "USDCAD",
+]
+MARKET_HOURS_UTC_OFFSET = 0
+WEEKEND_CLOSE_WEEKDAY = 4
+WEEKEND_CLOSE_HOUR = 22
+WEEKEND_OPEN_WEEKDAY = 6
+WEEKEND_OPEN_HOUR = 22
 
 # MANUAL_MAGIC_NUMBER = 8888  # [DEPRECATED] Quản lý động qua system_meta.json
 # BOT_MAGIC_NUMBER = 9999     # [DEPRECATED] Quản lý động qua system_meta.json
@@ -182,6 +199,8 @@ TSL_CONFIG = {
     "PSAR_GROUP": "G2",
     "PSAR_STEP": 0.02,
     "PSAR_MAX": 0.2,
+    "PSAR_PROFIT_ONLY": True,
+    "PSAR_PROFIT_BUFFER_POINTS": 0,
     "ANTI_CASH_USD": 10.0,  # [NEW V4.4] Ngưỡng cắt lỗ USD cứng
     "ANTI_CASH_HARD_STOP_UNIT": "USD",
     "ANTI_CASH_TIME": 3600,  # [NEW V4.4] Thời gian âm tối đa (giây) - 1 Giờ

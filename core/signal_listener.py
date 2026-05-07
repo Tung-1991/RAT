@@ -62,6 +62,7 @@ class SignalListener:
         # [NEW V4.3.1] Trí nhớ dài hạn cho Safeguard Log
         self.last_safeguard_reason = {}
         self.last_safeguard_time = {}
+        self.last_auto_signal_log = {}
 
     def start(self):
         if not self.running:
@@ -129,6 +130,36 @@ class SignalListener:
                 logger.error(f"[Listener] Lỗi vòng lặp: {e}")
 
             time.sleep(0.5)  # Quét nhanh mỗi 0.5s để bắt nhịp DCA/PCA
+
+    def _should_log_auto_signal(self, symbol: str, sig_class: str, action: str) -> bool:
+        log_key = f"{symbol}_{sig_class}_{action}"
+        now = time.time()
+        try:
+            cpath = _get_brain_file()
+            cooldown_min = float(
+                getattr(config, "BOT_SAFEGUARD", {}).get("LOG_COOLDOWN_MINUTES", 60.0)
+            )
+            if os.path.exists(cpath):
+                with open(cpath, "r", encoding="utf-8") as cf:
+                    b_set = json.load(cf)
+                    safe_cfg = b_set.get("bot_safeguard", {})
+                    cooldown_min = float(
+                        safe_cfg.get(
+                            "LOG_COOLDOWN_MINUTES",
+                            cooldown_min,
+                        )
+                    )
+        except Exception:
+            cooldown_min = float(
+                getattr(config, "BOT_SAFEGUARD", {}).get("LOG_COOLDOWN_MINUTES", 60.0)
+            )
+
+        last_log = self.last_auto_signal_log.get(log_key, 0)
+        if now - last_log < max(0.0, cooldown_min * 60.0):
+            return False
+
+        self.last_auto_signal_log[log_key] = now
+        return True
 
     def _process_signal(self, signal: dict):
         """Xử lý định tuyến tín hiệu vào TradeManager"""
@@ -286,10 +317,12 @@ class SignalListener:
             del self.last_thinking_signal[symbol]
 
         def run_bot_trade():
-            self.log_ui(
-                f"📡 [SIGNAL] Bot nhận {sig_class}: {action} {symbol}. Đang kiểm tra safeguard...",
-                error=False,
-            )
+            auto_log_enabled = self._should_log_auto_signal(symbol, sig_class, action)
+            if auto_log_enabled:
+                self.log_ui(
+                    f"📡 [SIGNAL] Bot nhận {sig_class}: {action} {symbol}. Đang kiểm tra safeguard...",
+                    error=False,
+                )
             # Truyền đẩy đủ Context và Signal Class sang TradeManager
             result = self.trade_manager.execute_bot_trade(
                 direction=action,

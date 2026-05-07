@@ -5,6 +5,7 @@
 import config
 import time
 import MetaTrader5 as mt5
+from core.market_hours import is_symbol_trade_window_open
 
 
 class ChecklistManager:
@@ -210,6 +211,13 @@ class ChecklistManager:
                     {"name": "Kết nối", "status": "FAIL", "msg": "Mất kết nối MT5"}
                 ],
             }
+
+        is_open, closed_reason = is_symbol_trade_window_open(symbol)
+        if not is_open:
+            checks.append(
+                {"name": "Market Hours", "status": "FAIL", "msg": closed_reason}
+            )
+            all_passed = False
 
         cooldown_until = state.get("cooldown_until", 0.0)
         now = time.time()

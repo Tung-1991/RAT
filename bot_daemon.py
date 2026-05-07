@@ -12,6 +12,7 @@ import MetaTrader5 as mt5
 import config
 from core.exness_connector import ExnessConnector
 from core.data_engine import data_engine
+from core.market_hours import is_symbol_trade_window_open
 from signals.signal_generator import signal_generator
 from core.storage_manager import get_brain_settings_for_symbol
 from core.logger_setup import setup_logging  # [NEW V4.3] Import hệ thống Log
@@ -230,6 +231,12 @@ class StandaloneBotDaemon:
             if not self.running:
                 break
 
+            is_open, closed_reason = is_symbol_trade_window_open(sym)
+            if not is_open:
+                self.heartbeat_contexts.pop(sym, None)
+                signal_debug_state[sym] = f"[PAUSE] {closed_reason}"
+                continue
+
             dfs, context = data_engine.fetch_data_v4(sym)
             if dfs is None or context is None:
                 signal_debug_state[sym] = "Đang tải dữ liệu MT5..."
@@ -375,7 +382,8 @@ class StandaloneBotDaemon:
                     else:
                         mb_log_key = f"mb_dca_reject_{symbol}"
                         last_mb_log = self.heartbeat_contexts.get(mb_log_key, 0)
-                        if time.time() - last_mb_log > 300: # 5 phút cooldown
+                        log_cooldown = float(brain.get("bot_safeguard", {}).get("LOG_COOLDOWN_MINUTES", 60.0)) * 60.0
+                        if time.time() - last_mb_log > log_cooldown:
                             logger.info(f"🚫 [MINI-BRAIN] Tạm chặn DCA {symbol} (Chưa đồng thuận xu hướng).")
                             self.heartbeat_contexts[mb_log_key] = time.time()
 
@@ -421,7 +429,8 @@ class StandaloneBotDaemon:
                     else:
                         mb_log_key = f"mb_pca_reject_{symbol}"
                         last_mb_log = self.heartbeat_contexts.get(mb_log_key, 0)
-                        if time.time() - last_mb_log > 300: # 5 phút cooldown
+                        log_cooldown = float(brain.get("bot_safeguard", {}).get("LOG_COOLDOWN_MINUTES", 60.0)) * 60.0
+                        if time.time() - last_mb_log > log_cooldown:
                             logger.info(f"🚫 [MINI-BRAIN] Tạm chặn PCA {symbol} (Chưa đồng thuận xu hướng).")
                             self.heartbeat_contexts[mb_log_key] = time.time()
 

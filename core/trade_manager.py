@@ -18,6 +18,7 @@ from core.storage_manager import (
     append_trade_log,
     get_brain_settings_for_symbol,
 )
+from core.market_hours import is_symbol_trade_window_open
 
 
 class TradeManager:
@@ -291,6 +292,10 @@ class TradeManager:
         acc_info = self.connector.get_account_info()
         brain = self._get_brain_settings(symbol)
         safeguard_cfg = brain.get("bot_safeguard", {})
+
+        is_open, closed_reason = is_symbol_trade_window_open(symbol)
+        if not is_open:
+            return f"SAFEGUARD_FAIL|Market Hours|{closed_reason}"
 
         # [NEW V4.4] KIỂM TRA ĐẢO CHIỀU TRƯỚC KHI VÀO LỆNH (Cắt lệnh ngược chiều giải phóng Margin)
         lock_until = self._check_anti_cash_reentry_lock(symbol, direction)
@@ -1722,8 +1727,27 @@ class TradeManager:
 
                 psar_val = context.get(f"psar_{trail_group}")
                 if psar_val:
-                    candidates.append((psar_val, f"PSAR ➔ {psar_val:.2f}"))
-                    tracking_modes.append("PSAR")
+                    profit_only = bool(tsl_cfg.get("PSAR_PROFIT_ONLY", True))
+                    buffer_points = float(tsl_cfg.get("PSAR_PROFIT_BUFFER_POINTS", 0))
+                    profit_floor = (
+                        pos.price_open + (buffer_points * point)
+                        if is_buy
+                        else pos.price_open - (buffer_points * point)
+                    )
+                    psar_locks_profit = (
+                        psar_val >= profit_floor if is_buy else psar_val <= profit_floor
+                    )
+
+                    if not profit_only or psar_locks_profit:
+                        candidates.append((psar_val, f"PSAR ➔ {psar_val:.2f}"))
+                        tracking_modes.append("PSAR")
+                    else:
+                        milestones.append(
+                            (
+                                abs(psar_val - profit_floor),
+                                f"PSAR Đợi BE ➔ {profit_floor:.2f}",
+                            )
+                        )
 
         if "BE" in active_modes:
             trig_r = tsl_cfg.get("BE_OFFSET_RR", 0.8)
