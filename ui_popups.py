@@ -1064,6 +1064,14 @@ def open_tsl_popup(app, override_symbol=None):
     e_psar_min_rr.pack(side="left", padx=5)
     ctk.CTkLabel(f_psar_row3, text="Min RR kích hoạt:").pack(side="left")
 
+    ctk.CTkLabel(
+        f_psar,
+        text="Min RR dung cash-R: 0.5R = loi 50% so tien risk ban dau cua lenh. Neu thieu risk USD thi fallback theo khoang gia SL.",
+        text_color="#B0BEC5",
+        font=("Roboto", 11, "italic"),
+        wraplength=760,
+    ).pack(anchor="w", padx=8, pady=(0, 4))
+
     f_psar_row4 = ctk.CTkFrame(f_psar, fg_color="transparent")
     f_psar_row4.pack(fill="x", pady=2)
     var_psar_profit_only = ctk.BooleanVar(

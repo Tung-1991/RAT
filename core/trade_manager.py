@@ -1537,6 +1537,9 @@ class TradeManager:
             current_price - pos.price_open if is_buy else pos.price_open - current_price
         )
         curr_r = curr_dist / one_r_dist
+        profit_usd = self._position_profit_usd(pos)
+        risk_usd = self._get_ticket_risk_usd(pos)
+        curr_cash_r = profit_usd / risk_usd if risk_usd > 0 else curr_r
 
         candidates = []
         milestones = []
@@ -1716,9 +1719,10 @@ class TradeManager:
         # [NEW V4.4] 2. PSAR TRAILING
         if "PSAR_TRAIL" in active_modes and context:
             psar_min_rr = float(tsl_cfg.get("PSAR_MIN_RR", 0.0))
-            if psar_min_rr > 0 and curr_r < psar_min_rr:
+            psar_trigger_r = curr_cash_r
+            if psar_min_rr > 0 and psar_trigger_r < psar_min_rr:
                 milestones.append(
-                    (abs(psar_min_rr - curr_r), f"PSAR Đợi Đủ {psar_min_rr}R")
+                    (abs(psar_min_rr - psar_trigger_r), f"PSAR Đợi Đủ {psar_min_rr}R")
                 )
             else:
                 trail_group = tsl_cfg.get("PSAR_GROUP", "G2")
