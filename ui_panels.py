@@ -520,7 +520,7 @@ def setup_right_panel(app, parent):
         "Trạng thái",
         "✖",
     ]
-    widths = [180, 180, 500, 300, 350, 450, 420, 520, 50]
+    widths = [190, 190, 560, 360, 390, 500, 470, 620, 55]
     anchors = [
         "center",
         "center",
@@ -623,8 +623,11 @@ def setup_right_panel(app, parent):
         bd=0,
         highlightthickness=0,
         state="disabled",
-        wrap="word",
+        wrap="none",
     )
+    sb_manual_x = ttk.Scrollbar(tab_manual, orient="horizontal", command=app.txt_log_manual.xview)
+    app.txt_log_manual.configure(xscrollcommand=sb_manual_x.set)
+    sb_manual_x.pack(fill="x", side="bottom")
     app.txt_log_manual.pack(fill="both", expand=True)
     app.txt_log_manual.tag_config("INFO", foreground="#b0bec5")
     app.txt_log_manual.tag_config("SUCCESS", foreground=COL_GREEN)
@@ -641,8 +644,11 @@ def setup_right_panel(app, parent):
         bd=0,
         highlightthickness=0,
         state="disabled",
-        wrap="word",
+        wrap="none",
     )
+    sb_bot_x = ttk.Scrollbar(tab_bot, orient="horizontal", command=app.txt_log_bot.xview)
+    app.txt_log_bot.configure(xscrollcommand=sb_bot_x.set)
+    sb_bot_x.pack(fill="x", side="bottom")
     app.txt_log_bot.pack(fill="both", expand=True)
     app.txt_log_bot.tag_config("INFO", foreground="#b0bec5")
     app.txt_log_bot.tag_config("SUCCESS", foreground=COL_GREEN)
@@ -659,8 +665,11 @@ def setup_right_panel(app, parent):
         bd=0,
         highlightthickness=0,
         state="disabled",
-        wrap="word",
+        wrap="none",
     )
+    sb_bot_log_x = ttk.Scrollbar(tab_bot_log, orient="horizontal", command=app.txt_log_bot_log.xview)
+    app.txt_log_bot_log.configure(xscrollcommand=sb_bot_log_x.set)
+    sb_bot_log_x.pack(fill="x", side="bottom")
     app.txt_log_bot_log.pack(fill="both", expand=True)
     app.txt_log_bot_log.tag_config("INFO", foreground="#b0bec5")
     app.txt_log_bot_log.tag_config("SUCCESS", foreground=COL_GREEN)

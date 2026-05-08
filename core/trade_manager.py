@@ -842,6 +842,12 @@ class TradeManager:
                             magics = storage_manager.get_magic_numbers()
                             bot_magic = magics.get("bot_magic", 9999)
                             is_bot = d_out.magic == bot_magic
+                            if not is_bot:
+                                is_bot = any(
+                                    marker in str(getattr(d, "comment", ""))
+                                    for d in deals
+                                    for marker in ("[BOT]", "AUTO_DCA", "AUTO_PCA")
+                                )
 
                             self.state["pnl_today"] += real_pnl
 

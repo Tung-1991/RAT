@@ -33,7 +33,8 @@ class BotStrategyUI(ctk.CTkToplevel):
         if symbol:
             title_str += f" - CẤU HÌNH CON: {symbol}"
         self.title(title_str)
-        self.geometry("1150x800")
+        self.geometry("1400x850")
+        self.minsize(1180, 720)
         self.attributes("-topmost", True)
         self.resizable(True, True)  # Khôi phục tính năng co giãn/phóng to
         if symbol:
@@ -165,13 +166,13 @@ class BotStrategyUI(ctk.CTkToplevel):
         # Bắt đầu vòng lặp cập nhật Preview
         self.after(1000, self.update_preview)
 
-        self.tab_preview = self.tabview.add("Live Preview (Data)")
-        self.tab_inds = self.tabview.add("Chỉ báo (Signals)")
-        self.tab_rules = self.tabview.add("Cấu trúc & Luật Vote (4-Tier)")
+        self.tab_preview = self.tabview.add("Preview")
+        self.tab_inds = self.tabview.add("Signals")
+        self.tab_rules = self.tabview.add("Vote Rules")
         self.tab_risk = self.tabview.add("Risk & TSL")
-        self.tab_dca_pca = self.tabview.add("Nhồi Lệnh (DCA/PCA)")
+        self.tab_dca_pca = self.tabview.add("DCA/PCA")
         if not self.override_symbol:
-            self.tab_overwrite = self.tabview.add("Overwrite (Mẹ-Con)")
+            self.tab_overwrite = self.tabview.add("Overwrite")
 
         self._build_preview_tab()
 
@@ -283,8 +284,26 @@ class BotStrategyUI(ctk.CTkToplevel):
 
         now = time.time()
         key = f"{symbol}:{grp}"
-        state = self.preview_status_cache.get(key)
+        tracker = getattr(self.master, "group_status_tracker", {})
+        state = tracker.get(key) if isinstance(tracker, dict) else None
 
+        if state:
+            try:
+                since = float(state.get("since", now))
+            except (TypeError, ValueError):
+                since = now
+            current_duration = self._format_duration(now - since)
+            prev_parts = []
+            last_duration = state.get("last_duration", {})
+            for prev_status in [1, -1, 0]:
+                if prev_status == status:
+                    continue
+                duration = last_duration.get(str(prev_status), last_duration.get(prev_status)) if isinstance(last_duration, dict) else None
+                if duration is not None:
+                    prev_parts.append(f"{self._status_text(prev_status)} - {self._format_duration(duration)}")
+            return current_duration, "Truoc: " + " | ".join(prev_parts) if prev_parts else "Truoc: --"
+
+        state = self.preview_status_cache.get(key)
         if not state:
             state = {"status": status, "since": now, "last_duration": {}}
             self.preview_status_cache[key] = state
@@ -922,9 +941,11 @@ class BotStrategyUI(ctk.CTkToplevel):
 
         self._add_hint_box(
             self.tab_risk,
-            "- Force ANY Mode bỏ qua macro/mode, phù hợp scalping muốn indicator luôn chạy.\n"
-            "- Base Risk nhân với multiplier theo Market Mode để ra risk thực tế.\n"
-            "- DYNAMIC-G1/G2 dùng G1 khi TREND/BREAKOUT, dùng G2 khi mode khác.",
+            "- Force ANY Mode: bỏ qua macro/mode, phù hợp scalping khi muốn indicator luôn chạy.\n"
+            "- Base Risk: risk gốc của bot; Market Mode multiplier sẽ nhân thêm để ra risk thực tế.\n"
+            "- Nguồn SL G0-G3: chọn group dùng Swing/ATR để cắm SL; DYNAMIC-G1/G2 dùng G1 khi TREND/BREAKOUT, còn lại dùng G2.\n"
+            "- REV_C/Close on Reverse: cắt lệnh bot khi tín hiệu đảo chiều; có thể yêu cầu giữ lệnh tối thiểu, min profit hoặc max loss.\n"
+            "- Watermark/Basket nằm ở Bot Safeguard: bảo vệ lợi nhuận toàn bot/rổ DCA-PCA, không dùng cho lệnh manual.",
             padx=20,
             pady=(10, 5),
         )
@@ -932,6 +953,8 @@ class BotStrategyUI(ctk.CTkToplevel):
         # --- [NEW] CỤM OPTIONS NÂNG CAO (SCALPING & STRICT RISK) ---
         f_adv = ctk.CTkFrame(self.tab_risk, fg_color="#2b2b2b", corner_radius=8)
         f_adv.pack(fill="x", padx=20, pady=(10, 10))
+        f_adv.grid_columnconfigure(0, weight=0)
+        f_adv.grid_columnconfigure(1, weight=1)
 
         self.var_force_any = ctk.BooleanVar(
             value=self.brain_data.get("FORCE_ANY_MODE", False)
@@ -981,14 +1004,14 @@ class BotStrategyUI(ctk.CTkToplevel):
         ).grid(row=1, column=0, padx=15, pady=10, sticky="w")
 
         f_rev_time = ctk.CTkFrame(f_adv, fg_color="transparent")
-        f_rev_time.grid(row=1, column=1, padx=15, pady=10, sticky="w")
-        ctk.CTkLabel(f_rev_time, text="Min Hold Time (s):").pack(side="left")
+        f_rev_time.grid(row=1, column=1, padx=15, pady=10, sticky="ew")
+        ctk.CTkLabel(f_rev_time, text="Min Hold Time (s):").grid(row=0, column=0, padx=(0, 5), pady=3, sticky="w")
         self.var_rev_time = ctk.StringVar(
             value=str(safe_cfg.get("CLOSE_ON_REVERSE_MIN_TIME", 180))
         )
         ctk.CTkEntry(
             f_rev_time, textvariable=self.var_rev_time, width=60, justify="center"
-        ).pack(side="left", padx=5)
+        ).grid(row=0, column=1, padx=(0, 10), pady=3, sticky="w")
 
         self.var_close_rev_pnl = ctk.BooleanVar(
             value=safe_cfg.get("CLOSE_ON_REVERSE_USE_PNL", True)
@@ -998,7 +1021,7 @@ class BotStrategyUI(ctk.CTkToplevel):
             text="Use PnL Check",
             variable=self.var_close_rev_pnl,
             font=("Roboto", 12),
-        ).pack(side="left", padx=(15, 5))
+        ).grid(row=0, column=2, padx=(0, 10), pady=3, sticky="w")
 
         self.var_rev_none = ctk.BooleanVar(
             value=safe_cfg.get("REV_CLOSE_ON_NONE", False)
@@ -1008,33 +1031,33 @@ class BotStrategyUI(ctk.CTkToplevel):
             text="NONE cũng cắt",
             variable=self.var_rev_none,
             font=("Roboto", 12),
-        ).pack(side="left", padx=(10, 5))
+        ).grid(row=0, column=3, padx=(0, 10), pady=3, sticky="w")
 
-        ctk.CTkLabel(f_rev_time, text="Min Profit ($):").pack(side="left")
+        ctk.CTkLabel(f_rev_time, text="Min Profit ($):").grid(row=1, column=0, padx=(0, 5), pady=3, sticky="w")
         self.var_rev_profit = ctk.StringVar(
             value=str(safe_cfg.get("REV_CLOSE_MIN_PROFIT", 0.0))
         )
         ctk.CTkEntry(
             f_rev_time, textvariable=self.var_rev_profit, width=50, justify="center"
-        ).pack(side="left", padx=5)
+        ).grid(row=1, column=1, padx=(0, 5), pady=3, sticky="w")
         self.cbo_rev_profit_unit = ctk.CTkOptionMenu(
             f_rev_time, values=["USD", "%R", "%Equity"], width=85
         )
         self.cbo_rev_profit_unit.set(safe_cfg.get("REV_CLOSE_MIN_PROFIT_UNIT", "USD"))
-        self.cbo_rev_profit_unit.pack(side="left", padx=(0, 5))
+        self.cbo_rev_profit_unit.grid(row=1, column=2, padx=(0, 10), pady=3, sticky="w")
 
-        ctk.CTkLabel(f_rev_time, text="Max Loss (-$):").pack(side="left", padx=(10, 0))
+        ctk.CTkLabel(f_rev_time, text="Max Loss (-$):").grid(row=1, column=3, padx=(0, 5), pady=3, sticky="w")
         self.var_rev_loss = ctk.StringVar(
             value=str(safe_cfg.get("REV_CLOSE_MAX_LOSS", 0.0))
         )
         ctk.CTkEntry(
             f_rev_time, textvariable=self.var_rev_loss, width=50, justify="center"
-        ).pack(side="left", padx=5)
+        ).grid(row=1, column=4, padx=(0, 5), pady=3, sticky="w")
         self.cbo_rev_loss_unit = ctk.CTkOptionMenu(
             f_rev_time, values=["USD", "%R", "%Equity"], width=85
         )
         self.cbo_rev_loss_unit.set(safe_cfg.get("REV_CLOSE_MAX_LOSS_UNIT", "USD"))
-        self.cbo_rev_loss_unit.pack(side="left", padx=(0, 5))
+        self.cbo_rev_loss_unit.grid(row=1, column=5, padx=(0, 5), pady=3, sticky="w")
         # -------------------------------------------------------------
 
         f_base = ctk.CTkFrame(self.tab_risk, fg_color="transparent")

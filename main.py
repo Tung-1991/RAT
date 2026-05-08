@@ -124,6 +124,7 @@ class BotUI(ctk.CTk):
         self.tsl_states_map = {}
         self.last_price_val = 0.0
         self.latest_market_context = {}
+        self.group_status_tracker = {}
 
         self.brain_status = "CHỜ KẾT NỐI..."
         self.brain_wakeup_time = 0
@@ -136,9 +137,9 @@ class BotUI(ctk.CTk):
         self.connector = ExnessConnector()
         self.connector.connect()
         
+        import core.storage_manager as storage_manager
         acc_info = self.connector.get_account_info()
         if acc_info:
-            import core.storage_manager as storage_manager
             storage_manager.set_active_account(acc_info['login'])
             
             # [V6.9.4] Cập nhật lại đường dẫn file cho đúng thư mục workspace
@@ -154,6 +155,7 @@ class BotUI(ctk.CTk):
             self.log_message("⚠️ Không thể xác định Account ID. Dùng Workspace mặc định.", error=True)
 
         # Khởi chạy luồng theo dõi Daemon Log
+        self.group_status_tracker = storage_manager.load_group_status_tracker()
         threading.Thread(target=self._tail_daemon_logs, daemon=True).start()
 
         self.load_settings()
@@ -296,6 +298,13 @@ class BotUI(ctk.CTk):
         contexts = heartbeat.get("contexts", {})
         if contexts:
             self.latest_market_context = contexts
+            try:
+                import core.storage_manager as storage_manager
+                self.group_status_tracker = storage_manager.update_group_status_tracker(
+                    contexts, self.group_status_tracker
+                )
+            except Exception:
+                pass
 
     def on_auto_trade_toggle(self):
         # [FIX] Ép lưu cấu hình ngay lập tức để Daemon ngầm nhận được tín hiệu
@@ -559,6 +568,7 @@ class BotUI(ctk.CTk):
                         TSL_SETTINGS_FILE = os.path.join(storage_manager._active_account_dir, "tsl_settings.json")
                         PRESETS_FILE = os.path.join(storage_manager._active_account_dir, "presets_config.json")
                         BRAIN_SETTINGS_FILE = storage_manager.BRAIN_FILE
+                        self.group_status_tracker = storage_manager.load_group_status_tracker()
                         
                         # Reset State
                         self.trade_mgr.state = {
@@ -1214,6 +1224,10 @@ class BotUI(ctk.CTk):
             tag = "INFO"
 
         # [NEW V4.4 FINAL] Tự động định tuyến log của bot vào 2 Tab (BOT và BOT-LOG)
+        bot_markers = ("[BOT]", "[BOT]_", "[BOT-DCA]", "[BOT-PCA]", "AUTO_DCA", "AUTO_PCA", "BOT SAFEGUARD")
+        if target == "manual" and any(k in msg for k in bot_markers):
+            target = "bot"
+
         if target == "bot":
             if any(
                 k in msg

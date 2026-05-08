@@ -6,7 +6,7 @@ import time
 import copy
 import threading
 from datetime import datetime, timedelta
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import config 
 
 STATE_FILE = "data/bot_state.json"
@@ -15,6 +15,7 @@ HISTORY_FILE = "data/trade_history_log.csv"
 MASTER_LOG_FILE = "data/trade_history_master.csv"
 SYMBOL_OVERRIDES_FILE = "data/symbol_overrides.json"
 SYSTEM_META_FILE = "data/system_meta.json"
+GROUP_STATUS_TRACKER_FILE = "data/group_status_tracker.json"
 
 _active_account_dir = "data"
 _active_account_id = None
@@ -36,7 +37,7 @@ def _merge_timestamp_map(state: Dict[str, Any], current_state: Dict[str, Any], k
 
 def set_active_account(account_id: str):
     global _active_account_dir, _active_account_id
-    global STATE_FILE, BRAIN_FILE, HISTORY_FILE, MASTER_LOG_FILE, SYMBOL_OVERRIDES_FILE, SYSTEM_META_FILE
+    global STATE_FILE, BRAIN_FILE, HISTORY_FILE, MASTER_LOG_FILE, SYMBOL_OVERRIDES_FILE, SYSTEM_META_FILE, GROUP_STATUS_TRACKER_FILE
     
     _active_account_id = str(account_id)
     _active_account_dir = os.path.join("data", str(account_id))
@@ -48,8 +49,87 @@ def set_active_account(account_id: str):
     MASTER_LOG_FILE = os.path.join(_active_account_dir, "trade_history_master.csv")
     SYMBOL_OVERRIDES_FILE = os.path.join(_active_account_dir, "symbol_overrides.json")
     SYSTEM_META_FILE = os.path.join(_active_account_dir, "system_meta.json")
+    GROUP_STATUS_TRACKER_FILE = os.path.join(_active_account_dir, "group_status_tracker.json")
     
     invalidate_settings_cache()
+
+def load_group_status_tracker() -> Dict[str, Any]:
+    if not os.path.exists(GROUP_STATUS_TRACKER_FILE):
+        return {}
+    try:
+        with open(GROUP_STATUS_TRACKER_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+def save_group_status_tracker(tracker: Dict[str, Any]):
+    os.makedirs(os.path.dirname(GROUP_STATUS_TRACKER_FILE), exist_ok=True)
+    tmp_file = f"{GROUP_STATUS_TRACKER_FILE}.tmp"
+    with open(tmp_file, "w", encoding="utf-8") as f:
+        json.dump(tracker, f, indent=2, ensure_ascii=False)
+    os.replace(tmp_file, GROUP_STATUS_TRACKER_FILE)
+
+def update_group_status_tracker(contexts: Dict[str, Any], tracker: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    QOL-only tracker for Sandbox preview status duration.
+    It observes group_details status and never feeds trading decisions.
+    """
+    if tracker is None:
+        tracker = load_group_status_tracker()
+    if not isinstance(contexts, dict):
+        return tracker
+
+    now = time.time()
+    changed = False
+    for symbol, ctx in contexts.items():
+        if not isinstance(ctx, dict):
+            continue
+        group_details = ctx.get("group_details", {})
+        if not isinstance(group_details, dict):
+            continue
+        for grp in ["G0", "G1", "G2", "G3"]:
+            data = group_details.get(grp, {})
+            if not isinstance(data, dict):
+                continue
+            try:
+                status = int(data.get("status", 0))
+            except (TypeError, ValueError):
+                status = 0
+            key = f"{symbol}:{grp}"
+            state = tracker.get(key)
+            if not isinstance(state, dict):
+                tracker[key] = {
+                    "status": status,
+                    "since": now,
+                    "last_duration": {},
+                    "updated_at": now,
+                }
+                changed = True
+                continue
+
+            try:
+                prev_status = int(state.get("status", 0))
+            except (TypeError, ValueError):
+                prev_status = 0
+            if prev_status != status:
+                try:
+                    prev_since = float(state.get("since", now))
+                except (TypeError, ValueError):
+                    prev_since = now
+                last_duration = state.setdefault("last_duration", {})
+                if not isinstance(last_duration, dict):
+                    last_duration = {}
+                    state["last_duration"] = last_duration
+                last_duration[str(prev_status)] = max(0.0, now - prev_since)
+                state["status"] = status
+                state["since"] = now
+                state["updated_at"] = now
+                changed = True
+
+    if changed:
+        save_group_status_tracker(tracker)
+    return tracker
 
 def get_magic_numbers() -> Dict[str, int]:
     """
