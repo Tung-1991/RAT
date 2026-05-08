@@ -191,6 +191,11 @@ TSL_CONFIG = {
     "BE_MODE": "SOFT",
     "BE_OFFSET_RR": 0.8,
     "BE_OFFSET_POINTS": 0,
+    "BE_SL_LOSS_ENABLE": False,
+    "BE_SL_LOSS_UNIT": "USD",
+    "BE_SL_LOSS_TRIGGER": 10.0,
+    "BE_SL_LOSS_STEP": 2.0,
+    "BE_SL_LOSS_ACTION": "ARM_CLOSE",
     "ONE_TIME_BE": False,  # [NEW V4.4] Chỉ kích hoạt BE/BE_CASH 1 lần duy nhất
     "PNL_LEVELS": [[0.5, 0.1], [1.0, 0.5], [2.0, 1.2]],
     "STEP_R_SIZE": 1.0,

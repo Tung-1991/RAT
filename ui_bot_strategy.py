@@ -235,7 +235,7 @@ class BotStrategyUI(ctk.CTkToplevel):
         ctk.CTkLabel(
             hint_f,
             text=text,
-            font=("Roboto", 13, "italic"),
+            font=("Arial", 13, "italic"),
             text_color="#FFD600",
             justify="left",
             anchor="w",
@@ -532,7 +532,7 @@ class BotStrategyUI(ctk.CTkToplevel):
             # Cập nhật Block Reason (Highlight lý do chặn)
             block_reason = context.get("block_reason", "OK / Ready")
             reason_color = "#00C853" if "OK" in block_reason else "#FFAB00"
-            self.master_reason_lbl.configure(text=f"Lý do: {block_reason}", text_color=reason_color)
+            self.master_reason_lbl.configure(text=f"L� do: {block_reason}", text_color=reason_color)
 
         except Exception as e:
             pass
@@ -569,7 +569,7 @@ class BotStrategyUI(ctk.CTkToplevel):
             color = "#00C853" if has_override else "#424242"
             btn = ctk.CTkButton(
                 grid_frame,
-                text=f"{sym} {'(Có)' if has_override else ''}",
+                text=f"{sym} {'(C�)' if has_override else ''}",
                 fg_color=color,
                 command=lambda s=sym: self._open_symbol_override_ui(s)
             )
@@ -615,7 +615,7 @@ class BotStrategyUI(ctk.CTkToplevel):
             "ON",
             "Nhóm (Đa chọn)",
             "Trend Compass",
-            "Vai trò Macro",
+            "Vai tr� Macro",
             "Chạy khi (Mode)",
             "Trigger Mode",
             "Thông số",
@@ -828,7 +828,7 @@ class BotStrategyUI(ctk.CTkToplevel):
         ).grid(row=0, column=1, padx=5, pady=5)
 
         ctk.CTkLabel(
-            top_frame, text="Min Votes (Dùng cho VOTING):", font=("Roboto", 12, "bold")
+            top_frame, text="Min Votes (D�ng cho VOTING):", font=("Roboto", 12, "bold")
         ).grid(row=0, column=2, padx=20, pady=5, sticky="w")
         self.min_votes_var = ctk.StringVar(
             value=str(self.brain_data.get("MIN_MATCHING_VOTES", 3))
@@ -1309,7 +1309,7 @@ class BotStrategyUI(ctk.CTkToplevel):
 
         ctk.CTkLabel(
             cd_frame,
-            text="DCA/PCA Cooldown (giây):",
+            text="DCA/PCA Cooldown (gi�y):",
             font=("Roboto", 12, "bold"),
             text_color="#29B6F6",
         ).grid(row=0, column=0, padx=10, pady=10, sticky="w")
@@ -1516,7 +1516,7 @@ class BotStrategyUI(ctk.CTkToplevel):
                     widget.destroy()
                 self._build_ui()
                 messagebox.showinfo(
-                    "Thành công",
+                    "Th�nh c�ng",
                     "Đã nạp Template thành công. Hãy bấm LƯU & ÁP DỤNG để kích hoạt!",
                     parent=self
                 )
@@ -1536,6 +1536,6 @@ class BotStrategyUI(ctk.CTkToplevel):
             if file_path:
                 with open(file_path, "w", encoding="utf-8") as f:
                     json.dump(output_data, f, indent=4)
-                messagebox.showinfo("Thành công", f"Đã lưu Template tại:\n{file_path}", parent=self)
+                messagebox.showinfo("Th�nh c�ng", f"Đã lưu Template tại:\n{file_path}", parent=self)
         except Exception as e:
             messagebox.showerror("Lỗi", f"Lỗi lưu Template:\n{e}", parent=self)

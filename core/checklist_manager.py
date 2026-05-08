@@ -320,7 +320,13 @@ class ChecklistManager:
 
         magics = storage_manager.get_magic_numbers()
         bot_magic = magics.get("bot_magic", 9999)
+        grid_magic = magics.get("grid_magic")
         all_bot_pos = [p for p in positions if p.magic == bot_magic]
+        all_bot_pos = [
+            p
+            for p in all_bot_pos
+            if p.magic != grid_magic and "[GRID]" not in str(getattr(p, "comment", ""))
+        ]
 
         # [KAISER FIX] Chỉ đếm các lệnh Gốc (ENTRY), bỏ qua lệnh con (DCA/PCA) khi check giới hạn
         parent_bot_pos = [

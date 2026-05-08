@@ -47,6 +47,8 @@ class TradeManager:
             self.state["trade_excursions"] = {}
         if "anti_cash_locks" not in self.state:
             self.state["anti_cash_locks"] = {}
+        if "be_sl_arms" not in self.state:
+            self.state["be_sl_arms"] = {}
 
         # [NEW V4.4] Tracking chuyên sâu cho Cooldown và Log
         if "exit_reasons" not in self.state:
@@ -206,12 +208,18 @@ class TradeManager:
 
         magics = storage_manager.get_magic_numbers()
         bot_magic = magics.get("bot_magic", 9999)
+        grid_magic = magics.get("grid_magic")
         safe_cfg = self._get_brain_settings(symbol).get("bot_safeguard", {})
 
         positions = [
             p
             for p in self.connector.get_all_open_positions()
-            if p.symbol == symbol and p.magic == bot_magic
+            if (
+                p.symbol == symbol
+                and p.magic == bot_magic
+                and p.magic != grid_magic
+                and "[GRID]" not in str(getattr(p, "comment", ""))
+            )
         ]
         opposite_type = (
             mt5.ORDER_TYPE_SELL if new_direction == "BUY" else mt5.ORDER_TYPE_BUY
@@ -841,13 +849,18 @@ class TradeManager:
 
                             magics = storage_manager.get_magic_numbers()
                             bot_magic = magics.get("bot_magic", 9999)
-                            is_bot = d_out.magic == bot_magic
+                            grid_magic = magics.get("grid_magic")
+                            is_grid = d_out.magic == grid_magic or any(
+                                "[GRID]" in str(getattr(d, "comment", ""))
+                                for d in deals
+                            )
+                            is_bot = d_out.magic == bot_magic and not is_grid
                             if not is_bot:
                                 is_bot = any(
                                     marker in str(getattr(d, "comment", ""))
                                     for d in deals
                                     for marker in ("[BOT]", "AUTO_DCA", "AUTO_PCA")
-                                )
+                                ) and not is_grid
 
                             self.state["pnl_today"] += real_pnl
 
@@ -907,7 +920,7 @@ class TradeManager:
                                     self.state["bot_daily_loss_count"] = (
                                         self.state.get("bot_daily_loss_count", 0) + 1
                                     )
-                            else:
+                            elif not is_grid:
                                 self.state["manual_pnl_today"] = (
                                     self.state.get("manual_pnl_today", 0) + real_pnl
                                 )
@@ -1007,7 +1020,7 @@ class TradeManager:
                                 mae_usd=mae_usd,
                                 mfe_usd=mfe_usd,
                             )
-                            log_target = "bot" if is_bot else "manual"
+                            log_target = "grid" if is_grid else ("bot" if is_bot else "manual")
                             src_txt = f" | Src: {trigger_signal}" if trigger_signal else ""
                             self.log(
                                 f"[DỌN DẸP] Đóng lệnh {pos_type_str} {d_out.symbol} #{ticket} ({exit_reason}) | PnL: {pnl_sign}${real_pnl:.2f}{src_txt}",
@@ -1085,8 +1098,13 @@ class TradeManager:
             magics = storage_manager.get_magic_numbers()
             bot_magic = magics.get("bot_magic", 9999)
             manual_magic = magics.get("manual_magic", 8888)
+            grid_magic = magics.get("grid_magic")
             tracked_positions = [
-                p for p in current_positions if p.magic in (bot_magic, manual_magic)
+                p
+                for p in current_positions
+                if p.magic in (bot_magic, manual_magic)
+                and p.magic != grid_magic
+                and "[GRID]" not in str(getattr(p, "comment", ""))
             ]
 
             needs_save = False
@@ -1565,6 +1583,90 @@ class TradeManager:
             if "BE_CASH" in active_modes:
                 active_modes.remove("BE_CASH")
 
+        if "BE" in active_modes and tsl_cfg.get("BE_SL_LOSS_ENABLE", False):
+            s_ticket = str(pos.ticket)
+            acc = self.connector.get_account_info()
+            balance = acc.get("balance", 0.0) if acc else 0.0
+
+            def resolve_be_sl_cash(value, unit):
+                raw = float(value or 0.0)
+                unit = str(unit or "USD").upper()
+                if unit == "PERCENT":
+                    return balance * (raw / 100.0) if balance > 0 else raw
+                if unit == "POINT":
+                    return raw * point * pos.volume * sym_info.trade_contract_size
+                return raw
+
+            loss_unit = tsl_cfg.get("BE_SL_LOSS_UNIT", "USD")
+            loss_trigger_usd = resolve_be_sl_cash(
+                tsl_cfg.get("BE_SL_LOSS_TRIGGER", 10.0), loss_unit
+            )
+            loss_step_usd = resolve_be_sl_cash(
+                tsl_cfg.get("BE_SL_LOSS_STEP", 2.0), loss_unit
+            )
+            if loss_trigger_usd > 0 and loss_step_usd > 0:
+                arms = self.state.setdefault("be_sl_arms", {})
+                arm = arms.get(s_ticket)
+                loss_usd = max(-profit_usd, 0.0)
+                recover_pnl = -max(loss_trigger_usd - loss_step_usd, 0.0)
+                cut_loss_usd = loss_trigger_usd + loss_step_usd
+
+                if not arm and loss_usd >= loss_trigger_usd:
+                    arm = {
+                        "armed_at": time.time(),
+                        "trigger_pnl": profit_usd,
+                        "worst_pnl": profit_usd,
+                    }
+                    arms[s_ticket] = arm
+                    save_state(self.state)
+                    self.log(
+                        f"[BE_SL] Arm #{pos.ticket}: PnL ${profit_usd:.2f} <= -${loss_trigger_usd:.2f}",
+                        target="bot",
+                    )
+
+                if arm:
+                    arm["worst_pnl"] = min(float(arm.get("worst_pnl", profit_usd)), profit_usd)
+                    if profit_usd >= recover_pnl:
+                        del arms[s_ticket]
+                        save_state(self.state)
+                        self.log(
+                            f"[BE_SL] Cancel #{pos.ticket}: PnL hồi về ${profit_usd:.2f} >= ${recover_pnl:.2f}",
+                            target="bot",
+                        )
+                    elif loss_usd >= cut_loss_usd:
+                        action = tsl_cfg.get("BE_SL_LOSS_ACTION", "ARM_CLOSE")
+                        if action == "TIGHTEN_SL":
+                            min_stop_dist = getattr(sym_info, "trade_stops_level", 0) * point
+                            guard_dist = max(min_stop_dist, point)
+                            guard_sl = current_price - guard_dist if is_buy else current_price + guard_dist
+                            candidates.append((guard_sl, "BE_SL Guard"))
+                        else:
+                            self.log(
+                                f"[BE_SL] Cut #{pos.ticket}: PnL ${profit_usd:.2f} <= -${cut_loss_usd:.2f}",
+                                target="bot",
+                            )
+                            self.state["exit_reasons"][s_ticket] = "BE_SL_Loss_Step"
+                            arms.pop(s_ticket, None)
+                            save_state(self.state)
+                            threading.Thread(
+                                target=self.connector.close_position, args=(pos,), daemon=True
+                            ).start()
+                            return f"BE_SL Cắt lỗ ${profit_usd:.2f}"
+                    else:
+                        milestones.append(
+                            (
+                                min(abs(loss_usd - cut_loss_usd), abs(profit_usd - recover_pnl)),
+                                f"BE_SL armed: cắt -${cut_loss_usd:.2f} / xóa ${recover_pnl:.2f}",
+                            )
+                        )
+                else:
+                    milestones.append(
+                        (
+                            max(loss_trigger_usd - loss_usd, 0.0),
+                            f"BE_SL Đợi loss -${loss_trigger_usd:.2f}",
+                        )
+                    )
+
         # [NEW V4.4] 1. BE_HARD_CASH (2 Giai đoạn: Trigger BE -> Trailing Step)
         if "BE_CASH" in active_modes:
             be_type = tsl_cfg.get("BE_CASH_TYPE", "USD")  # USD, PERCENT, POINT
@@ -1773,10 +1875,10 @@ class TradeManager:
             )
 
             if curr_r >= trig_r:
-                candidates.append((be_sl, "BE"))
+                candidates.append((be_sl, "BE_SL"))
             else:
                 milestones.append(
-                    (abs(curr_r - trig_r), f"BE Đợi {trig_p:.2f} ➔ {be_sl:.2f}")
+                    (abs(curr_r - trig_r), f"BE_SL Đợi {trig_p:.2f} ➔ {be_sl:.2f}")
                 )
 
         if "STEP_R" in active_modes:

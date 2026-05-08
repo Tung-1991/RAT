@@ -58,7 +58,7 @@ def open_indicator_config_popup(
     ctk.CTkLabel(
         top,
         text="GLOBAL la mac dinh. G0-G3 chi luu override khi khac GLOBAL.",
-        font=("Roboto", 12, "italic"),
+        font=("Arial", 12, "italic"),
         text_color="#BDBDBD",
     ).pack(pady=(0, 8))
 
@@ -80,7 +80,7 @@ def open_indicator_config_popup(
             ctk.CTkLabel(
                 scroll_frame,
                 text="Indicator nay khong co params tuy chinh.",
-                font=("Roboto", 13, "italic"),
+                font=("Arial", 13, "italic"),
                 text_color="gray",
             ).grid(row=0, column=0, columnspan=2, padx=15, pady=20)
             entries_by_scope[scope] = entries

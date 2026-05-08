@@ -21,6 +21,9 @@ from core.checklist_manager import ChecklistManager
 from core.trade_manager import TradeManager
 from core.storage_manager import load_state, save_state
 from core.signal_listener import SignalListener
+from core.data_engine import data_engine
+from signals.signal_generator import signal_generator
+from grid.grid_manager import GridManager
 import traceback
 
 def handle_exception(exc_type, exc_value, exc_traceback):
@@ -107,6 +110,9 @@ class BotUI(ctk.CTk):
             value=config.MANUAL_CONFIG["BYPASS_CHECKLIST"]
         )
         self.var_direction = tk.StringVar(value="BUY")
+        self.var_manual_trade_mode = tk.StringVar(value="NORMAL")
+        self.var_grid_manual_mode = tk.StringVar(value="NEUTRAL")
+        self.var_grid_bypass_signal = tk.BooleanVar(value=False)
 
         self.tactic_states = {
             "BE": True,
@@ -164,6 +170,12 @@ class BotUI(ctk.CTk):
         self.checklist_mgr = ChecklistManager(self.connector)
         self.trade_mgr = TradeManager(
             self.connector, self.checklist_mgr, log_callback=self.log_message
+        )
+        self.grid_mgr = GridManager(
+            self.connector,
+            data_engine=data_engine,
+            signal_generator=signal_generator,
+            log_callback=self.log_message,
         )
 
         self.grid_columnconfigure(0, weight=0, minsize=420)
@@ -333,7 +345,10 @@ class BotUI(ctk.CTk):
         return base_tactic
 
     def toggle_tactic(self, mode):
-        self.tactic_states[mode] = not self.tactic_states[mode]
+        next_state = not self.tactic_states[mode]
+        self.tactic_states[mode] = next_state
+        if mode == "BE_CASH" and next_state:
+            self.tactic_states["BE"] = False
         self.update_tactic_buttons_ui()
 
     def update_tactic_buttons_ui(self):
@@ -368,6 +383,13 @@ class BotUI(ctk.CTk):
     def on_direction_change(self, value):
         self.var_direction.set(value)
         sym = self.cbo_symbol.get()
+        if getattr(self, "var_manual_trade_mode", None) and self.var_manual_trade_mode.get() == "GRID":
+            self.btn_action.configure(
+                text=f"START GRID {self.var_grid_manual_mode.get()} {sym}",
+                fg_color="#00838F",
+                hover_color="#006064",
+            )
+            return
         if value == "BUY":
             self.btn_action.configure(
                 text=f"VÀO LỆNH MUA {sym}", fg_color=COL_GREEN, hover_color="#009624"
@@ -376,6 +398,45 @@ class BotUI(ctk.CTk):
             self.btn_action.configure(
                 text=f"VÀO LỆNH BÁN {sym}", fg_color=COL_RED, hover_color="#B71C1C"
             )
+
+    def on_grid_mode_change(self, value):
+        self.var_grid_manual_mode.set(value)
+        if self.var_manual_trade_mode.get() == "GRID":
+            sym = self.cbo_symbol.get()
+            self.btn_action.configure(
+                text=f"START GRID {value} {sym}",
+                fg_color="#00838F",
+                hover_color="#006064",
+            )
+
+    def on_manual_trade_mode_change(self, value):
+        self.var_manual_trade_mode.set(value)
+        if hasattr(self, "btn_mode_normal") and hasattr(self, "btn_mode_grid"):
+            normal_on = value == "NORMAL"
+            self.btn_mode_normal.configure(
+                fg_color="#00838F" if normal_on else "#424242",
+                hover_color="#006064" if normal_on else "#616161",
+            )
+            self.btn_mode_grid.configure(
+                fg_color="#00838F" if not normal_on else "#424242",
+                hover_color="#006064" if not normal_on else "#616161",
+            )
+        if value == "GRID":
+            if hasattr(self, "seg_direction"):
+                self.seg_direction.pack_forget()
+            if hasattr(self, "seg_grid_mode"):
+                self.seg_grid_mode.pack(fill="x", padx=10, pady=(5, 5), before=self.btn_action)
+            if hasattr(self, "chk_grid_bypass"):
+                self.chk_grid_bypass.pack(anchor="w", padx=12, pady=(0, 5), before=self.btn_action)
+            self.on_grid_mode_change(self.var_grid_manual_mode.get())
+        else:
+            if hasattr(self, "seg_grid_mode"):
+                self.seg_grid_mode.pack_forget()
+            if hasattr(self, "chk_grid_bypass"):
+                self.chk_grid_bypass.pack_forget()
+            if hasattr(self, "seg_direction"):
+                self.seg_direction.pack(fill="x", padx=10, pady=(5, 5), before=self.btn_action)
+            self.on_direction_change(self.seg_direction.get())
 
     # ==========================================
     # CÁC HÀM MỞ POPUP & GIAO DIỆN PHỤ
@@ -410,6 +471,9 @@ class BotUI(ctk.CTk):
             sandbox_window.destroy()
 
         sandbox_window.protocol("WM_DELETE_WINDOW", on_sandbox_close)
+
+    def open_advanced_tools_popup(self):
+        ui_popups.open_advanced_tools_popup(self)
 
     # ==========================================
     # LOG TAILER - THEO DÕI DAEMON VÀ HIỂN THỊ LÊN UI
@@ -448,7 +512,7 @@ class BotUI(ctk.CTk):
         if not line: return
         
         # Nhận diện các sự kiện quan trọng (Vào lệnh, Chốt lệnh, Watermark)
-        if "BÓP CÒ" in line or "WATERMARK" in line or "ĐÓNG LỆNH" in line or "REVERSE TACTIC" in line:
+        if "B�P C�" in line or "WATERMARK" in line or "ĐÓNG LỆNH" in line or "REVERSE TACTIC" in line:
             # Cắt bớt phần timestamp của daemon nếu có
             msg = line.split("] - ")[-1] if "] - " in line else line
             self.log_message(f"[DAEMON] {msg}", target="bot")
@@ -587,11 +651,12 @@ class BotUI(ctk.CTk):
                 magics = storage_manager.get_magic_numbers()
                 bot_magic = magics.get("bot_magic", 9999)
                 manual_magic = magics.get("manual_magic", 8888)
+                grid_magic = magics.get("grid_magic")
                 
                 pos = [
                     p
                     for p in self.connector.get_all_open_positions()
-                    if p.magic in (bot_magic, manual_magic)
+                    if p.magic in (bot_magic, manual_magic, grid_magic)
                 ]
                 self.after(
                     0,
@@ -847,9 +912,9 @@ class BotUI(ctk.CTk):
             spread_cost = (tick.ask - tick.bid) * f_lot * c_size
             acc_type = self.cbo_account_type.get()
             if acc_type in ["PRO", "STANDARD"]:
-                self.lbl_fee_info.configure(text=f"Chi phí (Spread): -${spread_cost:.2f}")
+                self.lbl_fee_info.configure(text=f"Chi ph� (Spread): -${spread_cost:.2f}")
             else:
-                self.lbl_fee_info.configure(text=f"Chi phí (Comm): -${comm_total:.2f}")
+                self.lbl_fee_info.configure(text=f"Chi ph� (Comm): -${comm_total:.2f}")
 
             # 5. HIỂN THỊ RỦI RO LÊN GIAO DIỆN
             is_valid_sl = True
@@ -894,7 +959,8 @@ class BotUI(ctk.CTk):
                 is_buy = d == "BUY"
                 t_cfg = config.TSL_CONFIG
 
-                if "BE" in cur_tactic_str and one_r_dist > 0:
+                cur_tactic_modes = cur_tactic_str.split("+")
+                if "BE" in cur_tactic_modes and one_r_dist > 0:
                     trig_r = t_cfg.get("BE_OFFSET_RR", 0.8)
                     trig_p = (
                         cur_price + (one_r_dist * trig_r)
@@ -928,7 +994,7 @@ class BotUI(ctk.CTk):
                         else base - (t_cfg.get("BE_OFFSET_POINTS", 0) * point)
                     )
                     milestones.append(
-                        (abs(cur_price - trig_p), f"BE | {trig_p:.2f} -> {be_sl:.2f}")
+                        (abs(cur_price - trig_p), f"BE_SL | {trig_p:.2f} -> {be_sl:.2f}")
                     )
 
                 if "STEP_R" in cur_tactic_str and one_r_dist > 0:
@@ -1034,7 +1100,16 @@ class BotUI(ctk.CTk):
                 display_ticket = f" ┗━ #{ticket_str}"
 
             origin_tag = "[UI]"
-            if "[BOT]_AUTO_DCA" in p.comment:
+            is_grid = "[GRID]" in str(p.comment)
+            try:
+                import core.storage_manager as storage_manager
+                is_grid = is_grid or p.magic == storage_manager.get_magic_numbers().get("grid_magic")
+            except Exception:
+                pass
+
+            if is_grid:
+                origin_tag = "[GRID]"
+            elif "[BOT]_AUTO_DCA" in p.comment:
                 origin_tag = "[BOT-DCA]"
             elif "[BOT]_AUTO_PCA" in p.comment:
                 origin_tag = "[BOT-PCA]"
@@ -1073,27 +1148,33 @@ class BotUI(ctk.CTk):
             stt_txt = self.tsl_states_map.get(p.ticket, "Running")
 
             # [KAISER FIX] Hiển thị rõ loại lệnh con trên Status nếu là lệnh DCA/PCA
-            if "[BOT]_AUTO_DCA" in p.comment:
+            if is_grid:
+                if "[GRID]_CHILD" in str(p.comment):
+                    stt_txt = "GRID Child"
+                else:
+                    stt_txt = "GRID Running"
+            elif "[BOT]_AUTO_DCA" in p.comment:
                 stt_txt = "DCA Child"
             elif "[BOT]_AUTO_PCA" in p.comment:
                 stt_txt = "PCA Child"
             else:
                 tactic_info = self.trade_mgr.get_trade_tactic(p.ticket)
                 tactic_badges = []
-                if "BE_CASH" in tactic_info:
+                tactic_modes = tactic_info.split("+")
+                if "BE_CASH" in tactic_modes:
                     tactic_badges.append("BE_CASH")
-                elif "BE" in tactic_info:
-                    tactic_badges.append("BE")
-                if "PSAR_TRAIL" in tactic_info:
+                elif "BE" in tactic_modes:
+                    tactic_badges.append("BE_SL")
+                if "PSAR_TRAIL" in tactic_modes:
                     tactic_badges.append("PSAR")
-                if "ANTI_CASH" in tactic_info:
+                if "ANTI_CASH" in tactic_modes:
                     tactic_badges.append("ANTI")
-                if "REV_C" in tactic_info:
+                if "REV_C" in tactic_modes:
                     tactic_badges.append("REV")
                 stt_extras = []
-                if "AUTO_DCA" in tactic_info:
+                if "AUTO_DCA" in tactic_modes:
                     stt_extras.append("DCA")
-                if "AUTO_PCA" in tactic_info:
+                if "AUTO_PCA" in tactic_modes:
                     stt_extras.append("PCA")
                 if stt_extras:
                     tactic_badges.append("+".join(stt_extras))
@@ -1123,7 +1204,7 @@ class BotUI(ctk.CTk):
                 stt_txt,
                 "❌",
             )
-            tag_to_apply = "buy_row" if is_buy else "sell_row"
+            tag_to_apply = "grid_row" if is_grid else ("buy_row" if is_buy else "sell_row")
 
             if ticket_str in existing_items:
                 self.tree.item(ticket_str, values=values_data, tags=(tag_to_apply,))
@@ -1144,6 +1225,30 @@ class BotUI(ctk.CTk):
         )
 
     def on_click_trade(self):
+        if getattr(self, "var_manual_trade_mode", None) and self.var_manual_trade_mode.get() == "GRID":
+            symbol = self.cbo_symbol.get()
+            mode = self.var_grid_manual_mode.get()
+            context = self.latest_market_context.get(symbol, {})
+
+            def run_grid_thread():
+                result = self.grid_mgr.start_manual_session(
+                    symbol,
+                    mode=mode,
+                    bypass_signal=self.var_grid_bypass_signal.get(),
+                    context=context,
+                )
+                if "SUCCESS" in result:
+                    scan_result = self.grid_mgr.scan([symbol], {symbol: context})
+                    self.log_message(
+                        f"[GRID] Manual {mode} session started for {symbol}. Scan actions: {scan_result.get('actions', [])}",
+                        target="grid",
+                    )
+                else:
+                    self.log_message(f"[GRID] START failed: {result}", error=True, target="grid")
+
+            threading.Thread(target=run_grid_thread, daemon=True).start()
+            return
+
         d, s, p, t = (
             self.seg_direction.get(),
             self.cbo_symbol.get(),
@@ -1210,7 +1315,7 @@ class BotUI(ctk.CTk):
         ts = time.strftime("%H:%M:%S")
         txt = f"[{ts}] {msg}\n"
 
-        if "PnL: +$" in msg or "SUCCESS" in msg or "Húp" in msg:
+        if "PnL: +$" in msg or "SUCCESS" in msg or "H�p" in msg:
             tag = "SUCCESS"
         elif "PnL: $-" in msg or error or "ERR" in msg or "FAIL" in msg:
             tag = "ERROR"
@@ -1224,18 +1329,26 @@ class BotUI(ctk.CTk):
             tag = "INFO"
 
         # [NEW V4.4 FINAL] Tự động định tuyến log của bot vào 2 Tab (BOT và BOT-LOG)
+        grid_markers = ("[GRID]", "[GRID]_", "GRID SAFEGUARD")
         bot_markers = ("[BOT]", "[BOT]_", "[BOT-DCA]", "[BOT-PCA]", "AUTO_DCA", "AUTO_PCA", "BOT SAFEGUARD")
+        if target == "manual" and any(k in msg for k in grid_markers):
+            target = "grid"
         if target == "manual" and any(k in msg for k in bot_markers):
             target = "bot"
 
         if target == "bot":
             if any(
                 k in msg
-                for k in ["🚀", "Đóng lệnh", "Bóp cò", "PnL", "SUCCESS", "FAIL"]
+                for k in ["🚀", "Đóng lệnh", "B�p c�", "PnL", "SUCCESS", "FAIL"]
             ):
                 target = "bot"  # Lệnh thực thi -> Sang Tab BOT
             else:
                 target = "bot-log"  # Log logic/check -> Sang Tab BOT-LOG
+        elif target == "grid":
+            if any(k in msg for k in ["ENTRY", "CHILD", "Đóng lệnh", "PnL", "SUCCESS", "FAIL"]):
+                target = "grid"
+            else:
+                target = "grid-log"
 
         self.after(0, lambda: self._write_log(txt, tag, target))
 
@@ -1246,6 +1359,12 @@ class BotUI(ctk.CTk):
             # Fallback về txt_log_bot nếu Ngài chưa tạo Text widget cho bot_log
             widget = getattr(
                 self, "txt_log_bot_log", getattr(self, "txt_log_bot", None)
+            )
+        elif target == "grid":
+            widget = getattr(self, "txt_log_grid", None)
+        elif target == "grid-log":
+            widget = getattr(
+                self, "txt_log_grid_log", getattr(self, "txt_log_grid", None)
             )
         else:
             widget = getattr(self, "txt_log_manual", None)
@@ -1381,7 +1500,7 @@ class BotUI(ctk.CTk):
     def on_tree_right_click(self, event):
         row_id = self.tree.identify_row(event.y)
         selected = self.tree.selection()
-        menu = Menu(self, tearoff=0, font=("Roboto", 14))
+        menu = Menu(self, tearoff=0, font=("Arial", 14))
 
         if len(selected) > 1:
             menu.add_command(

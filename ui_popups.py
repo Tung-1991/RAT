@@ -31,7 +31,7 @@ def _add_popup_hint(parent, text, padx=15, pady=(5, 10), wraplength=900):
     ctk.CTkLabel(
         hint_f,
         text=text,
-        font=("Roboto", 13, "italic"),
+        font=("Arial", 12, "italic"),
         text_color="#FFD600",
         justify="left",
         anchor="w",
@@ -65,6 +65,7 @@ def open_symbol_config_popup(app, symbol):
     top.minsize(620, 520)
     top.attributes("-topmost", True)
     top.focus_force()
+
     body = ctk.CTkScrollableFrame(top, fg_color="transparent")
     body.pack(fill="both", expand=True, padx=12, pady=(10, 4))
     top.grab_set()  # Khóa (Block) cửa sổ mẹ, bắt buộc người dùng thao tác trên popup này
@@ -237,6 +238,32 @@ def open_bot_setting_popup(app):
         command=app.on_auto_trade_toggle,
     )
     sw_auto.pack(pady=5)
+
+    try:
+        from grid.grid_storage import load_grid_settings
+        _grid_cfg = load_grid_settings()
+    except Exception:
+        _grid_cfg = {"ENABLED": False}
+    f_adv_lights = ctk.CTkFrame(f_auto, fg_color="transparent")
+    f_adv_lights.pack(pady=(6, 0))
+    grid_on = bool(_grid_cfg.get("ENABLED", False))
+    app.ind_grid_light = ctk.CTkFrame(
+        f_adv_lights, width=12, height=12, corner_radius=6,
+        fg_color=COL_GREEN if grid_on else COL_RED,
+    )
+    app.ind_grid_light.pack(side="left", padx=(0, 5))
+    ctk.CTkLabel(
+        f_adv_lights, text="GRID", font=("Roboto", 11, "bold"),
+        text_color="#00B8D4" if grid_on else "gray",
+    ).pack(side="left", padx=(0, 18))
+    app.ind_hedge_light = ctk.CTkFrame(
+        f_adv_lights, width=12, height=12, corner_radius=6, fg_color=COL_RED,
+    )
+    app.ind_hedge_light.pack(side="left", padx=(0, 5))
+    ctk.CTkLabel(
+        f_adv_lights, text="HEDGE", font=("Roboto", 11, "bold"), text_color="gray",
+    ).pack(side="left")
+
 
     ctk.CTkFrame(tab_core, height=2, fg_color="#333").pack(fill="x", padx=30, pady=5)
 
@@ -427,19 +454,6 @@ def open_bot_setting_popup(app):
     except Exception:
         pass
 
-    ctk.CTkLabel(f_safety, text="Bot Max Loss/Ngày (%):").grid(
-        row=0, column=0, sticky="w", padx=10, pady=8
-    )
-    e_max_loss = ctk.CTkEntry(f_safety, width=70, justify="center")
-    e_max_loss.insert(
-        0,
-        str(
-            safe_cfg.get(
-                "MAX_DAILY_LOSS_PERCENT", getattr(config, "MAX_DAILY_LOSS_PERCENT", 2.5)
-            )
-        ),
-    )
-    # --- [GROUP 1: ⚠️ PHANH KHẨN CẤP GLOBAL (EMERGENCY)] ---
     # --- [GROUP 1: ⚠️ PHANH KHẨN CẤP GLOBAL (EMERGENCY)] ---
     f_global = ctk.CTkFrame(f_safety, border_width=1, border_color="#F44336")
     f_global.grid(row=0, column=0, columnspan=4, sticky="nsew", padx=5, pady=8)
@@ -464,7 +478,7 @@ def open_bot_setting_popup(app):
     e_global_cooldown.grid(row=1, column=1, sticky="w", padx=10, pady=5)
 
     var_gl_on_sg = ctk.BooleanVar(value=safe_cfg.get("APPLY_GLOBAL_COOLDOWN_ON_SAFEGUARD", False))
-    chk_gl_on_sg = ctk.CTkCheckBox(f_gl_content, text="Dính Basket/Watermark -> Chặn Global luôn", variable=var_gl_on_sg, text_color="#FF5252", font=("Roboto", 11, "italic"))
+    chk_gl_on_sg = ctk.CTkCheckBox(f_gl_content, text="Dính Basket/Watermark -> Chặn Global luôn", variable=var_gl_on_sg, text_color="#FF5252", font=("Arial", 11, "italic"))
     chk_gl_on_sg.grid(row=1, column=2, columnspan=2, sticky="w", padx=10, pady=5)
 
     # --- [GROUP 2: 📉 SAFEGUARD & PROFIT (PROTECTION)] ---
@@ -621,7 +635,7 @@ def open_bot_setting_popup(app):
         ctk.CTkLabel(
             f_hint,
             text=f"● {text}",
-            font=("Roboto", 10, "italic"),
+            font=("Arial", 10, "italic"),
             text_color=color,
         ).pack(side="left", padx=(10, 2), pady=2)
 
@@ -707,6 +721,112 @@ def open_bot_setting_popup(app):
 # ==============================================================================
 # 2. POPUP PRESET (CÓ LIVE PREVIEW ĐẦY ĐỦ)
 # ==============================================================================
+def open_advanced_tools_popup(app):
+    top = ctk.CTkToplevel(app)
+    top.title("Advanced Tools")
+    top.geometry("760x560")
+    top.minsize(680, 480)
+    top.attributes("-topmost", True)
+    top.focus_force()
+    top.grab_set()
+
+    tabs = ctk.CTkTabview(top)
+    tabs.pack(fill="both", expand=True, padx=12, pady=12)
+    tab_grid = tabs.add("GRID")
+    tab_hedge = tabs.add("HEDGE")
+    tab_backtest = tabs.add("BACKTEST")
+
+    ctk.CTkLabel(tab_grid, text="GRID Control", font=("Roboto", 16, "bold"), text_color="#00B8D4").pack(anchor="w", padx=14, pady=(14, 6))
+    ctk.CTkLabel(
+        tab_grid,
+        text="GRID V1 test execution uses its own magic, settings, state and risk rules.",
+        font=("Arial", 12, "italic"),
+        text_color="#80DEEA",
+        anchor="w",
+        wraplength=680,
+    ).pack(fill="x", padx=14, pady=(0, 12))
+
+    try:
+        from grid.grid_storage import load_grid_settings, save_grid_settings
+        grid_cfg = load_grid_settings()
+    except Exception:
+        grid_cfg = {"ENABLED": False}
+
+    var_grid_enabled = ctk.BooleanVar(value=grid_cfg.get("ENABLED", False))
+
+    def _set_status_lights(is_on):
+        color = COL_GREEN if is_on else COL_RED
+        for attr in ("ind_grid_light", "ind_ad_grid_light"):
+            light = getattr(app, attr, None)
+            if light and light.winfo_exists():
+                light.configure(fg_color=color)
+
+    def _toggle_grid_enabled():
+        try:
+            from grid.grid_storage import load_grid_settings, save_grid_settings
+            next_cfg = load_grid_settings()
+            next_cfg["ENABLED"] = var_grid_enabled.get()
+            save_grid_settings(next_cfg)
+            _set_status_lights(var_grid_enabled.get())
+            lbl_grid_state.configure(
+                text=f"Status: {'ON' if var_grid_enabled.get() else 'OFF'}",
+                text_color="#00B8D4" if var_grid_enabled.get() else "gray",
+            )
+            if hasattr(app, "log_message"):
+                state = "ON" if var_grid_enabled.get() else "OFF"
+                app.log_message(f"[GRID] GRID ENABLED = {state}", target="grid")
+        except Exception as e:
+            messagebox.showerror("GRID", f"Khong the luu GRID switch: {e}", parent=top)
+
+    f_grid_switch = ctk.CTkFrame(tab_grid, fg_color="#242424", corner_radius=8)
+    f_grid_switch.pack(fill="x", padx=14, pady=(0, 12))
+    lbl_grid_state = ctk.CTkLabel(
+        f_grid_switch,
+        text=f"Status: {'ON' if var_grid_enabled.get() else 'OFF'}",
+        font=("Roboto", 12, "bold"),
+        text_color="#00B8D4" if var_grid_enabled.get() else "gray",
+    )
+
+    ctk.CTkSwitch(
+        f_grid_switch,
+        text="GRID ENABLED",
+        variable=var_grid_enabled,
+        progress_color="#00B8D4",
+        fg_color=COL_RED,
+        font=("Roboto", 13, "bold"),
+        command=_toggle_grid_enabled,
+    ).pack(side="left", padx=12, pady=12)
+    lbl_grid_state.pack(side="left", padx=12)
+
+    def _open_grid_settings():
+        from grid.grid_ui import open_grid_settings_popup
+        open_grid_settings_popup(app)
+
+    ctk.CTkButton(
+        tab_grid,
+        text="OPEN GRID SETTINGS",
+        fg_color="#00838F",
+        hover_color="#006064",
+        font=("Roboto", 13, "bold"),
+        command=_open_grid_settings,
+    ).pack(anchor="w", padx=14, pady=8)
+
+    ctk.CTkLabel(
+        tab_hedge,
+        text="HEDGE module placeholder. This tab is reserved for the next phase.",
+        font=("Arial", 13, "italic"),
+        text_color="#BDBDBD",
+        wraplength=680,
+    ).pack(fill="x", padx=14, pady=18)
+    ctk.CTkLabel(
+        tab_backtest,
+        text="BACKTEST module placeholder. This tab is reserved for historical GRID simulation.",
+        font=("Arial", 13, "italic"),
+        text_color="#BDBDBD",
+        wraplength=680,
+    ).pack(fill="x", padx=14, pady=18)
+
+
 def open_preset_config_popup(app):
     p_name = app.cbo_preset.get()
     data = config.PRESETS.get(p_name, {})
@@ -883,22 +1003,59 @@ def open_tsl_popup(app, override_symbol=None):
     # ================= TAB 1: BASIC =================
     _add_popup_hint(
         tab_basic,
-        "- BE kéo SL về hòa/lãi nhẹ khi đạt R trigger.\n"
+        "- BE_SL kéo SL về hòa/lãi nhẹ khi đạt R trigger, có thêm loss-step nếu bật.\n"
         "- PNL Levels khóa lãi theo % win; STEP R bám theo từng bậc R.\n"
         "- Chỉ tactic được bật ở lệnh/Bot TSL mới dùng các tham số này.",
         padx=15,
         pady=(10, 5),
         wraplength=400,
     )
-    f_be = sec(tab_basic, "1. BREAK-EVEN (BE)")
+    f_be = sec(tab_basic, "1. BREAK-EVEN SL (BE_SL)")
     f_be.pack(fill="x", padx=15)
-    cbo_be = ctk.CTkOptionMenu(f_be, values=["SOFT", "SMART"], width=100)
+    f_be_r1 = ctk.CTkFrame(f_be, fg_color="transparent")
+    f_be_r1.pack(fill="x")
+    f_be_r2 = ctk.CTkFrame(f_be, fg_color="transparent")
+    f_be_r2.pack(fill="x", pady=(5, 0))
+    f_be_r3 = ctk.CTkFrame(f_be, fg_color="transparent")
+    f_be_r3.pack(fill="x", pady=(5, 0))
+    cbo_be = ctk.CTkOptionMenu(f_be_r1, values=["SOFT", "SMART"], width=100)
     cbo_be.set(tsl_cfg.get("BE_MODE", "SOFT"))
     cbo_be.pack(side="right")
-    e_be_rr = ctk.CTkEntry(f_be, width=50)
+    e_be_rr = ctk.CTkEntry(f_be_r1, width=50)
     e_be_rr.insert(0, str(tsl_cfg.get("BE_OFFSET_RR", 0.8)))
     e_be_rr.pack(side="left", padx=5)
-    ctk.CTkLabel(f_be, text="Trigger(R):").pack(side="left")
+    ctk.CTkLabel(f_be_r1, text="Trigger(R):").pack(side="left")
+
+    var_be_sl_loss = ctk.BooleanVar(value=tsl_cfg.get("BE_SL_LOSS_ENABLE", False))
+    ctk.CTkCheckBox(
+        f_be_r2, text="Loss Step", variable=var_be_sl_loss, width=80
+    ).pack(side="left", padx=5)
+    cbo_be_sl_unit = ctk.CTkOptionMenu(
+        f_be_r2, values=["USD", "PERCENT", "POINT"], width=90
+    )
+    cbo_be_sl_unit.set(tsl_cfg.get("BE_SL_LOSS_UNIT", "USD"))
+    cbo_be_sl_unit.pack(side="left", padx=5)
+    ctk.CTkLabel(f_be_r2, text="Loss Trig:").pack(side="left", padx=(8, 2))
+    e_be_sl_loss_trigger = ctk.CTkEntry(f_be_r2, width=55)
+    e_be_sl_loss_trigger.insert(0, str(tsl_cfg.get("BE_SL_LOSS_TRIGGER", 10.0)))
+    e_be_sl_loss_trigger.pack(side="left", padx=2)
+    ctk.CTkLabel(f_be_r2, text="Step:").pack(side="left", padx=(8, 2))
+    e_be_sl_loss_step = ctk.CTkEntry(f_be_r2, width=55)
+    e_be_sl_loss_step.insert(0, str(tsl_cfg.get("BE_SL_LOSS_STEP", 2.0)))
+    e_be_sl_loss_step.pack(side="left", padx=2)
+    ctk.CTkLabel(f_be_r3, text="Loss Action:").pack(side="left", padx=5)
+    cbo_be_sl_loss_action = ctk.CTkOptionMenu(
+        f_be_r3, values=["ARM_CLOSE", "TIGHTEN_SL"], width=120
+    )
+    cbo_be_sl_loss_action.set(tsl_cfg.get("BE_SL_LOSS_ACTION", "ARM_CLOSE"))
+    cbo_be_sl_loss_action.pack(side="left", padx=5)
+    ctk.CTkLabel(
+        f_be_r3,
+        text="ARM_CLOSE: chạm loss trigger thì arm; hồi +Step thì xóa, âm thêm Step thì cắt.",
+        text_color="#B0BEC5",
+        font=("Arial", 11, "italic"),
+        wraplength=360,
+    ).pack(side="left", padx=5)
 
     f_pnl = sec(tab_basic, "2. KHÓA LÃI PNL (LEVELS)")
     f_pnl.pack(fill="both", expand=True, padx=15)
@@ -1030,7 +1187,7 @@ def open_tsl_popup(app, override_symbol=None):
         f_cash,
         text="SOFT LOCK: khóa = target - buffer; Min Lock là sàn khóa tối thiểu nếu kết quả còn dương.",
         text_color="#B0BEC5",
-        font=("Roboto", 11, "italic"),
+        font=("Arial", 11, "italic"),
         wraplength=440,
     ).pack(anchor="w", padx=8, pady=(4, 0))
 
@@ -1068,7 +1225,7 @@ def open_tsl_popup(app, override_symbol=None):
         f_psar,
         text="Min RR dung cash-R: 0.5R = loi 50% so tien risk ban dau cua lenh. Neu thieu risk USD thi fallback theo khoang gia SL.",
         text_color="#B0BEC5",
-        font=("Roboto", 11, "italic"),
+        font=("Arial", 11, "italic"),
         wraplength=760,
     ).pack(anchor="w", padx=8, pady=(0, 4))
 
@@ -1217,6 +1374,11 @@ def open_tsl_popup(app, override_symbol=None):
                 "BE_CASH_MIN_LOCK": float(e_cash_min_lock.get()),
                 "BE_MODE": cbo_be.get(),
                 "BE_OFFSET_RR": float(e_be_rr.get()),
+                "BE_SL_LOSS_ENABLE": var_be_sl_loss.get(),
+                "BE_SL_LOSS_UNIT": cbo_be_sl_unit.get(),
+                "BE_SL_LOSS_TRIGGER": float(e_be_sl_loss_trigger.get()),
+                "BE_SL_LOSS_STEP": float(e_be_sl_loss_step.get()),
+                "BE_SL_LOSS_ACTION": cbo_be_sl_loss_action.get(),
                 "ONE_TIME_BE": var_be_one_time.get(),
                 "PNL_LEVELS": sorted(
                     [
@@ -1400,15 +1562,16 @@ def open_edit_popup(app, ticket):
     lbl_tactic_preview.pack(pady=5)
 
     cur_t = app.trade_mgr.get_trade_tactic(ticket)
+    cur_modes = cur_t.split("+")
     states = {
-        "BE_C": "BE_CASH" in cur_t,
-        "PSAR": "PSAR_TRAIL" in cur_t,
-        "BE": "BE" in cur_t and "BE_CASH" not in cur_t,
-        "PNL": "PNL" in cur_t,
-        "STEP": "STEP_R" in cur_t,
-        "SWING": "SWING" in cur_t,
-        "REV_C": "REV_C" in cur_t,  # [FIX] Nút Close on Reverse
-        "ANTI_CASH": "ANTI_CASH" in cur_t,  # [NEW]
+        "BE_C": "BE_CASH" in cur_modes,
+        "PSAR": "PSAR_TRAIL" in cur_modes,
+        "BE": "BE" in cur_modes,
+        "PNL": "PNL" in cur_modes,
+        "STEP": "STEP_R" in cur_modes,
+        "SWING": "SWING" in cur_modes,
+        "REV_C": "REV_C" in cur_modes,  # [FIX] Nút Close on Reverse
+        "ANTI_CASH": "ANTI_CASH" in cur_modes,  # [NEW]
     }
 
     def live_edit(*args):
@@ -1440,7 +1603,7 @@ def open_edit_popup(app, ticket):
                             if is_buy
                             else pos.price_open - (trig_r * r_dist)
                         )
-                        preview_txts.append(f"BE @ {trig_p:.2f}")
+                        preview_txts.append(f"BE_SL @ {trig_p:.2f}")
                     if states["STEP"]:
                         sz = config.TSL_CONFIG.get("STEP_R_SIZE", 1.0)
                         trig_p = (
@@ -1675,6 +1838,18 @@ def show_history_popup(app):
     top.focus_force()
 
     # [NEW V5] Mở rộng số cột để hiển thị thêm Entry, SL, TP, Fee
+    history_tabs = ctk.CTkTabview(top)
+    history_tabs.pack(fill="both", expand=True)
+    tab_all_history = history_tabs.add("ALL")
+    tab_grid_history = history_tabs.add("GRID")
+    ctk.CTkLabel(
+        tab_grid_history,
+        text="GRID history scaffold is ready. Closed GRID trades will be filtered here after GRID execution is implemented.",
+        text_color="#80DEEA",
+        font=("Arial", 13, "italic"),
+        wraplength=780,
+    ).pack(fill="x", padx=18, pady=18)
+
     cols = (
         "Time",
         "Ticket",
@@ -1691,9 +1866,9 @@ def show_history_popup(app):
         "Trigger",
         "Reason",
     )
-    tr = ttk.Treeview(top, columns=cols, show="tree headings")
+    tr = ttk.Treeview(tab_all_history, columns=cols, show="tree headings")
 
-    xscrollbar = ttk.Scrollbar(top, orient="horizontal", command=tr.xview)
+    xscrollbar = ttk.Scrollbar(tab_all_history, orient="horizontal", command=tr.xview)
     xscrollbar.pack(side="bottom", fill="x")
     tr.configure(xscrollcommand=xscrollbar.set)
 
@@ -1890,7 +2065,7 @@ def show_history_popup(app):
 
             delete_session_log(session_id)
             app.log_message(
-                f"🗑 Đã dọn dẹp log của phiên {session_id}.", target="manual"
+                f"🗑️ Đã dọn dẹp log của phiên {session_id}.", target="manual"
             )
             load_data()  # Reload lại Treeview
 

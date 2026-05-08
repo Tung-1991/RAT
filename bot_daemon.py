@@ -17,6 +17,9 @@ from signals.signal_generator import signal_generator
 from core.storage_manager import get_brain_settings_for_symbol
 from core.logger_setup import setup_logging  # [NEW V4.3] Import hệ thống Log
 
+from grid.grid_manager import GridManager
+from grid.grid_storage import load_grid_settings
+
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] [DAEMON] %(message)s")
 logger = logging.getLogger("BotDaemon")
 
@@ -55,6 +58,12 @@ class StandaloneBotDaemon:
         self.pending_signals = []
         self.heartbeat_contexts = {}
         self.last_entry_signal_times = {}
+        self.grid_manager = GridManager(
+            connector=self.connector,
+            data_engine=data_engine,
+            signal_generator=signal_generator,
+            log_callback=lambda msg, error=False, target="grid": logger.error(msg) if error else logger.info(msg),
+        )
 
     def _get_entry_signal_cooldown(self, symbol):
         try:
@@ -217,6 +226,11 @@ class StandaloneBotDaemon:
                     self._scan_dca_pca()
                     self.last_dca_pca_scan = now
 
+                grid_cfg = load_grid_settings()
+                if grid_cfg.get("ENABLED", False):
+                    grid_symbols = grid_cfg.get("WATCHLIST") or symbols
+                    self.grid_manager.scan(grid_symbols, self.heartbeat_contexts)
+
                 # Luồng gốc ngủ rất ngắn để không gây kẹt tiến trình
                 time.sleep(0.5)
 
@@ -287,9 +301,10 @@ class StandaloneBotDaemon:
         import core.storage_manager as storage_manager
         magics = storage_manager.get_magic_numbers()
         bot_magic = magics.get("bot_magic", 9999)
+        grid_magic = magics.get("grid_magic")
         bot_positions = {}
         for pos in positions:
-            if pos.magic == bot_magic:
+            if pos.magic == bot_magic and pos.magic != grid_magic and "[GRID]" not in str(getattr(pos, "comment", "")):
                 if pos.symbol not in bot_positions:
                     bot_positions[pos.symbol] = []
                 bot_positions[pos.symbol].append(pos)

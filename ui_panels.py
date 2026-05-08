@@ -190,7 +190,7 @@ def setup_left_panel(app, parent):
     f_tsl_row.grid(row=3, column=1, sticky="ew", padx=5)
 
     app.btn_tactic_be = ctk.CTkButton(
-        f_tsl_row, text="BE", width=32, command=lambda: app.toggle_tactic("BE")
+        f_tsl_row, text="BE", width=38, command=lambda: app.toggle_tactic("BE")
     )
     app.btn_tactic_be.pack(side="left", padx=1)
     app.btn_tactic_pnl = ctk.CTkButton(
@@ -242,6 +242,59 @@ def setup_left_panel(app, parent):
         f_extra, text="ANTI CASH", width=60, command=lambda: app.toggle_tactic("ANTI_CASH")
     )
     app.btn_tactic_anti_cash.pack(side="left", padx=1)
+
+    try:
+        from grid.grid_storage import load_grid_settings
+        _grid_on = bool(load_grid_settings().get("ENABLED", False))
+    except Exception:
+        _grid_on = False
+    f_ad_cluster = ctk.CTkFrame(f_extra, fg_color="transparent")
+    f_ad_cluster.pack(side="left", padx=(8, 1))
+    f_ad_status = ctk.CTkFrame(f_ad_cluster, fg_color="transparent")
+    f_ad_status.pack(side="left", padx=(0, 4))
+    f_grid_state = ctk.CTkFrame(f_ad_status, fg_color="transparent")
+    f_grid_state.pack(anchor="w")
+    app.ind_ad_grid_light = ctk.CTkFrame(
+        f_grid_state,
+        width=10,
+        height=10,
+        corner_radius=5,
+        fg_color=COL_GREEN if _grid_on else COL_RED,
+    )
+    app.ind_ad_grid_light.pack(side="left", padx=(0, 3))
+    ctk.CTkLabel(
+        f_grid_state,
+        text="GRID",
+        font=("Roboto", 8, "bold"),
+        text_color="#00B8D4" if _grid_on else "gray",
+    ).pack(side="left")
+    f_hedge_state = ctk.CTkFrame(f_ad_status, fg_color="transparent")
+    f_hedge_state.pack(anchor="w")
+    app.ind_ad_hedge_light = ctk.CTkFrame(
+        f_hedge_state,
+        width=10,
+        height=10,
+        corner_radius=5,
+        fg_color=COL_RED,
+    )
+    app.ind_ad_hedge_light.pack(side="left", padx=(0, 3))
+    ctk.CTkLabel(
+        f_hedge_state,
+        text="HEDGE",
+        font=("Roboto", 8, "bold"),
+        text_color="gray",
+    ).pack(side="left")
+
+    ctk.CTkButton(
+        f_ad_cluster,
+        text="⚙ AD",
+        width=38,
+        height=28,
+        font=("Roboto", 11, "bold"),
+        fg_color="#00838F",
+        hover_color="#006064",
+        command=app.open_advanced_tools_popup,
+    ).pack(side="left", padx=(0, 1))
 
     f_btn_settings = ctk.CTkFrame(f_tsl_row, fg_color="transparent")
     f_btn_settings.pack(side="right", padx=(0, 0))
@@ -338,10 +391,42 @@ def setup_left_panel(app, parent):
         f_head_db, text="Cost: $0.00", font=FONT_FEE, text_color="#FFD700"
     )
     app.lbl_fee_info.pack(side="right")
-    app.lbl_dashboard_price = ctk.CTkLabel(
-        f_dashboard, text="----.--", font=FONT_PRICE, text_color="white"
+    f_price_row = ctk.CTkFrame(f_dashboard, fg_color="transparent")
+    f_price_row.pack(fill="x", padx=8, pady=(5, 5))
+    f_price_row.grid_columnconfigure(0, minsize=96)
+    f_price_row.grid_columnconfigure(1, weight=1)
+    f_price_row.grid_columnconfigure(2, minsize=96)
+    ctk.CTkFrame(f_price_row, fg_color="transparent", width=96, height=1).grid(
+        row=0, column=0, sticky="ew"
     )
-    app.lbl_dashboard_price.pack(pady=(5, 5))
+    app.lbl_dashboard_price = ctk.CTkLabel(
+        f_price_row, text="----.--", font=FONT_PRICE, text_color="white"
+    )
+    app.lbl_dashboard_price.grid(row=0, column=1, sticky="ew")
+    app.frame_trade_mode = ctk.CTkFrame(f_price_row, fg_color="#424242", corner_radius=6)
+    app.frame_trade_mode.grid(row=0, column=2, sticky="e", padx=(8, 0))
+    app.btn_mode_normal = ctk.CTkButton(
+        app.frame_trade_mode,
+        text="NORMAL",
+        width=82,
+        height=22,
+        font=("Roboto", 10, "bold"),
+        fg_color="#00838F",
+        hover_color="#006064",
+        command=lambda: app.on_manual_trade_mode_change("NORMAL"),
+    )
+    app.btn_mode_normal.pack(fill="x", padx=4, pady=(4, 1))
+    app.btn_mode_grid = ctk.CTkButton(
+        app.frame_trade_mode,
+        text="GRID",
+        width=82,
+        height=22,
+        font=("Roboto", 10, "bold"),
+        fg_color="#424242",
+        hover_color="#616161",
+        command=lambda: app.on_manual_trade_mode_change("GRID"),
+    )
+    app.btn_mode_grid.pack(fill="x", padx=4, pady=(1, 4))
 
     ctk.CTkFrame(f_dashboard, height=1, fg_color="#444").pack(fill="x", padx=5)
     f_grid_db = ctk.CTkFrame(f_dashboard, fg_color="transparent")
@@ -399,6 +484,27 @@ def setup_left_panel(app, parent):
     app.seg_direction.set("BUY")
     app.seg_direction.pack(fill="x", padx=10, pady=(5, 5))
 
+    app.seg_grid_mode = ctk.CTkSegmentedButton(
+        parent,
+        values=["NEUTRAL", "LONG", "SHORT"],
+        font=("Roboto", 13, "bold"),
+        command=app.on_grid_mode_change,
+        height=32,
+        selected_color="#00838F",
+        selected_hover_color="#006064",
+    )
+    app.seg_grid_mode.set(app.var_grid_manual_mode.get())
+
+    app.chk_grid_bypass = ctk.CTkCheckBox(
+        parent,
+        text="Bypass GRID Signal",
+        variable=app.var_grid_bypass_signal,
+        font=("Roboto", 11, "bold"),
+        text_color="#00B8D4",
+        checkbox_width=18,
+        checkbox_height=18,
+    )
+
     app.btn_action = ctk.CTkButton(
         parent,
         text="EXECUTE BUY",
@@ -409,6 +515,7 @@ def setup_left_panel(app, parent):
         command=app.on_click_trade,
     )
     app.btn_action.pack(fill="x", padx=10, pady=(0, 10))
+    app.on_manual_trade_mode_change(app.var_manual_trade_mode.get())
 
     # 6. SYSTEM HEALTH
     f_sys = ctk.CTkFrame(parent, fg_color="#1a1a1a")
@@ -508,6 +615,7 @@ def setup_right_panel(app, parent):
 
     app.tree.tag_configure("buy_row", background="#234d20", foreground="#e0e0e0")
     app.tree.tag_configure("sell_row", background="#5c1a1b", foreground="#e0e0e0")
+    app.tree.tag_configure("grid_row", background="#153942", foreground="#E0F7FA")
 
     headers = [
         "Ticket",
@@ -541,7 +649,7 @@ def setup_right_panel(app, parent):
 
     sb = ttk.Scrollbar(f_tree_container, orient="vertical", command=app.tree.yview)
     sb_x = ttk.Scrollbar(f_tree_container, orient="horizontal", command=app.tree.xview)
-    app.tree.configure(yscroll=sb.set, xscroll=sb_x.set)
+    app.tree.configure(yscrollcommand=sb.set, xscrollcommand=sb_x.set)
 
     app.tree.grid(row=0, column=0, sticky="nsew")
     sb.grid(row=0, column=1, sticky="ns")
@@ -590,6 +698,10 @@ def setup_right_panel(app, parent):
         active_tab = log_tabview.get()
         if "Bot-Log" in active_tab:
             widget = app.txt_log_bot_log
+        elif "GRID-Log" in active_tab:
+            widget = app.txt_log_grid_log
+        elif "GRID" in active_tab:
+            widget = app.txt_log_grid
         elif "Bot" in active_tab:
             widget = app.txt_log_bot
         else:
@@ -613,6 +725,9 @@ def setup_right_panel(app, parent):
     tab_manual = log_tabview.add("📋 Manual")
     tab_bot = log_tabview.add("🤖 Bot")
     tab_bot_log = log_tabview.add("🤖 Bot-Log")
+
+    tab_grid = log_tabview.add("GRID")
+    tab_grid_log = log_tabview.add("GRID-Log")
 
     # --- Tab Manual ---
     app.txt_log_manual = tk.Text(
@@ -678,4 +793,46 @@ def setup_right_panel(app, parent):
     app.txt_log_bot_log.tag_config("BLUE", foreground="#29B6F6")
 
     # Giữ backward compat: txt_log trỏ vào manual (cho các module cũ)
+    # --- Tab GRID ---
+    app.txt_log_grid = tk.Text(
+        tab_grid,
+        font=("Consolas", 18),
+        bg="#081416",
+        fg="#E0F7FA",
+        bd=0,
+        highlightthickness=0,
+        state="disabled",
+        wrap="none",
+    )
+    sb_grid_x = ttk.Scrollbar(tab_grid, orient="horizontal", command=app.txt_log_grid.xview)
+    app.txt_log_grid.configure(xscrollcommand=sb_grid_x.set)
+    sb_grid_x.pack(fill="x", side="bottom")
+    app.txt_log_grid.pack(fill="both", expand=True)
+    app.txt_log_grid.tag_config("INFO", foreground="#B2EBF2")
+    app.txt_log_grid.tag_config("SUCCESS", foreground="#00E5FF")
+    app.txt_log_grid.tag_config("ERROR", foreground=COL_RED)
+    app.txt_log_grid.tag_config("WARN", foreground=COL_WARN)
+    app.txt_log_grid.tag_config("BLUE", foreground="#29B6F6")
+
+    # --- Tab GRID Log ---
+    app.txt_log_grid_log = tk.Text(
+        tab_grid_log,
+        font=("Consolas", 18),
+        bg="#081416",
+        fg="#B2EBF2",
+        bd=0,
+        highlightthickness=0,
+        state="disabled",
+        wrap="none",
+    )
+    sb_grid_log_x = ttk.Scrollbar(tab_grid_log, orient="horizontal", command=app.txt_log_grid_log.xview)
+    app.txt_log_grid_log.configure(xscrollcommand=sb_grid_log_x.set)
+    sb_grid_log_x.pack(fill="x", side="bottom")
+    app.txt_log_grid_log.pack(fill="both", expand=True)
+    app.txt_log_grid_log.tag_config("INFO", foreground="#B2EBF2")
+    app.txt_log_grid_log.tag_config("SUCCESS", foreground="#00E5FF")
+    app.txt_log_grid_log.tag_config("ERROR", foreground=COL_RED)
+    app.txt_log_grid_log.tag_config("WARN", foreground=COL_WARN)
+    app.txt_log_grid_log.tag_config("BLUE", foreground="#29B6F6")
+
     app.txt_log = app.txt_log_manual
