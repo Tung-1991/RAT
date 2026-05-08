@@ -1759,21 +1759,25 @@ def show_history_popup(app):
                 sell_count = 0
                 total_pnl = 0.0
                 total_fee = 0.0
+                total_mae = 0.0
+                total_mfe = 0.0
+
+                def _to_float(val, default=0.0):
+                    try:
+                        return float(str(val).replace("$", "").replace(",", "").strip())
+                    except (TypeError, ValueError):
+                        return default
 
                 for r in group_rows:
                     if len(r) >= 14:
-                        pnl_val = (
-                            float(r[9])
-                            if r[9].replace(".", "", 1).replace("-", "", 1).isdigit()
-                            else 0.0
-                        )
-                        fee_val = (
-                            float(r[8])
-                            if r[8].replace(".", "", 1).replace("-", "", 1).isdigit()
-                            else 0.0
-                        )
+                        pnl_val = _to_float(r[9])
+                        fee_val = _to_float(r[8])
+                        mae_val = _to_float(r[14]) if len(r) > 14 else 0.0
+                        mfe_val = _to_float(r[15]) if len(r) > 15 else 0.0
                         total_pnl += pnl_val
                         total_fee += fee_val
+                        total_mae += mae_val
+                        total_mfe += mfe_val
 
                         if pnl_val > 0:
                             wins += 1
@@ -1794,6 +1798,8 @@ def show_history_popup(app):
                 win_str = f"W: {winrate:.1f}%"
                 fee_str = f"${total_fee:.2f}"
                 pnl_str = f"${total_pnl:.2f}"
+                mae_str = f"${total_mae:.2f}"
+                mfe_str = f"${total_mfe:.2f}"
 
                 parent_id = tr.insert(
                     "",
@@ -1810,8 +1816,8 @@ def show_history_popup(app):
                         "",
                         fee_str,
                         pnl_str,
-                        "",
-                        "",
+                        mae_str,
+                        mfe_str,
                         "",
                         "",
                     ),
