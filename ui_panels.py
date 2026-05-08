@@ -184,62 +184,62 @@ def setup_left_panel(app, parent):
 
     # --- DÒNG 3: TACTIC ---
     ctk.CTkLabel(f_set, text="TACTIC:", font=FONT_SECTION, text_color="gray").grid(
-        row=3, column=0, sticky="w", pady=5
+        row=3, column=0, sticky="w", pady=2
     )
     f_tsl_row = ctk.CTkFrame(f_set, fg_color="transparent")
     f_tsl_row.grid(row=3, column=1, sticky="ew", padx=5)
 
     app.btn_tactic_be = ctk.CTkButton(
-        f_tsl_row, text="BE", width=38, command=lambda: app.toggle_tactic("BE")
+        f_tsl_row, text="BE", width=32, command=lambda: app.toggle_tactic("BE")
     )
     app.btn_tactic_be.pack(side="left", padx=1)
     app.btn_tactic_pnl = ctk.CTkButton(
-        f_tsl_row, text="PNL", width=32, command=lambda: app.toggle_tactic("PNL")
+        f_tsl_row, text="PNL", width=28, command=lambda: app.toggle_tactic("PNL")
     )
     app.btn_tactic_pnl.pack(side="left", padx=1)
     app.btn_tactic_step = ctk.CTkButton(
-        f_tsl_row, text="STEP", width=38, command=lambda: app.toggle_tactic("STEP_R")
+        f_tsl_row, text="STEP", width=32, command=lambda: app.toggle_tactic("STEP_R")
     )
     app.btn_tactic_step.pack(side="left", padx=1)
     app.btn_tactic_swing = ctk.CTkButton(
-        f_tsl_row, text="SWING", width=42, command=lambda: app.toggle_tactic("SWING")
+        f_tsl_row, text="SWING", width=38, command=lambda: app.toggle_tactic("SWING")
     )
     app.btn_tactic_swing.pack(side="left", padx=1)
     
     # [FIX V4.4] Thêm nút CASH và PSAR lên Pannel
     app.btn_tactic_cash = ctk.CTkButton(
-        f_tsl_row, text="CASH", width=42, command=lambda: app.toggle_tactic("BE_CASH")
+        f_tsl_row, text="CASH", width=38, command=lambda: app.toggle_tactic("BE_CASH")
     )
     app.btn_tactic_cash.pack(side="left", padx=1)
     app.btn_tactic_psar = ctk.CTkButton(
-        f_tsl_row, text="PSAR", width=42, command=lambda: app.toggle_tactic("PSAR_TRAIL")
+        f_tsl_row, text="PSAR", width=38, command=lambda: app.toggle_tactic("PSAR_TRAIL")
     )
     app.btn_tactic_psar.pack(side="left", padx=1)
 
     # [NEW V4.4] RECOVERY & SAFELOCK Section
     ctk.CTkLabel(f_set, text="DEF:", font=FONT_SECTION, text_color="gray").grid(
-        row=4, column=0, sticky="w", pady=5
+        row=4, column=0, sticky="w", pady=2
     )
     f_extra = ctk.CTkFrame(f_set, fg_color="transparent")
     f_extra.grid(row=4, column=1, sticky="ew", padx=5)
     
     app.btn_tactic_dca = ctk.CTkButton(
-        f_extra, text="DCA", width=42, command=lambda: app.toggle_tactic("AUTO_DCA")
+        f_extra, text="DCA", width=36, command=lambda: app.toggle_tactic("AUTO_DCA")
     )
     app.btn_tactic_dca.pack(side="left", padx=1)
     
     app.btn_tactic_pca = ctk.CTkButton(
-        f_extra, text="PCA", width=42, command=lambda: app.toggle_tactic("AUTO_PCA")
+        f_extra, text="PCA", width=36, command=lambda: app.toggle_tactic("AUTO_PCA")
     )
     app.btn_tactic_pca.pack(side="left", padx=1)
     
     app.btn_tactic_rev_c = ctk.CTkButton(
-        f_extra, text="REV_C", width=46, command=lambda: app.toggle_tactic("REV_C")
+        f_extra, text="REV_C", width=40, command=lambda: app.toggle_tactic("REV_C")
     )
     app.btn_tactic_rev_c.pack(side="left", padx=1)
     
     app.btn_tactic_anti_cash = ctk.CTkButton(
-        f_extra, text="ANTI CASH", width=60, command=lambda: app.toggle_tactic("ANTI_CASH")
+        f_extra, text="ANTI CASH", width=52, command=lambda: app.toggle_tactic("ANTI_CASH")
     )
     app.btn_tactic_anti_cash.pack(side="left", padx=1)
 
@@ -249,46 +249,50 @@ def setup_left_panel(app, parent):
     except Exception:
         _grid_on = False
     f_ad_cluster = ctk.CTkFrame(f_extra, fg_color="transparent")
-    f_ad_cluster.pack(side="left", padx=(8, 1))
+    f_ad_cluster.pack(side="left", padx=(4, 1))
     f_ad_status = ctk.CTkFrame(f_ad_cluster, fg_color="transparent")
-    f_ad_status.pack(side="left", padx=(0, 4))
+    f_ad_status.pack(side="left", padx=(0, 2))
+    
     f_grid_state = ctk.CTkFrame(f_ad_status, fg_color="transparent")
-    f_grid_state.pack(anchor="w")
+    f_grid_state.pack(anchor="w", pady=0)
     app.ind_ad_grid_light = ctk.CTkFrame(
         f_grid_state,
-        width=10,
-        height=10,
-        corner_radius=5,
+        width=8,
+        height=8,
+        corner_radius=4,
         fg_color=COL_GREEN if _grid_on else COL_RED,
     )
-    app.ind_ad_grid_light.pack(side="left", padx=(0, 3))
+    app.ind_ad_grid_light.pack(side="left", padx=(0, 2))
     ctk.CTkLabel(
         f_grid_state,
         text="GRID",
         font=("Roboto", 8, "bold"),
+        height=10,
         text_color="#00B8D4" if _grid_on else "gray",
     ).pack(side="left")
+    
     f_hedge_state = ctk.CTkFrame(f_ad_status, fg_color="transparent")
-    f_hedge_state.pack(anchor="w")
+    f_hedge_state.pack(anchor="w", pady=0)
     app.ind_ad_hedge_light = ctk.CTkFrame(
         f_hedge_state,
-        width=10,
-        height=10,
-        corner_radius=5,
+        width=8,
+        height=8,
+        corner_radius=4,
         fg_color=COL_RED,
     )
-    app.ind_ad_hedge_light.pack(side="left", padx=(0, 3))
+    app.ind_ad_hedge_light.pack(side="left", padx=(0, 2))
     ctk.CTkLabel(
         f_hedge_state,
         text="HEDGE",
         font=("Roboto", 8, "bold"),
+        height=10,
         text_color="gray",
     ).pack(side="left")
 
     ctk.CTkButton(
         f_ad_cluster,
         text="⚙ AD",
-        width=38,
+        width=34,
         height=28,
         font=("Roboto", 11, "bold"),
         fg_color="#00838F",
@@ -312,7 +316,7 @@ def setup_left_panel(app, parent):
 
     # 3. MANUAL INPUT PANEL
     f_input = ctk.CTkFrame(parent, fg_color="transparent")
-    f_input.pack(fill="x", padx=5, pady=(15, 0))
+    f_input.pack(fill="x", padx=5, pady=(5, 0))
     f_input.grid_columnconfigure((0, 1, 2), weight=1)
 
     def make_inp(p, t, v, c):

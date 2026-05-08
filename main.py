@@ -912,9 +912,9 @@ class BotUI(ctk.CTk):
             spread_cost = (tick.ask - tick.bid) * f_lot * c_size
             acc_type = self.cbo_account_type.get()
             if acc_type in ["PRO", "STANDARD"]:
-                self.lbl_fee_info.configure(text=f"Chi ph� (Spread): -${spread_cost:.2f}")
+                self.lbl_fee_info.configure(text=f"Chi phí (Spread): -${spread_cost:.2f}")
             else:
-                self.lbl_fee_info.configure(text=f"Chi ph� (Comm): -${comm_total:.2f}")
+                self.lbl_fee_info.configure(text=f"Chi phí (Comm): -${comm_total:.2f}")
 
             # 5. HIỂN THỊ RỦI RO LÊN GIAO DIỆN
             is_valid_sl = True
