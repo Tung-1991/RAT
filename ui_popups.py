@@ -1034,13 +1034,17 @@ def open_tsl_popup(app, override_symbol=None):
     e_be_sl_loss_step = ctk.CTkEntry(f_be_r1, width=55)
     e_be_sl_loss_step.insert(0, str(tsl_cfg.get("BE_SL_LOSS_STEP", 0.15)))
     e_be_sl_loss_step.pack(side="left", padx=(5, 10))
+    ctk.CTkLabel(f_be_r1, text="Guard Buf:").pack(side="left", padx=(8, 2))
+    e_be_sl_guard_buffer = ctk.CTkEntry(f_be_r1, width=55)
+    e_be_sl_guard_buffer.insert(0, str(tsl_cfg.get("BE_SL_GUARD_BUFFER", 0.075)))
+    e_be_sl_guard_buffer.pack(side="left", padx=(5, 10))
     ctk.CTkLabel(f_be_r2, text="Re-entry Lock(s):").pack(side="left", padx=(8, 2))
     e_be_sl_reentry_lock = ctk.CTkEntry(f_be_r2, width=80)
     e_be_sl_reentry_lock.insert(0, str(tsl_cfg.get("BE_SL_REENTRY_LOCK_SEC", 1800)))
     e_be_sl_reentry_lock.pack(side="left", padx=(5, 10))
     ctk.CTkLabel(
         f_be_r3,
-        text="BE_SL chỉ xử lý lệnh âm: chạm Loss Trig thì kéo SL sát giá theo Step. Nếu SL này bị hit, bot khóa vào lại cùng symbol+hướng theo Re-entry Lock.",
+        text="RECOVERY_GUARD: âm tới Loss Trig thì arm; hồi lên đủ Step thì đặt virtual guard dưới mức hồi tốt nhất theo Guard Buf. Hồi tiếp thì guard nâng lên; thủng guard thì bot close và khóa vào lại.",
         text_color="#B0BEC5",
         font=("Arial", 11, "italic"),
         wraplength=620,
@@ -1367,7 +1371,8 @@ def open_tsl_popup(app, override_symbol=None):
                 "BE_SL_LOSS_UNIT": cbo_be_sl_unit.get(),
                 "BE_SL_LOSS_TRIGGER": float(e_be_sl_loss_trigger.get()),
                 "BE_SL_LOSS_STEP": float(e_be_sl_loss_step.get()),
-                "BE_SL_LOSS_ACTION": "TIGHTEN_SL",
+                "BE_SL_GUARD_BUFFER": float(e_be_sl_guard_buffer.get()),
+                "BE_SL_LOSS_ACTION": "RECOVERY_GUARD",
                 "BE_SL_REENTRY_LOCK_SEC": int(e_be_sl_reentry_lock.get()),
                 "ONE_TIME_BE": var_be_one_time.get(),
                 "PNL_LEVELS": sorted(

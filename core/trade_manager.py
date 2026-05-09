@@ -1089,6 +1089,7 @@ class TradeManager:
                         "initial_costs",
                         "last_tsl_rules",
                         "trade_excursions",
+                        "be_sl_arms",
                     ]:
                         if s_ticket in self.state.get(key, {}):
                             del self.state[key][s_ticket]
@@ -1647,22 +1648,100 @@ class TradeManager:
             loss_trigger_usd, _ = resolve_be_sl_loss(
                 tsl_cfg.get("BE_SL_LOSS_TRIGGER", 0.5), loss_unit
             )
-            _, guard_dist = resolve_be_sl_loss(
+            step_usd, _ = resolve_be_sl_loss(
                 tsl_cfg.get("BE_SL_LOSS_STEP", 0.15), loss_unit
             )
-            if loss_trigger_usd > 0 and guard_dist > 0:
+            guard_buffer_usd, _ = resolve_be_sl_loss(
+                tsl_cfg.get("BE_SL_GUARD_BUFFER", 0.0), loss_unit
+            )
+            if guard_buffer_usd <= 0 and step_usd > 0:
+                guard_buffer_usd = step_usd / 2.0
+
+            if loss_trigger_usd > 0 and step_usd > 0 and guard_buffer_usd > 0:
+                s_ticket = str(pos.ticket)
+                arms = self.state.setdefault("be_sl_arms", {})
+                arm = arms.get(s_ticket)
                 loss_usd = max(-profit_usd, 0.0)
-                if loss_usd >= loss_trigger_usd:
-                    min_stop_dist = getattr(sym_info, "trade_stops_level", 0) * point
-                    guard_dist = max(guard_dist, min_stop_dist, point)
-                    guard_sl = (
-                        current_price - guard_dist
-                        if is_buy
-                        else current_price + guard_dist
+
+                if not arm and loss_usd >= loss_trigger_usd:
+                    arm = {
+                        "armed_at": time.time(),
+                        "trigger_pnl": profit_usd,
+                        "worst_pnl": profit_usd,
+                        "best_recovery_pnl": None,
+                        "guard_pnl": None,
+                    }
+                    arms[s_ticket] = arm
+                    save_state(self.state)
+                    self.log(
+                        f"[BE_SL] Arm recovery guard #{pos.ticket}: PnL ${profit_usd:.2f} <= -${loss_trigger_usd:.2f}",
+                        target="bot",
                     )
-                    candidates.append((guard_sl, "BE_SL Loss Guard"))
-                    tracking_modes.append("BE_SL")
-                else:
+
+                if arm:
+                    worst_pnl = min(float(arm.get("worst_pnl", profit_usd)), profit_usd)
+                    arm["worst_pnl"] = worst_pnl
+
+                    if profit_usd >= 0:
+                        arms.pop(s_ticket, None)
+                        save_state(self.state)
+                        self.log(
+                            f"[BE_SL] Clear #{pos.ticket}: PnL hồi về ${profit_usd:.2f} >= $0.00",
+                            target="bot",
+                        )
+                    else:
+                        best_recovery = arm.get("best_recovery_pnl")
+                        guard_pnl = arm.get("guard_pnl")
+                        recovery_pnl = worst_pnl + step_usd
+
+                        if best_recovery is None:
+                            if profit_usd >= recovery_pnl:
+                                best_recovery = profit_usd
+                                guard_pnl = best_recovery - guard_buffer_usd
+                                arm["best_recovery_pnl"] = best_recovery
+                                arm["guard_pnl"] = guard_pnl
+                                save_state(self.state)
+                                self.log(
+                                    f"[BE_SL] Recovery #{pos.ticket}: best ${best_recovery:.2f}, guard ${guard_pnl:.2f}",
+                                    target="bot",
+                                )
+                            else:
+                                milestones.append(
+                                    (
+                                        abs(recovery_pnl - profit_usd),
+                                        f"BE_SL armed: chờ hồi ${recovery_pnl:.2f}",
+                                    )
+                                )
+                        else:
+                            best_recovery = float(best_recovery)
+                            guard_pnl = float(guard_pnl)
+                            if profit_usd > best_recovery:
+                                best_recovery = profit_usd
+                                guard_pnl = max(guard_pnl, best_recovery - guard_buffer_usd)
+                                arm["best_recovery_pnl"] = best_recovery
+                                arm["guard_pnl"] = guard_pnl
+                                save_state(self.state)
+
+                            if profit_usd <= guard_pnl:
+                                self.log(
+                                    f"[BE_SL] Recovery guard cut #{pos.ticket}: PnL ${profit_usd:.2f} <= guard ${guard_pnl:.2f}",
+                                    target="bot",
+                                )
+                                self.state["exit_reasons"][s_ticket] = "BE_SL_Recovery_Guard"
+                                arms.pop(s_ticket, None)
+                                save_state(self.state)
+                                threading.Thread(
+                                    target=self.connector.close_position, args=(pos,), daemon=True
+                                ).start()
+                                return f"BE_SL Recovery Guard ${profit_usd:.2f}"
+
+                            milestones.append(
+                                (
+                                    abs(profit_usd - guard_pnl),
+                                    f"BE_SL guard ${guard_pnl:.2f} / best ${best_recovery:.2f}",
+                                )
+                            )
+                elif loss_usd < loss_trigger_usd:
                     milestones.append(
                         (
                             max(loss_trigger_usd - loss_usd, 0.0),

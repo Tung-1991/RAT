@@ -1071,6 +1071,18 @@ class BotStrategyUI(ctk.CTkToplevel):
         )
         self.cbo_rev_loss_unit.set(safe_cfg.get("REV_CLOSE_MAX_LOSS_UNIT", "USD"))
         self.cbo_rev_loss_unit.grid(row=1, column=5, padx=(0, 5), pady=3, sticky="w")
+        ctk.CTkLabel(
+            f_rev_time,
+            text=(
+                "REV_C: khi signal đảo chiều, lệnh lời chỉ cắt nếu PnL >= Min Profit; "
+                "lệnh âm chỉ cắt nếu PnL <= Max Loss. Giá trị 0 = bỏ qua điều kiện phía đó."
+            ),
+            font=("Arial", 11, "italic"),
+            text_color="#B0BEC5",
+            wraplength=760,
+            justify="left",
+            anchor="w",
+        ).grid(row=2, column=0, columnspan=6, padx=(0, 5), pady=(4, 0), sticky="ew")
         # -------------------------------------------------------------
 
         f_base = ctk.CTkFrame(self.tab_risk, fg_color="transparent")

@@ -195,7 +195,8 @@ TSL_CONFIG = {
     "BE_SL_LOSS_UNIT": "R",
     "BE_SL_LOSS_TRIGGER": 0.5,
     "BE_SL_LOSS_STEP": 0.15,
-    "BE_SL_LOSS_ACTION": "TIGHTEN_SL",
+    "BE_SL_GUARD_BUFFER": 0.075,
+    "BE_SL_LOSS_ACTION": "RECOVERY_GUARD",
     "BE_SL_REENTRY_LOCK_SEC": 1800,
     "ONE_TIME_BE": False,  # [NEW V4.4] Chỉ kích hoạt BE/BE_CASH 1 lần duy nhất
     "PNL_LEVELS": [[0.5, 0.1], [1.0, 0.5], [2.0, 1.2]],
