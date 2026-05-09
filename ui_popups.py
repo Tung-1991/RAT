@@ -410,6 +410,7 @@ def open_bot_setting_popup(app):
         def reset_symbol(sym):
             latest = load_state()
             latest.get("bot_last_fail_times", {}).pop(sym, None)
+            latest.get("bot_symbol_losing_streak", {}).pop(sym, None)
             save_state(latest)
             if hasattr(app, "trade_mgr"):
                 app.trade_mgr.state = latest

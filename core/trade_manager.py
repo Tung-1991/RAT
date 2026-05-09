@@ -182,6 +182,7 @@ class TradeManager:
         max_loss_pct = float(safeguard_cfg.get("MAX_DAILY_LOSS_PERCENT", 2.5))
         max_trades = int(safeguard_cfg.get("MAX_TRADES_PER_DAY", 30))
         max_streak = int(safeguard_cfg.get("MAX_LOSING_STREAK", 3))
+        loss_mode = str(safeguard_cfg.get("LOSS_COUNT_MODE", "TOTAL")).upper()
         cooldown_hours = float(safeguard_cfg.get("GLOBAL_COOLDOWN_HOURS", 4.0))
 
         start_bal = self.state.get("starting_balance", 0)
@@ -189,7 +190,11 @@ class TradeManager:
         loss_pct = (pnl / start_bal * 100) if start_bal > 0 else 0
 
         trades = self.state.get("bot_trades_today", 0)
-        losses = self.state.get("bot_daily_loss_count", 0)
+        losses = (
+            self.state.get("bot_symbol_losing_streak", {}).get(symbol, 0)
+            if loss_mode == "STREAK"
+            else self.state.get("bot_daily_loss_count", 0)
+        )
 
         triggered = False
         reason = ""
@@ -202,7 +207,8 @@ class TradeManager:
             reason = f"Chạm Max Trades ({trades}/{max_trades})"
         elif losses >= max_streak:
             triggered = True
-            reason = f"Chạm Max Streak ({losses}/{max_streak})"
+            scope = symbol if loss_mode == "STREAK" and symbol else "BOT"
+            reason = f"Chạm Max {loss_mode} Loss {scope} ({losses}/{max_streak})"
 
         if triggered:
             from core.storage_manager import reset_bot_session
@@ -945,10 +951,22 @@ class TradeManager:
                                 self.state["bot_pnl_today"] = (
                                     self.state.get("bot_pnl_today", 0) + real_pnl
                                 )
+                                symbol_streaks = self.state.setdefault(
+                                    "bot_symbol_losing_streak", {}
+                                )
                                 if real_pnl < 0:
                                     self.state["bot_daily_loss_count"] = (
                                         self.state.get("bot_daily_loss_count", 0) + 1
                                     )
+                                    self.state["bot_losing_streak"] = (
+                                        self.state.get("bot_losing_streak", 0) + 1
+                                    )
+                                    symbol_streaks[d_out.symbol] = (
+                                        symbol_streaks.get(d_out.symbol, 0) + 1
+                                    )
+                                else:
+                                    self.state["bot_losing_streak"] = 0
+                                    symbol_streaks[d_out.symbol] = 0
                             elif not is_grid:
                                 self.state["manual_pnl_today"] = (
                                     self.state.get("manual_pnl_today", 0) + real_pnl

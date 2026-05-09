@@ -304,7 +304,11 @@ class ChecklistManager:
             )
             all_passed = False
 
-        current_losses = state.get("bot_daily_loss_count", 0)
+        current_losses = (
+            state.get("bot_symbol_losing_streak", {}).get(symbol, 0)
+            if str(loss_mode).upper() == "STREAK"
+            else state.get("bot_daily_loss_count", 0)
+        )
         if current_losses >= max_streak:
             checks.append(
                 {

@@ -331,6 +331,8 @@ def load_state() -> Dict[str, Any]:
         "starting_balance": 0.0,
         "trades_today_count": 0,
         "losing_streak": 0,
+        "bot_losing_streak": 0,
+        "bot_symbol_losing_streak": {},
         "daily_loss_count": 0,
         "active_trades": [],
         "tsl_disabled_tickets": [], 
@@ -380,6 +382,8 @@ def load_state() -> Dict[str, Any]:
             if "bot_pnl_today" not in state: state["bot_pnl_today"] = 0.0
             if "bot_trades_today" not in state: state["bot_trades_today"] = 0
             if "bot_daily_loss_count" not in state: state["bot_daily_loss_count"] = 0
+            if "bot_losing_streak" not in state: state["bot_losing_streak"] = 0
+            if "bot_symbol_losing_streak" not in state: state["bot_symbol_losing_streak"] = {}
             if "daily_loss_count" not in state: state["daily_loss_count"] = 0    
             if "fee_today" not in state: state["fee_today"] = 0.0
             if "highest_pnl_recorded" not in state: state["highest_pnl_recorded"] = {}
@@ -412,6 +416,8 @@ def load_state() -> Dict[str, Any]:
                 state["bot_pnl_today"] = 0.0
                 state["bot_trades_today"] = 0
                 state["bot_daily_loss_count"] = 0
+                state["bot_losing_streak"] = 0
+                state["bot_symbol_losing_streak"] = {}
                 state["manual_pnl_today"] = 0.0
                 state["manual_trades_today"] = 0
                 state["manual_daily_loss_count"] = 0
@@ -461,6 +467,8 @@ def reset_bot_session(reason="Manual"):
     state["bot_pnl_today"] = 0.0
     state["bot_trades_today"] = 0
     state["bot_daily_loss_count"] = 0
+    state["bot_losing_streak"] = 0
+    state["bot_symbol_losing_streak"] = {}
     state["losing_streak"] = 0
     state["cooldown_until"] = 0.0
     
