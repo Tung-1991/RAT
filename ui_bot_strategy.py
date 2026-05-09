@@ -166,13 +166,26 @@ class BotStrategyUI(ctk.CTkToplevel):
         # Bắt đầu vòng lặp cập nhật Preview
         self.after(1000, self.update_preview)
 
-        self.tab_preview = self.tabview.add("Preview")
+        self.tab_preview_root = self.tabview.add("Preview")
         self.tab_inds = self.tabview.add("Signals")
         self.tab_rules = self.tabview.add("Vote Rules")
-        self.tab_risk = self.tabview.add("Risk & TSL")
-        self.tab_dca_pca = self.tabview.add("DCA/PCA")
+        self.tab_risk_root = self.tabview.add("Risk & TSL")
+        self.tab_dca_pca_root = self.tabview.add("DCA/PCA")
         if not self.override_symbol:
             self.tab_overwrite = self.tabview.add("Overwrite")
+
+        self.tab_preview = ctk.CTkScrollableFrame(
+            self.tab_preview_root, fg_color="transparent"
+        )
+        self.tab_preview.pack(fill="both", expand=True, padx=4, pady=4)
+        self.tab_risk = ctk.CTkScrollableFrame(
+            self.tab_risk_root, fg_color="transparent"
+        )
+        self.tab_risk.pack(fill="both", expand=True, padx=4, pady=4)
+        self.tab_dca_pca = ctk.CTkScrollableFrame(
+            self.tab_dca_pca_root, fg_color="transparent"
+        )
+        self.tab_dca_pca.pack(fill="both", expand=True, padx=4, pady=4)
 
         self._build_preview_tab()
 
