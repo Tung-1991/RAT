@@ -181,7 +181,7 @@ BOT_SAFEGUARD = {
 # 6. LOGIC TRAILING STOP CƠ BẢN (BE & STEP & PNL)
 # ==============================================================================
 TSL_CONFIG = {
-    "BE_CASH_TYPE": "USD",  # [NEW V4.4] Tùy chọn: USD, PERCENT, POINT
+    "BE_CASH_TYPE": "USD",  # [NEW V4.4] Tùy chọn: USD, PERCENT, POINT, R
     "BE_VALUE": 5.0,  # [NEW V4.4] Target khóa lãi cứng
     "BE_CASH_STRAT": "TRAILING (Gap)",
     "BE_CASH_FEE_PROTECT": True,
@@ -192,10 +192,11 @@ TSL_CONFIG = {
     "BE_OFFSET_RR": 0.8,
     "BE_OFFSET_POINTS": 0,
     "BE_SL_LOSS_ENABLE": False,
-    "BE_SL_LOSS_UNIT": "USD",
-    "BE_SL_LOSS_TRIGGER": 10.0,
-    "BE_SL_LOSS_STEP": 2.0,
-    "BE_SL_LOSS_ACTION": "ARM_CLOSE",
+    "BE_SL_LOSS_UNIT": "R",
+    "BE_SL_LOSS_TRIGGER": 0.5,
+    "BE_SL_LOSS_STEP": 0.15,
+    "BE_SL_LOSS_ACTION": "TIGHTEN_SL",
+    "BE_SL_REENTRY_LOCK_SEC": 1800,
     "ONE_TIME_BE": False,  # [NEW V4.4] Chỉ kích hoạt BE/BE_CASH 1 lần duy nhất
     "PNL_LEVELS": [[0.5, 0.1], [1.0, 0.5], [2.0, 1.2]],
     "STEP_R_SIZE": 1.0,

@@ -47,6 +47,8 @@ class TradeManager:
             self.state["trade_excursions"] = {}
         if "anti_cash_locks" not in self.state:
             self.state["anti_cash_locks"] = {}
+        if "be_sl_locks" not in self.state:
+            self.state["be_sl_locks"] = {}
         if "be_sl_arms" not in self.state:
             self.state["be_sl_arms"] = {}
 
@@ -121,6 +123,28 @@ class TradeManager:
 
     def _check_anti_cash_reentry_lock(self, symbol, direction):
         locks = self.state.setdefault("anti_cash_locks", {})
+        key = self._anti_cash_lock_key(symbol, direction)
+        until = float(locks.get(key, 0.0) or 0.0)
+        if until <= 0:
+            return None
+        now = time.time()
+        if until <= now:
+            locks.pop(key, None)
+            return None
+        return until
+
+    def _set_be_sl_lock(self, symbol, direction, ttl_sec):
+        if ttl_sec <= 0 or not symbol or not direction:
+            return
+        key = self._anti_cash_lock_key(symbol, direction)
+        self.state.setdefault("be_sl_locks", {})[key] = time.time() + ttl_sec
+        self.log(
+            f"[BE_SL] Re-entry lock {symbol} {direction} trong {ttl_sec}s.",
+            target="bot",
+        )
+
+    def _check_be_sl_reentry_lock(self, symbol, direction):
+        locks = self.state.setdefault("be_sl_locks", {})
         key = self._anti_cash_lock_key(symbol, direction)
         until = float(locks.get(key, 0.0) or 0.0)
         if until <= 0:
@@ -311,6 +335,11 @@ class TradeManager:
         if lock_until:
             wait_s = max(1, int(lock_until - time.time()))
             return f"SAFEGUARD_FAIL|AntiCash_Reentry_Lock|{symbol} {direction} bị khóa vào lại sau ANTI CASH, còn {wait_s}s."
+
+        be_lock_until = self._check_be_sl_reentry_lock(symbol, direction)
+        if be_lock_until:
+            wait_s = max(1, int(be_lock_until - time.time()))
+            return f"SAFEGUARD_FAIL|BE_SL_Reentry_Lock|{symbol} {direction} bị khóa vào lại sau BE_SL, còn {wait_s}s."
 
         close_on_reverse = safeguard_cfg.get("CLOSE_ON_REVERSE", False)
         if close_on_reverse and signal_class == "ENTRY":
@@ -965,6 +994,15 @@ class TradeManager:
                                     exit_reason = "Closed"
 
                             self.state["last_close_times"][d_out.symbol] = time.time()
+                            be_sl_lock_s = int(
+                                self._get_brain_settings(d_out.symbol)
+                                .get("TSL_CONFIG", getattr(config, "TSL_CONFIG", {}))
+                                .get("BE_SL_REENTRY_LOCK_SEC", 0)
+                            )
+                            if is_bot and "BE_SL" in str(exit_reason):
+                                self._set_be_sl_lock(
+                                    d_out.symbol, pos_type_str, be_sl_lock_s
+                                )
 
                             current_session = self.state.get(
                                 "current_session_id", "LEGACY"
@@ -1583,93 +1621,58 @@ class TradeManager:
             if "BE_CASH" in active_modes:
                 active_modes.remove("BE_CASH")
 
-        if "BE" in active_modes and tsl_cfg.get("BE_SL_LOSS_ENABLE", False):
-            s_ticket = str(pos.ticket)
+        if "BE" in active_modes:
             acc = self.connector.get_account_info()
             balance = acc.get("balance", 0.0) if acc else 0.0
 
-            def resolve_be_sl_cash(value, unit):
+            def resolve_be_sl_loss(value, unit):
                 raw = float(value or 0.0)
-                unit = str(unit or "USD").upper()
-                if unit == "PERCENT":
-                    return balance * (raw / 100.0) if balance > 0 else raw
-                if unit == "POINT":
-                    return raw * point * pos.volume * sym_info.trade_contract_size
-                return raw
+                unit = str(unit or "R").upper().replace(" ", "")
+                contract_size = getattr(sym_info, "trade_contract_size", 0.0) or 0.0
+                if unit in ["R", "%R", "PERCENT_R"]:
+                    cash = risk_usd * raw if risk_usd > 0 else abs(raw)
+                    price_dist = one_r_dist * raw
+                elif unit in ["PERCENT", "%", "PERCENT_BALANCE"]:
+                    cash = balance * (raw / 100.0) if balance > 0 else abs(raw)
+                    price_dist = cash / (pos.volume * contract_size) if pos.volume > 0 and contract_size > 0 else point
+                elif unit == "POINT":
+                    price_dist = raw * point
+                    cash = price_dist * pos.volume * contract_size
+                else:
+                    cash = abs(raw)
+                    price_dist = cash / (pos.volume * contract_size) if pos.volume > 0 and contract_size > 0 else point
+                return abs(cash), abs(price_dist)
 
-            loss_unit = tsl_cfg.get("BE_SL_LOSS_UNIT", "USD")
-            loss_trigger_usd = resolve_be_sl_cash(
-                tsl_cfg.get("BE_SL_LOSS_TRIGGER", 10.0), loss_unit
+            loss_unit = tsl_cfg.get("BE_SL_LOSS_UNIT", "R")
+            loss_trigger_usd, _ = resolve_be_sl_loss(
+                tsl_cfg.get("BE_SL_LOSS_TRIGGER", 0.5), loss_unit
             )
-            loss_step_usd = resolve_be_sl_cash(
-                tsl_cfg.get("BE_SL_LOSS_STEP", 2.0), loss_unit
+            _, guard_dist = resolve_be_sl_loss(
+                tsl_cfg.get("BE_SL_LOSS_STEP", 0.15), loss_unit
             )
-            if loss_trigger_usd > 0 and loss_step_usd > 0:
-                arms = self.state.setdefault("be_sl_arms", {})
-                arm = arms.get(s_ticket)
+            if loss_trigger_usd > 0 and guard_dist > 0:
                 loss_usd = max(-profit_usd, 0.0)
-                recover_pnl = -max(loss_trigger_usd - loss_step_usd, 0.0)
-                cut_loss_usd = loss_trigger_usd + loss_step_usd
-
-                if not arm and loss_usd >= loss_trigger_usd:
-                    arm = {
-                        "armed_at": time.time(),
-                        "trigger_pnl": profit_usd,
-                        "worst_pnl": profit_usd,
-                    }
-                    arms[s_ticket] = arm
-                    save_state(self.state)
-                    self.log(
-                        f"[BE_SL] Arm #{pos.ticket}: PnL ${profit_usd:.2f} <= -${loss_trigger_usd:.2f}",
-                        target="bot",
+                if loss_usd >= loss_trigger_usd:
+                    min_stop_dist = getattr(sym_info, "trade_stops_level", 0) * point
+                    guard_dist = max(guard_dist, min_stop_dist, point)
+                    guard_sl = (
+                        current_price - guard_dist
+                        if is_buy
+                        else current_price + guard_dist
                     )
-
-                if arm:
-                    arm["worst_pnl"] = min(float(arm.get("worst_pnl", profit_usd)), profit_usd)
-                    if profit_usd >= recover_pnl:
-                        del arms[s_ticket]
-                        save_state(self.state)
-                        self.log(
-                            f"[BE_SL] Cancel #{pos.ticket}: PnL hồi về ${profit_usd:.2f} >= ${recover_pnl:.2f}",
-                            target="bot",
-                        )
-                    elif loss_usd >= cut_loss_usd:
-                        action = tsl_cfg.get("BE_SL_LOSS_ACTION", "ARM_CLOSE")
-                        if action == "TIGHTEN_SL":
-                            min_stop_dist = getattr(sym_info, "trade_stops_level", 0) * point
-                            guard_dist = max(min_stop_dist, point)
-                            guard_sl = current_price - guard_dist if is_buy else current_price + guard_dist
-                            candidates.append((guard_sl, "BE_SL Guard"))
-                        else:
-                            self.log(
-                                f"[BE_SL] Cut #{pos.ticket}: PnL ${profit_usd:.2f} <= -${cut_loss_usd:.2f}",
-                                target="bot",
-                            )
-                            self.state["exit_reasons"][s_ticket] = "BE_SL_Loss_Step"
-                            arms.pop(s_ticket, None)
-                            save_state(self.state)
-                            threading.Thread(
-                                target=self.connector.close_position, args=(pos,), daemon=True
-                            ).start()
-                            return f"BE_SL Cắt lỗ ${profit_usd:.2f}"
-                    else:
-                        milestones.append(
-                            (
-                                min(abs(loss_usd - cut_loss_usd), abs(profit_usd - recover_pnl)),
-                                f"BE_SL armed: cắt -${cut_loss_usd:.2f} / xóa ${recover_pnl:.2f}",
-                            )
-                        )
+                    candidates.append((guard_sl, "BE_SL Loss Guard"))
+                    tracking_modes.append("BE_SL")
                 else:
                     milestones.append(
                         (
                             max(loss_trigger_usd - loss_usd, 0.0),
-                            f"BE_SL Đợi loss -${loss_trigger_usd:.2f}",
+                            f"BE_SL đợi loss -${loss_trigger_usd:.2f}",
                         )
                     )
 
         # [NEW V4.4] 1. BE_HARD_CASH (2 Giai đoạn: Trigger BE -> Trailing Step)
         if "BE_CASH" in active_modes:
-            be_type = tsl_cfg.get("BE_CASH_TYPE", "USD")  # USD, PERCENT, POINT
+            be_type = str(tsl_cfg.get("BE_CASH_TYPE", "USD")).upper()  # USD, PERCENT, POINT, R
             trigger_val = float(tsl_cfg.get("BE_TRIGGER", 10.0))
             step_val = float(tsl_cfg.get("BE_VALUE", 20.0))
 
@@ -1689,6 +1692,9 @@ class TradeManager:
             elif be_type == "POINT":
                 mult = point * pos.volume * sym_info.trade_contract_size
                 trigger_usd, step_usd = trigger_val * mult, step_val * mult
+            elif be_type in ["R", "%R", "PERCENT_R"]:
+                trigger_usd = risk_usd * trigger_val if risk_usd > 0 else trigger_val
+                step_usd = risk_usd * step_val if risk_usd > 0 else step_val
 
             if trigger_usd > 0:
                 # Tính tổng phí hao hụt (Commission + Spread) để cắt hòa vốn không bị âm
@@ -1862,7 +1868,7 @@ class TradeManager:
                             )
                         )
 
-        if "BE" in active_modes:
+        if "BE_LEGACY" in active_modes:
             trig_r = tsl_cfg.get("BE_OFFSET_RR", 0.8)
             base = pos.price_open
             be_sl = (

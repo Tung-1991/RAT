@@ -351,6 +351,7 @@ def load_state() -> Dict[str, Any]:
         "last_rev_log_time": {},       # [NEW V5] Bộ nhớ chống spam log đảo chiều
         "trade_excursions": {},
         "anti_cash_locks": {},
+        "be_sl_locks": {},
         "current_session_id": datetime.now().strftime("%Y%m%d_%H%M%S"),
         "cooldown_until": 0.0
     }
@@ -385,6 +386,7 @@ def load_state() -> Dict[str, Any]:
             if "highest_pnl_tickets" not in state: state["highest_pnl_tickets"] = {}
             if "trade_excursions" not in state: state["trade_excursions"] = {}
             if "anti_cash_locks" not in state: state["anti_cash_locks"] = {}
+            if "be_sl_locks" not in state: state["be_sl_locks"] = {}
 
             current_date = get_today_str()
             saved_date = state.get("date")
@@ -418,6 +420,7 @@ def load_state() -> Dict[str, Any]:
                 state["highest_pnl_tickets"] = {}
                 state["trade_excursions"] = {}
                 state["anti_cash_locks"] = {}
+                state["be_sl_locks"] = {}
                 
                 # Khởi tạo session mới cho ngày mới
                 state["current_session_id"] = datetime.now().strftime("%Y%m%d_%H%M%S")

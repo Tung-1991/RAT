@@ -1003,7 +1003,7 @@ def open_tsl_popup(app, override_symbol=None):
     # ================= TAB 1: BASIC =================
     _add_popup_hint(
         tab_basic,
-        "- BE_SL kéo SL về hòa/lãi nhẹ khi đạt R trigger, có thêm loss-step nếu bật.\n"
+        "- BE_SL là loss-side guard: âm tới trigger R thì kéo SL sát giá theo step R.\n"
         "- PNL Levels khóa lãi theo % win; STEP R bám theo từng bậc R.\n"
         "- Chỉ tactic được bật ở lệnh/Bot TSL mới dùng các tham số này.",
         padx=15,
@@ -1018,43 +1018,32 @@ def open_tsl_popup(app, override_symbol=None):
     f_be_r2.pack(fill="x", pady=(5, 0))
     f_be_r3 = ctk.CTkFrame(f_be, fg_color="transparent")
     f_be_r3.pack(fill="x", pady=(5, 0))
-    cbo_be = ctk.CTkOptionMenu(f_be_r1, values=["SOFT", "SMART"], width=100)
-    cbo_be.set(tsl_cfg.get("BE_MODE", "SOFT"))
-    cbo_be.pack(side="right")
-    e_be_rr = ctk.CTkEntry(f_be_r1, width=50)
-    e_be_rr.insert(0, str(tsl_cfg.get("BE_OFFSET_RR", 0.8)))
-    e_be_rr.pack(side="left", padx=5)
-    ctk.CTkLabel(f_be_r1, text="Trigger(R):").pack(side="left")
-
-    var_be_sl_loss = ctk.BooleanVar(value=tsl_cfg.get("BE_SL_LOSS_ENABLE", False))
-    ctk.CTkCheckBox(
-        f_be_r2, text="Loss Step", variable=var_be_sl_loss, width=80
+    ctk.CTkLabel(
+        f_be_r1, text="BE Loss Guard", text_color="#00B8D4", font=("Roboto", 12, "bold")
     ).pack(side="left", padx=5)
     cbo_be_sl_unit = ctk.CTkOptionMenu(
-        f_be_r2, values=["USD", "PERCENT", "POINT"], width=90
+        f_be_r1, values=["R", "USD", "PERCENT", "POINT"], width=90
     )
-    cbo_be_sl_unit.set(tsl_cfg.get("BE_SL_LOSS_UNIT", "USD"))
+    cbo_be_sl_unit.set(tsl_cfg.get("BE_SL_LOSS_UNIT", "R"))
     cbo_be_sl_unit.pack(side="left", padx=5)
-    ctk.CTkLabel(f_be_r2, text="Loss Trig:").pack(side="left", padx=(8, 2))
-    e_be_sl_loss_trigger = ctk.CTkEntry(f_be_r2, width=55)
-    e_be_sl_loss_trigger.insert(0, str(tsl_cfg.get("BE_SL_LOSS_TRIGGER", 10.0)))
-    e_be_sl_loss_trigger.pack(side="left", padx=2)
-    ctk.CTkLabel(f_be_r2, text="Step:").pack(side="left", padx=(8, 2))
-    e_be_sl_loss_step = ctk.CTkEntry(f_be_r2, width=55)
-    e_be_sl_loss_step.insert(0, str(tsl_cfg.get("BE_SL_LOSS_STEP", 2.0)))
-    e_be_sl_loss_step.pack(side="left", padx=2)
-    ctk.CTkLabel(f_be_r3, text="Loss Action:").pack(side="left", padx=5)
-    cbo_be_sl_loss_action = ctk.CTkOptionMenu(
-        f_be_r3, values=["ARM_CLOSE", "TIGHTEN_SL"], width=120
-    )
-    cbo_be_sl_loss_action.set(tsl_cfg.get("BE_SL_LOSS_ACTION", "ARM_CLOSE"))
-    cbo_be_sl_loss_action.pack(side="left", padx=5)
+    ctk.CTkLabel(f_be_r1, text="Loss Trig:").pack(side="left", padx=(8, 2))
+    e_be_sl_loss_trigger = ctk.CTkEntry(f_be_r1, width=55)
+    e_be_sl_loss_trigger.insert(0, str(tsl_cfg.get("BE_SL_LOSS_TRIGGER", 0.5)))
+    e_be_sl_loss_trigger.pack(side="left", padx=(5, 10))
+    ctk.CTkLabel(f_be_r1, text="Step:").pack(side="left", padx=(8, 2))
+    e_be_sl_loss_step = ctk.CTkEntry(f_be_r1, width=55)
+    e_be_sl_loss_step.insert(0, str(tsl_cfg.get("BE_SL_LOSS_STEP", 0.15)))
+    e_be_sl_loss_step.pack(side="left", padx=(5, 10))
+    ctk.CTkLabel(f_be_r2, text="Re-entry Lock(s):").pack(side="left", padx=(8, 2))
+    e_be_sl_reentry_lock = ctk.CTkEntry(f_be_r2, width=80)
+    e_be_sl_reentry_lock.insert(0, str(tsl_cfg.get("BE_SL_REENTRY_LOCK_SEC", 1800)))
+    e_be_sl_reentry_lock.pack(side="left", padx=(5, 10))
     ctk.CTkLabel(
         f_be_r3,
-        text="ARM_CLOSE: chạm loss trigger thì arm; hồi +Step thì xóa, âm thêm Step thì cắt.",
+        text="BE_SL chỉ xử lý lệnh âm: chạm Loss Trig thì kéo SL sát giá theo Step. Nếu SL này bị hit, bot khóa vào lại cùng symbol+hướng theo Re-entry Lock.",
         text_color="#B0BEC5",
         font=("Arial", 11, "italic"),
-        wraplength=360,
+        wraplength=620,
     ).pack(side="left", padx=5)
 
     f_pnl = sec(tab_basic, "2. KHÓA LÃI PNL (LEVELS)")
@@ -1121,7 +1110,7 @@ def open_tsl_popup(app, override_symbol=None):
     cbo_swing_grp.pack(side="right")
     ctk.CTkLabel(f_swing_man, text="Group Theo Dõi:").pack(side="left")
 
-    f_cash = sec(tab_adv, "5. BE HARD CASH (Thang cuốn USD/Point/%)")
+    f_cash = sec(tab_adv, "5. BE HARD CASH (Thang cuốn USD/Point/%/R)")
     f_cash.pack(fill="x", padx=15)
 
     f_cash_r1 = ctk.CTkFrame(f_cash, fg_color="transparent")
@@ -1132,7 +1121,7 @@ def open_tsl_popup(app, override_symbol=None):
     f_cash_r3.pack(fill="x", pady=(5, 0))
 
     cbo_cash_type = ctk.CTkOptionMenu(
-        f_cash_r1, values=["USD", "PERCENT", "POINT"], width=80
+        f_cash_r1, values=["USD", "PERCENT", "POINT", "R"], width=80
     )
     cbo_cash_type.set(tsl_cfg.get("BE_CASH_TYPE", "USD"))
     cbo_cash_type.pack(side="left", padx=5)
@@ -1372,13 +1361,14 @@ def open_tsl_popup(app, override_symbol=None):
                 "BE_CASH_SOFT_BUFFER_TYPE": cbo_cash_buffer_type.get(),
                 "BE_CASH_SOFT_BUFFER": float(e_cash_buffer.get()),
                 "BE_CASH_MIN_LOCK": float(e_cash_min_lock.get()),
-                "BE_MODE": cbo_be.get(),
-                "BE_OFFSET_RR": float(e_be_rr.get()),
-                "BE_SL_LOSS_ENABLE": var_be_sl_loss.get(),
+                "BE_MODE": "LOSS_GUARD",
+                "BE_OFFSET_RR": 0.0,
+                "BE_SL_LOSS_ENABLE": True,
                 "BE_SL_LOSS_UNIT": cbo_be_sl_unit.get(),
                 "BE_SL_LOSS_TRIGGER": float(e_be_sl_loss_trigger.get()),
                 "BE_SL_LOSS_STEP": float(e_be_sl_loss_step.get()),
-                "BE_SL_LOSS_ACTION": cbo_be_sl_loss_action.get(),
+                "BE_SL_LOSS_ACTION": "TIGHTEN_SL",
+                "BE_SL_REENTRY_LOCK_SEC": int(e_be_sl_reentry_lock.get()),
                 "ONE_TIME_BE": var_be_one_time.get(),
                 "PNL_LEVELS": sorted(
                     [
@@ -1597,13 +1587,13 @@ def open_edit_popup(app, ticket):
                 if r_dist > 0:
                     preview_txts = []
                     if states["BE"]:
-                        trig_r = config.TSL_CONFIG.get("BE_OFFSET_RR", 0.8)
+                        trig_r = config.TSL_CONFIG.get("BE_SL_LOSS_TRIGGER", 0.5)
                         trig_p = (
-                            pos.price_open + (trig_r * r_dist)
+                            pos.price_open - (trig_r * r_dist)
                             if is_buy
-                            else pos.price_open - (trig_r * r_dist)
+                            else pos.price_open + (trig_r * r_dist)
                         )
-                        preview_txts.append(f"BE_SL @ {trig_p:.2f}")
+                        preview_txts.append(f"BE_SL Loss @ {trig_p:.2f}")
                     if states["STEP"]:
                         sz = config.TSL_CONFIG.get("STEP_R_SIZE", 1.0)
                         trig_p = (
