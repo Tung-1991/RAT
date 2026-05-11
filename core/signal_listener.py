@@ -174,7 +174,8 @@ class SignalListener:
         # Chạy độc lập với AUTO-TRADE. Bất cứ lệnh nào đang ôm tactic REVERSE_CLOSE
         # đều sẽ bị chém ngay lập tức khi có tín hiệu ngược (bảo vệ tài khoản).
         try:
-            positions = self.trade_manager.connector.get_all_open_positions()
+            # REV_C close ownership lives in TradeManager._check_recovery().
+            positions = []
             opposite_type = 1 if action == "BUY" else 0  # 1 = SELL, 0 = BUY
 
             for p in positions:

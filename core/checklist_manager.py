@@ -6,6 +6,12 @@ import config
 import time
 import MetaTrader5 as mt5
 from core.market_hours import is_symbol_trade_window_open
+from core.storage_manager import (
+    apply_state_defaults,
+    release_expired_safeguard_brakes,
+    rollover_daily_session,
+    save_state,
+)
 
 
 class ChecklistManager:
@@ -170,6 +176,12 @@ class ChecklistManager:
     def run_bot_safeguard_checks(
         self, account_info, state, symbol, safeguard_cfg, signal_class="ENTRY"
     ) -> dict:
+        apply_state_defaults(state)
+        changed = rollover_daily_session(state)
+        changed = release_expired_safeguard_brakes(state) or changed
+        if changed:
+            save_state(state)
+
         checks = []
         all_passed = True
 

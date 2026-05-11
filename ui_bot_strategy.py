@@ -1046,30 +1046,34 @@ class BotStrategyUI(ctk.CTkToplevel):
             font=("Roboto", 12),
         ).grid(row=0, column=3, padx=(0, 10), pady=3, sticky="w")
 
-        ctk.CTkLabel(f_rev_time, text="Min Profit ($):").grid(row=1, column=0, padx=(0, 5), pady=3, sticky="w")
-        self.var_rev_profit = ctk.StringVar(
-            value=str(safe_cfg.get("REV_CLOSE_MIN_PROFIT", 0.0))
-        )
+        ctk.CTkLabel(f_rev_time, text="Min Profit:").grid(row=1, column=0, padx=(0, 5), pady=3, sticky="w")
+        rev_profit_unit = safe_cfg.get("REV_CLOSE_MIN_PROFIT_UNIT", "USD")
+        rev_profit_value = float(safe_cfg.get("REV_CLOSE_MIN_PROFIT", 0.0) or 0.0)
+        if rev_profit_unit in ("%R", "PERCENT_R"):
+            rev_profit_value = rev_profit_value / 100.0
+        self.var_rev_profit = ctk.StringVar(value=str(rev_profit_value))
         ctk.CTkEntry(
             f_rev_time, textvariable=self.var_rev_profit, width=50, justify="center"
         ).grid(row=1, column=1, padx=(0, 5), pady=3, sticky="w")
         self.cbo_rev_profit_unit = ctk.CTkOptionMenu(
-            f_rev_time, values=["USD", "%R", "%Equity"], width=85
+            f_rev_time, values=["USD", "R", "%Equity"], width=85
         )
-        self.cbo_rev_profit_unit.set(safe_cfg.get("REV_CLOSE_MIN_PROFIT_UNIT", "USD"))
+        self.cbo_rev_profit_unit.set("R" if rev_profit_unit in ("%R", "PERCENT_R") else rev_profit_unit)
         self.cbo_rev_profit_unit.grid(row=1, column=2, padx=(0, 10), pady=3, sticky="w")
 
-        ctk.CTkLabel(f_rev_time, text="Max Loss (-$):").grid(row=1, column=3, padx=(0, 5), pady=3, sticky="w")
-        self.var_rev_loss = ctk.StringVar(
-            value=str(safe_cfg.get("REV_CLOSE_MAX_LOSS", 0.0))
-        )
+        ctk.CTkLabel(f_rev_time, text="Max Loss:").grid(row=1, column=3, padx=(0, 5), pady=3, sticky="w")
+        rev_loss_unit = safe_cfg.get("REV_CLOSE_MAX_LOSS_UNIT", "USD")
+        rev_loss_value = float(safe_cfg.get("REV_CLOSE_MAX_LOSS", 0.0) or 0.0)
+        if rev_loss_unit in ("%R", "PERCENT_R"):
+            rev_loss_value = rev_loss_value / 100.0
+        self.var_rev_loss = ctk.StringVar(value=str(rev_loss_value))
         ctk.CTkEntry(
             f_rev_time, textvariable=self.var_rev_loss, width=50, justify="center"
         ).grid(row=1, column=4, padx=(0, 5), pady=3, sticky="w")
         self.cbo_rev_loss_unit = ctk.CTkOptionMenu(
-            f_rev_time, values=["USD", "%R", "%Equity"], width=85
+            f_rev_time, values=["USD", "R", "%Equity"], width=85
         )
-        self.cbo_rev_loss_unit.set(safe_cfg.get("REV_CLOSE_MAX_LOSS_UNIT", "USD"))
+        self.cbo_rev_loss_unit.set("R" if rev_loss_unit in ("%R", "PERCENT_R") else rev_loss_unit)
         self.cbo_rev_loss_unit.grid(row=1, column=5, padx=(0, 5), pady=3, sticky="w")
         ctk.CTkLabel(
             f_rev_time,

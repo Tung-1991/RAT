@@ -17,6 +17,10 @@ from core.storage_manager import (
     save_state,
     append_trade_log,
     get_brain_settings_for_symbol,
+    apply_state_defaults,
+    rollover_daily_session,
+    release_expired_safeguard_brakes,
+    mark_safeguard_brake,
 )
 from core.market_hours import is_symbol_trade_window_open
 
@@ -87,10 +91,16 @@ class TradeManager:
     def _resolve_money_value(self, value, unit, pos=None, equity=None):
         raw = float(value or 0.0)
         unit = (unit or "USD").upper().replace(" ", "")
-        if unit in ["%R", "R", "PERCENT_R"]:
+        if unit == "R":
             risk_usd = self._get_ticket_risk_usd(pos) if pos else 0.0
             if risk_usd <= 0:
                 return raw
+            return risk_usd * raw
+        if unit in ["%R", "PERCENT_R"]:
+            # Legacy config support: old UI used percent-of-R, e.g. 50 = 0.5R.
+            risk_usd = self._get_ticket_risk_usd(pos) if pos else 0.0
+            if risk_usd <= 0:
+                return raw / 100.0
             return risk_usd * raw / 100.0
         if unit in ["%EQUITY", "EQUITY", "PERCENT_EQUITY"]:
             if equity is None:
@@ -175,7 +185,16 @@ class TradeManager:
     def _get_brain_settings(self, symbol=None):
         return get_brain_settings_for_symbol(symbol)
 
+    def _sync_state_lifecycle(self):
+        apply_state_defaults(self.state)
+        changed = rollover_daily_session(self.state)
+        changed = release_expired_safeguard_brakes(self.state) or changed
+        if changed:
+            save_state(self.state)
+        return changed
+
     def check_and_trigger_cooldown(self, symbol=None):
+        self._sync_state_lifecycle()
         brain = self._get_brain_settings()
         safeguard_cfg = brain.get("bot_safeguard", {})
 
@@ -211,21 +230,30 @@ class TradeManager:
             reason = f"Chạm Max {loss_mode} Loss {scope} ({losses}/{max_streak})"
 
         if triggered:
-            from core.storage_manager import reset_bot_session
-
             # [NEW V5.2] Xử lý theo GLOBAL_BRAKE_MODE
             brake_mode = safeguard_cfg.get("GLOBAL_BRAKE_MODE", "Mode 1: Total Freeze")
             cooldown_time = time.time() + (cooldown_hours * 3600)
+            trigger_snapshot = {
+                "loss_pct": loss_pct,
+                "trades": trades,
+                "losses": losses,
+                "loss_mode": loss_mode,
+                "max_loss_pct": max_loss_pct,
+                "max_trades": max_trades,
+                "max_streak": max_streak,
+            }
 
             if "Mode 2" in brake_mode and symbol:
                 # Mode 2: Symbol Isolation (Chỉ phạt mã này)
                 if "bot_last_fail_times" not in self.state:
                     self.state["bot_last_fail_times"] = {}
                 self.state["bot_last_fail_times"][symbol] = cooldown_time
+                mark_safeguard_brake(self.state, "SYMBOL", reason, cooldown_time, symbol=symbol, trigger=trigger_snapshot)
                 self.log(f"🛑 [SAFEGUARD] {reason}. Bot Phạt Cooldown CÁCH LY {symbol} (Mode 2) trong {cooldown_hours} giờ.", target="bot")
             else:
                 # Mode 1: Total Freeze (Phạt toàn hệ thống)
                 self.state["cooldown_until"] = cooldown_time
+                mark_safeguard_brake(self.state, "GLOBAL", reason, cooldown_time, trigger=trigger_snapshot)
                 self.log(f"🛑 [SAFEGUARD] {reason}. Bot Phạt TOÀN HỆ THỐNG (Mode 1) trong {cooldown_hours} giờ.", target="bot")
 
             save_state(self.state)
@@ -328,6 +356,7 @@ class TradeManager:
         self, direction, symbol, context, market_mode="ANY", signal_class="ENTRY"
     ):
         config.SYMBOL = symbol
+        self._sync_state_lifecycle()
         acc_info = self.connector.get_account_info()
         brain = self._get_brain_settings(symbol)
         safeguard_cfg = brain.get("bot_safeguard", {})
@@ -863,6 +892,7 @@ class TradeManager:
     def update_running_trades(self, account_type="STANDARD", all_market_contexts=None):
         tsl_status_map = {}
         try:
+            self._sync_state_lifecycle()
             current_positions = self.connector.get_all_open_positions()
             current_tickets = [p.ticket for p in current_positions]
             tracked_tickets = list(self.state.get("active_trades", []))
@@ -1552,12 +1582,19 @@ class TradeManager:
             is_reversed = True
 
         if is_reversed:
+            s_ticket = str(pos.ticket)
+            current_reason = self.state.get("exit_reasons", {}).get(s_ticket, "")
+            if current_reason in ("Recovery_Close", "Recovery_None"):
+                return
+
             min_hold = float(safe_cfg.get("CLOSE_ON_REVERSE_MIN_TIME", 180))
 
             hold_time = time.time() - pos.time
             profit_usd = pos.profit + pos.swap + getattr(pos, "commission", 0.0)
 
             pnl_ok = True
+            min_profit = 0.0
+            max_loss = 0.0
             if safe_cfg.get("CLOSE_ON_REVERSE_USE_PNL", True):
                 acc = self.connector.get_account_info()
                 equity = acc.get("equity", 0.0) if acc else 0.0
@@ -1584,15 +1621,28 @@ class TradeManager:
             if hold_time >= min_hold and pnl_ok:
                 reverse_label = "NONE" if current_signal == 0 else ("SELL" if is_buy else "BUY")
                 self.log(
-                    f"  [RECOVERY] Đảo chiều Signal ({reverse_label}) | PnL: ${profit_usd:.2f}! Đóng lệnh #{pos.ticket}",
+                    f"  [RECOVERY] Đảo chiều Signal ({reverse_label}) | PnL: ${profit_usd:.2f} | Hold {hold_time:.0f}/{min_hold:.0f}s | MaxLoss ${abs(max_loss):.2f}. Đóng lệnh #{pos.ticket}",
                     target="bot",
                 )
-                self.state["exit_reasons"][str(pos.ticket)] = (
+                self.state["exit_reasons"][s_ticket] = (
                     "Recovery_None" if current_signal == 0 else "Recovery_Close"
                 )
+                save_state(self.state)
                 threading.Thread(
                     target=self.connector.close_position, args=(pos,), daemon=True
                 ).start()
+            else:
+                last_log = self.state.get("last_rev_log_time", {}).get(s_ticket, 0)
+                log_cooldown = float(safe_cfg.get("LOG_COOLDOWN_MINUTES", 60.0)) * 60.0
+                if time.time() - last_log > log_cooldown:
+                    reverse_label = "NONE" if current_signal == 0 else ("SELL" if is_buy else "BUY")
+                    reason = "HoldTime" if hold_time < min_hold else "PnL_Filter"
+                    self.log(
+                        f"⏳ [RECOVERY] Giữ #{pos.ticket}: Signal {reverse_label} | {reason} | PnL ${profit_usd:.2f} | Hold {hold_time:.0f}/{min_hold:.0f}s | MaxLoss ${abs(max_loss):.2f}",
+                        target="bot",
+                    )
+                    self.state.setdefault("last_rev_log_time", {})[s_ticket] = time.time()
+                    save_state(self.state)
 
     def _apply_independent_tsl(self, pos, context):
         tactic_str = self.get_trade_tactic(pos.ticket)
@@ -1648,9 +1698,13 @@ class TradeManager:
                 raw = float(value or 0.0)
                 unit = str(unit or "R").upper().replace(" ", "")
                 contract_size = getattr(sym_info, "trade_contract_size", 0.0) or 0.0
-                if unit in ["R", "%R", "PERCENT_R"]:
+                if unit == "R":
                     cash = risk_usd * raw if risk_usd > 0 else abs(raw)
                     price_dist = one_r_dist * raw
+                elif unit in ["%R", "PERCENT_R"]:
+                    r_mult = raw / 100.0
+                    cash = risk_usd * r_mult if risk_usd > 0 else abs(r_mult)
+                    price_dist = one_r_dist * r_mult
                 elif unit in ["PERCENT", "%", "PERCENT_BALANCE"]:
                     cash = balance * (raw / 100.0) if balance > 0 else abs(raw)
                     price_dist = cash / (pos.volume * contract_size) if pos.volume > 0 and contract_size > 0 else point
@@ -1789,9 +1843,14 @@ class TradeManager:
             elif be_type == "POINT":
                 mult = point * pos.volume * sym_info.trade_contract_size
                 trigger_usd, step_usd = trigger_val * mult, step_val * mult
-            elif be_type in ["R", "%R", "PERCENT_R"]:
+            elif be_type == "R":
                 trigger_usd = risk_usd * trigger_val if risk_usd > 0 else trigger_val
                 step_usd = risk_usd * step_val if risk_usd > 0 else step_val
+            elif be_type in ["%R", "PERCENT_R"]:
+                trigger_mult = trigger_val / 100.0
+                step_mult = step_val / 100.0
+                trigger_usd = risk_usd * trigger_mult if risk_usd > 0 else trigger_mult
+                step_usd = risk_usd * step_mult if risk_usd > 0 else step_mult
 
             if trigger_usd > 0:
                 # Tính tổng phí hao hụt (Commission + Spread) để cắt hòa vốn không bị âm

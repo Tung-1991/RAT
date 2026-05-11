@@ -634,15 +634,8 @@ class BotUI(ctk.CTk):
                         BRAIN_SETTINGS_FILE = storage_manager.BRAIN_FILE
                         self.group_status_tracker = storage_manager.load_group_status_tracker()
                         
-                        # Reset State
-                        self.trade_mgr.state = {
-                            "starting_balance": 0, "pnl_today": 0.0, "trades_today_count": 0,
-                            "manual_daily_loss_count": 0, "bot_pnl_today": 0.0,
-                            "bot_trades_today": 0, "bot_daily_loss_count": 0,
-                            "trade_tactics": {}, "cooldown_until": 0.0,
-                            "bot_last_entry_times": {}, "last_close_times": {},
-                            "trade_excursions": {}, "anti_cash_locks": {}
-                        }
+                        # Reload account-scoped state instead of creating an incomplete in-memory state.
+                        self.trade_mgr.state = load_state()
                         
                         # Reload config trên UI thread
                         self.after(100, self.load_settings)
@@ -1391,11 +1384,14 @@ class BotUI(ctk.CTk):
                     "manual_daily_loss_count": 0,
                     "losing_streak": 0,
                     "cooldown_until": 0.0,
+                    "active_brake": {"global": None, "symbols": {}},
                     "bot_last_entry_times": {},
                     "bot_last_fail_times": {},
                     "last_close_times": {},
                     "trade_excursions": {},
                     "anti_cash_locks": {},
+                    "be_sl_locks": {},
+                    "be_sl_arms": {},
                     "current_session_id": datetime.now().strftime("%Y%m%d_%H%M%S"),
                 }
             )

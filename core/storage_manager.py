@@ -224,13 +224,174 @@ def get_reset_hour():
         pass
     return getattr(config, "RESET_HOUR", 6)
 
-def get_today_str():
-    now = datetime.now()
+def get_today_str(now=None):
+    now = now or datetime.now()
     reset_hour = get_reset_hour()
     if now.hour < reset_hour:
         prev_day = now - timedelta(days=1)
         return prev_day.strftime("%Y-%m-%d")
     return now.strftime("%Y-%m-%d")
+
+def _new_session_id(now=None):
+    return (now or datetime.now()).strftime("%Y%m%d_%H%M%S")
+
+def apply_state_defaults(state: Dict[str, Any]) -> Dict[str, Any]:
+    if "daily_history" not in state: state["daily_history"] = []
+    if "tsl_disabled_tickets" not in state: state["tsl_disabled_tickets"] = []
+    if "trade_tactics" not in state: state["trade_tactics"] = {}
+    if "initial_r_dist" not in state: state["initial_r_dist"] = {}
+    if "initial_r_usd" not in state: state["initial_r_usd"] = {}
+    if "parent_baskets" not in state: state["parent_baskets"] = {}
+    if "child_to_parent" not in state: state["child_to_parent"] = {}
+    if "last_child_bar_time" not in state: state["last_child_bar_time"] = {}
+    if "bot_last_entry_times" not in state: state["bot_last_entry_times"] = {}
+    if "bot_last_fail_times" not in state: state["bot_last_fail_times"] = {}
+    if "exit_reasons" not in state: state["exit_reasons"] = {}
+    if "last_close_times" not in state: state["last_close_times"] = {}
+    if "last_dca_pca_close_time" not in state: state["last_dca_pca_close_time"] = {}
+    if "last_dca_pca_signal_time" not in state: state["last_dca_pca_signal_time"] = {}
+    if "bot_pnl_today" not in state: state["bot_pnl_today"] = 0.0
+    if "bot_trades_today" not in state: state["bot_trades_today"] = 0
+    if "bot_daily_loss_count" not in state: state["bot_daily_loss_count"] = 0
+    if "bot_losing_streak" not in state: state["bot_losing_streak"] = 0
+    if "bot_symbol_losing_streak" not in state: state["bot_symbol_losing_streak"] = {}
+    if "daily_loss_count" not in state: state["daily_loss_count"] = 0
+    if "fee_today" not in state: state["fee_today"] = 0.0
+    if "manual_pnl_today" not in state: state["manual_pnl_today"] = 0.0
+    if "manual_trades_today" not in state: state["manual_trades_today"] = 0
+    if "manual_daily_loss_count" not in state: state["manual_daily_loss_count"] = 0
+    if "highest_pnl_recorded" not in state: state["highest_pnl_recorded"] = {}
+    if "highest_pnl_tickets" not in state: state["highest_pnl_tickets"] = {}
+    if "trade_excursions" not in state: state["trade_excursions"] = {}
+    if "anti_cash_locks" not in state: state["anti_cash_locks"] = {}
+    if "be_sl_locks" not in state: state["be_sl_locks"] = {}
+    if "be_sl_arms" not in state: state["be_sl_arms"] = {}
+    if "current_session_id" not in state: state["current_session_id"] = _new_session_id()
+    if "cooldown_until" not in state: state["cooldown_until"] = 0.0
+    if "active_brake" not in state: state["active_brake"] = {"global": None, "symbols": {}}
+    return state
+
+def rollover_daily_session(state: Dict[str, Any], now=None) -> bool:
+    """Move to a new log/session bucket without clearing safeguard state."""
+    now = now or datetime.now()
+    apply_state_defaults(state)
+    current_date = get_today_str(now)
+    saved_date = state.get("date")
+    if saved_date == current_date:
+        return False
+
+    save_daily_history_to_csv(
+        saved_date,
+        state.get("pnl_today", 0),
+        state.get("trades_today_count", 0),
+        0,
+        state.get("losing_streak", 0),
+    )
+
+    state["date"] = current_date
+    state["current_session_id"] = _new_session_id(now)
+    return True
+
+def _normalize_active_brake(state: Dict[str, Any]) -> Dict[str, Any]:
+    brake = state.get("active_brake")
+    if not isinstance(brake, dict) or "scope" in brake:
+        brake = {"global": brake if isinstance(brake, dict) else None, "symbols": {}}
+    if not isinstance(brake.get("symbols"), dict):
+        brake["symbols"] = {}
+    if "global" not in brake:
+        brake["global"] = None
+    state["active_brake"] = brake
+    return brake
+
+def mark_safeguard_brake(state: Dict[str, Any], scope: str, reason: str, until: float, symbol: str = None, trigger: Dict[str, Any] = None):
+    apply_state_defaults(state)
+    brake = _normalize_active_brake(state)
+    item = {
+        "scope": scope,
+        "symbol": symbol,
+        "reason": reason,
+        "until": float(until or 0.0),
+        "trigger": copy.deepcopy(trigger or {}),
+        "created_at": time.time(),
+    }
+    if scope == "SYMBOL" and symbol:
+        brake["symbols"][symbol] = item
+    else:
+        brake["global"] = item
+    state["active_brake"] = brake
+
+def _clear_safeguard_runtime_state(state: Dict[str, Any], symbol: str = None):
+    state["bot_pnl_today"] = 0.0
+    state["bot_trades_today"] = 0
+    state["bot_daily_loss_count"] = 0
+    state["bot_losing_streak"] = 0
+    state["daily_loss_count"] = 0
+    state["losing_streak"] = 0
+    state["bot_last_entry_times"] = {}
+    state["last_close_times"] = {}
+    if symbol:
+        state.setdefault("bot_symbol_losing_streak", {})[symbol] = 0
+        state.setdefault("bot_last_fail_times", {}).pop(symbol, None)
+    else:
+        state["bot_symbol_losing_streak"] = {}
+        state["bot_last_fail_times"] = {}
+
+def release_expired_safeguard_brakes(state: Dict[str, Any], now=None) -> bool:
+    """Release expired safeguard punishment so old counters cannot re-lock the bot."""
+    now = time.time() if now is None else float(now)
+    apply_state_defaults(state)
+    changed = False
+    brake = _normalize_active_brake(state)
+
+    try:
+        global_until = float(state.get("cooldown_until", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        global_until = 0.0
+
+    if global_until > 0 and now >= global_until:
+        state["cooldown_until"] = 0.0
+        brake["global"] = None
+        brake["symbols"] = {}
+        _clear_safeguard_runtime_state(state)
+        changed = True
+    else:
+        global_brake = brake.get("global")
+        if isinstance(global_brake, dict):
+            try:
+                brake_until = float(global_brake.get("until", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                brake_until = 0.0
+            if brake_until > 0 and now >= brake_until:
+                state["cooldown_until"] = 0.0
+                brake["global"] = None
+                brake["symbols"] = {}
+                _clear_safeguard_runtime_state(state)
+                changed = True
+
+    fail_times = state.get("bot_last_fail_times", {})
+    if isinstance(fail_times, dict):
+        for sym, deadline in list(fail_times.items()):
+            try:
+                deadline_f = float(deadline or 0.0)
+            except (TypeError, ValueError):
+                deadline_f = 0.0
+            if deadline_f > 0 and now >= deadline_f:
+                _clear_safeguard_runtime_state(state, sym)
+                brake["symbols"].pop(sym, None)
+                changed = True
+
+    for sym, item in list(brake.get("symbols", {}).items()):
+        try:
+            until = float(item.get("until", 0.0) or 0.0)
+        except (AttributeError, TypeError, ValueError):
+            until = 0.0
+        if until > 0 and now >= until:
+            _clear_safeguard_runtime_state(state, sym)
+            brake["symbols"].pop(sym, None)
+            changed = True
+
+    state["active_brake"] = brake
+    return changed
 
 def append_trade_log(ticket, symbol, type_str, volume, entry_price, sl, tp, fee, pnl, close_reason, market_mode="ANY", trigger_signal="UNK", session_id="LEGACY", open_time_str="", mae_usd=0.0, mfe_usd=0.0):
     file_exists = os.path.isfile(MASTER_LOG_FILE)
@@ -361,11 +522,15 @@ def load_state() -> Dict[str, Any]:
     os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)
 
     if not os.path.exists(STATE_FILE):
-        return default_state
+        return apply_state_defaults(default_state)
 
     try:
         with open(STATE_FILE, "r") as f:
             state = json.load(f)
+            apply_state_defaults(state)
+            rollover_daily_session(state)
+            release_expired_safeguard_brakes(state)
+            return state
             
             if "daily_history" not in state: state["daily_history"] = []
             if "tsl_disabled_tickets" not in state: state["tsl_disabled_tickets"] = []
@@ -439,7 +604,7 @@ def load_state() -> Dict[str, Any]:
                 
         return state
     except:
-        return default_state
+        return apply_state_defaults(default_state)
 
 def save_state(state: Dict[str, Any]):
     with _state_lock:
@@ -461,6 +626,7 @@ def save_state(state: Dict[str, Any]):
 def reset_bot_session(reason="Manual"):
     """Dọn dẹp cache bot hiện hành và tạo Session_ID mới"""
     state = load_state()
+    apply_state_defaults(state)
     # Save session tổng kết (nếu cần thiết)
     
     # Đặt lại cache của bot
@@ -471,9 +637,13 @@ def reset_bot_session(reason="Manual"):
     state["bot_symbol_losing_streak"] = {}
     state["losing_streak"] = 0
     state["cooldown_until"] = 0.0
+    state["bot_last_fail_times"] = {}
+    state["bot_last_entry_times"] = {}
+    state["last_close_times"] = {}
+    state["active_brake"] = {"global": None, "symbols": {}}
     
     # Tạo Session_ID mới
-    state["current_session_id"] = datetime.now().strftime("%Y%m%d_%H%M%S")
+    state["current_session_id"] = _new_session_id()
     save_state(state)
 
 def get_last_dca_pca_close_time(symbol: str) -> float:

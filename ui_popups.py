@@ -1275,10 +1275,15 @@ def open_tsl_popup(app, override_symbol=None):
         group.pack(side="left", padx=(8, 18))
         ctk.CTkLabel(group, text=label).pack(side="left", padx=(0, 6))
         entry = ctk.CTkEntry(group, width=74)
+        if unit in ("%R", "PERCENT_R"):
+            try:
+                value = float(value or 0.0) / 100.0
+            except (TypeError, ValueError):
+                value = 0.0
         entry.insert(0, str(value))
         entry.pack(side="left", padx=(0, 6))
-        unit_menu = ctk.CTkOptionMenu(group, values=["USD", "%R", "%Equity"], width=92)
-        unit_menu.set(unit or "USD")
+        unit_menu = ctk.CTkOptionMenu(group, values=["USD", "R", "%Equity"], width=92)
+        unit_menu.set("R" if unit in ("%R", "PERCENT_R") else (unit or "USD"))
         unit_menu.pack(side="left")
         return entry, unit_menu
 
