@@ -338,6 +338,7 @@ class SignalListener:
                 context=context,
                 market_mode=market_mode,
                 signal_class=sig_class,
+                tactic_override=self.get_tsl_mode(),
             )
 
             if "SUCCESS" not in result:

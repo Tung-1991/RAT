@@ -1330,7 +1330,9 @@ class BotUI(ctk.CTk):
             target = "bot"
 
         if target == "bot":
-            if any(
+            if "[BOT EXEC]" in msg or "[TSL]" in msg:
+                target = "bot"
+            elif any(
                 k in msg
                 for k in ["🚀", "Đóng lệnh", "B�p c�", "PnL", "SUCCESS", "FAIL"]
             ):

@@ -353,7 +353,7 @@ class TradeManager:
     # 1. HÀM THỰC THI LỆNH CHO BOT (HỖ TRỢ ENTRY, DCA, PCA, DYNAMIC SL & STRICT RISK)
     # ====================================================================================
     def execute_bot_trade(
-        self, direction, symbol, context, market_mode="ANY", signal_class="ENTRY"
+        self, direction, symbol, context, market_mode="ANY", signal_class="ENTRY", tactic_override=None
     ):
         config.SYMBOL = symbol
         self._sync_state_lifecycle()
@@ -583,7 +583,7 @@ class TradeManager:
 
         if result and result.retcode == 10009:
             ticket_id = result.order
-            bot_tactic = risk_tsl.get(
+            bot_tactic = tactic_override or risk_tsl.get(
                 "bot_tsl", getattr(config, "BOT_DEFAULT_TSL", "BE+STEP_R+SWING")
             )
             dca_cfg = brain.get("dca_config", getattr(config, "DCA_CONFIG", {}))
@@ -1199,6 +1199,20 @@ class TradeManager:
                 if pos.ticket not in self.state["active_trades"]:
                     self.state["active_trades"].append(pos.ticket)
                     needs_save = True
+
+                if pos.magic == bot_magic and self.get_trade_tactic(pos.ticket) == "OFF":
+                    brain = self._get_brain_settings(pos.symbol)
+                    risk_tsl = brain.get("risk_tsl", {})
+                    restored_tactic = risk_tsl.get(
+                        "bot_tsl", getattr(config, "BOT_DEFAULT_TSL", "BE+STEP_R+SWING")
+                    )
+                    if restored_tactic and restored_tactic != "OFF":
+                        self.state.setdefault("trade_tactics", {})[str(pos.ticket)] = restored_tactic
+                        needs_save = True
+                        self.log(
+                            f"♻️ [TSL] Khôi phục tactic cho lệnh bot #{pos.ticket}: {restored_tactic}",
+                            target="bot",
+                        )
 
                 before_excursion = self.state.get("trade_excursions", {}).get(
                     str(pos.ticket), {}
