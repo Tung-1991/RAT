@@ -338,7 +338,7 @@ class SignalListener:
                 context=context,
                 market_mode=market_mode,
                 signal_class=sig_class,
-                tactic_override=self.get_tsl_mode(),
+                tactic_override=None,  # [FIX] Bot phải tự đọc bot_tsl từ Sandbox, KHÔNG dùng Panel TSL
             )
 
             if "SUCCESS" not in result:

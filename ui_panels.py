@@ -182,12 +182,12 @@ def setup_left_panel(app, parent):
     app.cbo_account_type.pack(side="right", fill="x", padx=(5, 0))
 
 
-    # --- DÒNG 3: TACTIC ---
+    # --- DÒNG 2: TACTIC ---
     ctk.CTkLabel(f_set, text="TACTIC:", font=FONT_SECTION, text_color="gray").grid(
-        row=3, column=0, sticky="w", pady=2
+        row=2, column=0, sticky="w", pady=2
     )
     f_tsl_row = ctk.CTkFrame(f_set, fg_color="transparent")
-    f_tsl_row.grid(row=3, column=1, sticky="ew", padx=5)
+    f_tsl_row.grid(row=2, column=1, sticky="ew", padx=5)
 
     app.btn_tactic_be = ctk.CTkButton(
         f_tsl_row, text="BE", width=32, command=lambda: app.toggle_tactic("BE")
@@ -218,10 +218,10 @@ def setup_left_panel(app, parent):
 
     # [NEW V4.4] RECOVERY & SAFELOCK Section
     ctk.CTkLabel(f_set, text="DEF:", font=FONT_SECTION, text_color="gray").grid(
-        row=4, column=0, sticky="w", pady=2
+        row=3, column=0, sticky="w", pady=2
     )
     f_extra = ctk.CTkFrame(f_set, fg_color="transparent")
-    f_extra.grid(row=4, column=1, sticky="ew", padx=5)
+    f_extra.grid(row=3, column=1, sticky="ew", padx=5)
     
     app.btn_tactic_dca = ctk.CTkButton(
         f_extra, text="DCA", width=36, command=lambda: app.toggle_tactic("AUTO_DCA")
@@ -234,12 +234,12 @@ def setup_left_panel(app, parent):
     app.btn_tactic_pca.pack(side="left", padx=1)
     
     app.btn_tactic_rev_c = ctk.CTkButton(
-        f_extra, text="REV_C", width=40, command=lambda: app.toggle_tactic("REV_C")
+        f_extra, text="REV", width=34, command=lambda: app.toggle_tactic("REV_C")
     )
     app.btn_tactic_rev_c.pack(side="left", padx=1)
     
     app.btn_tactic_anti_cash = ctk.CTkButton(
-        f_extra, text="ANTI CASH", width=52, command=lambda: app.toggle_tactic("ANTI_CASH")
+        f_extra, text="A.CUT", width=38, command=lambda: app.toggle_tactic("ANTI_CASH")
     )
     app.btn_tactic_anti_cash.pack(side="left", padx=1)
 
@@ -702,12 +702,12 @@ def setup_right_panel(app, parent):
         active_tab = log_tabview.get()
         if "Bot-Log" in active_tab:
             widget = app.txt_log_bot_log
-        elif "GRID-Log" in active_tab:
+        elif "GRID-Log" in active_tab:  # [FIX] GRID-Log phải check trước GRID
             widget = app.txt_log_grid_log
+        elif "Bot" in active_tab:  # [FIX] Bot phải check trước khi dùng GRID
+            widget = app.txt_log_bot
         elif "GRID" in active_tab:
             widget = app.txt_log_grid
-        elif "Bot" in active_tab:
-            widget = app.txt_log_bot
         else:
             widget = app.txt_log_manual
             

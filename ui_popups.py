@@ -1565,14 +1565,14 @@ def open_edit_popup(app, ticket):
     cur_t = app.trade_mgr.get_trade_tactic(ticket)
     cur_modes = cur_t.split("+")
     states = {
-        "BE_C": "BE_CASH" in cur_modes,
-        "PSAR": "PSAR_TRAIL" in cur_modes,
         "BE": "BE" in cur_modes,
         "PNL": "PNL" in cur_modes,
         "STEP": "STEP_R" in cur_modes,
         "SWING": "SWING" in cur_modes,
-        "REV_C": "REV_C" in cur_modes,  # [FIX] Nút Close on Reverse
-        "ANTI_CASH": "ANTI_CASH" in cur_modes,  # [NEW]
+        "CASH": "BE_CASH" in cur_modes,
+        "PSAR": "PSAR_TRAIL" in cur_modes,
+        "REV": "REV_C" in cur_modes,
+        "A.CUT": "ANTI_CASH" in cur_modes,
     }
 
     def live_edit(*args):
@@ -1618,15 +1618,15 @@ def open_edit_popup(app, ticket):
                         preview_txts.append(f"PNL @ Lãi {lvl[0]}%")
                     if states["SWING"]:
                         preview_txts.append("SWING (Đuổi theo nến H1/M15)")
-                    if states["BE_C"]:
+                    if states["CASH"]:
                         preview_txts.append(
                             f"CASH TRAIL Bậc thang (Step: {config.TSL_CONFIG.get('BE_VALUE', 5)})"
                         )
                     if states["PSAR"]:
                         preview_txts.append("PSAR TRAIL")
-                    if states["REV_C"]:
+                    if states["REV"]:
                         preview_txts.append("Close on Reverse")
-                    if states["ANTI_CASH"]:
+                    if states["A.CUT"]:
                         preview_txts.append("Anti-Cash")
 
                     if preview_txts:
@@ -1761,39 +1761,56 @@ def open_edit_popup(app, ticket):
         f_ast, text="Bỏ TP (Vô cực)", width=105, fg_color="#455A64", command=do_clear_tp
     ).pack(side="right", padx=2)
 
-    f_chk = ctk.CTkFrame(top, fg_color="transparent")
-    f_chk.pack()
-    chk_dca, chk_pca = (
-        ctk.CTkCheckBox(f_chk, text="Auto DCA", font=("Roboto", 11)),
-        ctk.CTkCheckBox(f_chk, text="Auto PCA", font=("Roboto", 11)),
-    )
-    chk_dca.pack(side="left", padx=10)
-    chk_pca.pack(side="left")
+    f_tactic_row = ctk.CTkFrame(top, fg_color="transparent")
+    f_tactic_row.pack(pady=(10, 2))
+    
+    ctk.CTkLabel(f_tactic_row, text="TACTIC:", font=("Roboto", 11, "bold"), text_color="gray").pack(side="left", padx=(0, 5))
+
+    btns = {}
+
+    def tog(k):
+        states[k] = not states[k]
+        btns[k].configure(fg_color=COL_BLUE_ACCENT if states[k] else COL_GRAY_BTN)
+        live_edit()
+
+    # Dòng 1: TACTIC (6 nút giống hệt Panel)
+    tactic_widths = {"BE": 32, "PNL": 28, "STEP": 32, "SWING": 38, "CASH": 38, "PSAR": 38}
+    for k in ["BE", "PNL", "STEP", "SWING", "CASH", "PSAR"]:
+        btns[k] = ctk.CTkButton(
+            f_tactic_row,
+            text=k,
+            width=tactic_widths[k],
+            fg_color=COL_BLUE_ACCENT if states[k] else COL_GRAY_BTN,
+            command=lambda x=k: tog(x),
+        )
+        btns[k].pack(side="left", padx=1)
+
+    f_def_row = ctk.CTkFrame(top, fg_color="transparent")
+    f_def_row.pack(pady=(2, 10))
+    
+    ctk.CTkLabel(f_def_row, text="DEF:", font=("Roboto", 11, "bold"), text_color="gray").pack(side="left", padx=(0, 5))
+
+    # Dòng 2: DEF (DCA, PCA checkboxes + REV, A.CUT buttons)
+    chk_dca = ctk.CTkCheckBox(f_def_row, text="DCA", font=("Roboto", 11), width=45)
+    chk_dca.pack(side="left", padx=4)
+    chk_pca = ctk.CTkCheckBox(f_def_row, text="PCA", font=("Roboto", 11), width=45)
+    chk_pca.pack(side="left", padx=4)
 
     if "AUTO_DCA" in cur_t:
         chk_dca.select()
     if "AUTO_PCA" in cur_t:
         chk_pca.select()
 
-    f_t = ctk.CTkFrame(top, fg_color="transparent")
-    f_t.pack(pady=10)
-    btns = {}
-
-    def tog(k):
-        states[k] = not states[k]
-        btns[k].configure(fg_color=COL_BLUE_ACCENT if states[k] else COL_GRAY_BTN)
-        live_edit()  # Cập nhật lại Preview ngay khi toggle
-
-    for k in states:
-        display_name = "A_CASH" if k == "ANTI_CASH" else k
+    def_widths = {"REV": 34, "A.CUT": 38}
+    for k in ["REV", "A.CUT"]:
         btns[k] = ctk.CTkButton(
-            f_t,
-            text=display_name,
-            width=52,
+            f_def_row,
+            text=k,
+            width=def_widths[k],
             fg_color=COL_BLUE_ACCENT if states[k] else COL_GRAY_BTN,
             command=lambda x=k: tog(x),
         )
-        btns[k].pack(side="left", padx=2)
+        btns[k].pack(side="left", padx=1)
 
     live_edit()  # Lần gọi đầu tiên khi mở popup
 
@@ -1805,10 +1822,14 @@ def open_edit_popup(app, ticket):
                 if v:
                     if k == "STEP":
                         act.append("STEP_R")
-                    elif k == "BE_C":
+                    elif k == "CASH":
                         act.append("BE_CASH")
                     elif k == "PSAR":
                         act.append("PSAR_TRAIL")
+                    elif k == "REV":
+                        act.append("REV_C")
+                    elif k == "A.CUT":
+                        act.append("ANTI_CASH")
                     else:
                         act.append(k)
             final_t = "+".join(act) if act else "OFF"
@@ -1972,10 +1993,13 @@ def show_history_popup(app):
                 # Hiển thị tóm tắt trên node cha
                 type_str = f"B:{buy_count} | S:{sell_count}"
                 win_str = f"W: {winrate:.1f}%"
-                fee_str = f"${total_fee:.2f}"
-                pnl_str = f"${total_pnl:.2f}"
-                mae_str = f"${total_mae:.2f}"
-                mfe_str = f"${total_mfe:.2f}"
+                def fmt_m(val):
+                    return f"-${abs(val):.2f}" if val < 0 else f"${val:.2f}"
+
+                fee_str = fmt_m(total_fee)
+                pnl_str = fmt_m(total_pnl)
+                mae_str = fmt_m(total_mae)
+                mfe_str = fmt_m(total_mfe)
 
                 parent_id = tr.insert(
                     "",
