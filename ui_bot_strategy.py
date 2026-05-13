@@ -1075,6 +1075,21 @@ class BotStrategyUI(ctk.CTkToplevel):
         )
         self.cbo_rev_loss_unit.set("R" if rev_loss_unit in ("%R", "PERCENT_R") else rev_loss_unit)
         self.cbo_rev_loss_unit.grid(row=1, column=5, padx=(0, 5), pady=3, sticky="w")
+
+        ctk.CTkLabel(f_rev_time, text="Confirm(s):").grid(row=2, column=0, padx=(0, 5), pady=3, sticky="w")
+        self.var_rev_confirm_seconds = ctk.StringVar(
+            value=str(safe_cfg.get("REV_CONFIRM_SECONDS", 300))
+        )
+        ctk.CTkEntry(
+            f_rev_time, textvariable=self.var_rev_confirm_seconds, width=60, justify="center"
+        ).grid(row=2, column=1, padx=(0, 5), pady=3, sticky="w")
+        ctk.CTkLabel(f_rev_time, text="Scans:").grid(row=2, column=2, padx=(0, 5), pady=3, sticky="w")
+        self.var_rev_confirm_scans = ctk.StringVar(
+            value=str(safe_cfg.get("REV_CONFIRM_SCANS", 2))
+        )
+        ctk.CTkEntry(
+            f_rev_time, textvariable=self.var_rev_confirm_scans, width=50, justify="center"
+        ).grid(row=2, column=3, padx=(0, 5), pady=3, sticky="w")
         ctk.CTkLabel(
             f_rev_time,
             text=(
@@ -1086,7 +1101,7 @@ class BotStrategyUI(ctk.CTkToplevel):
             wraplength=760,
             justify="left",
             anchor="w",
-        ).grid(row=2, column=0, columnspan=6, padx=(0, 5), pady=(4, 0), sticky="ew")
+        ).grid(row=3, column=0, columnspan=6, padx=(0, 5), pady=(4, 0), sticky="ew")
         # -------------------------------------------------------------
 
         f_base = ctk.CTkFrame(self.tab_risk, fg_color="transparent")
@@ -1397,6 +1412,8 @@ class BotStrategyUI(ctk.CTkToplevel):
         # [FIX V4.4] Trích xuất config Close on Reverse
         self.temp_close_rev = self.var_close_rev.get()
         self.temp_rev_time = float(self.var_rev_time.get() or 180)
+        self.temp_rev_confirm_seconds = float(self.var_rev_confirm_seconds.get() or 0)
+        self.temp_rev_confirm_scans = int(self.var_rev_confirm_scans.get() or 0)
 
         # [NEW] Thêm Distance ATR R
         new_dca = {
@@ -1455,6 +1472,8 @@ class BotStrategyUI(ctk.CTkToplevel):
                 output_data["bot_safeguard"] = {
                     "CLOSE_ON_REVERSE": self.temp_close_rev,
                     "CLOSE_ON_REVERSE_MIN_TIME": self.temp_rev_time,
+                    "REV_CONFIRM_SECONDS": self.temp_rev_confirm_seconds,
+                    "REV_CONFIRM_SCANS": self.temp_rev_confirm_scans,
                     "CLOSE_ON_REVERSE_USE_PNL": self.var_close_rev_pnl.get(),
                     "REV_CLOSE_ON_NONE": self.var_rev_none.get(),
                     "REV_CLOSE_MIN_PROFIT": float(self.var_rev_profit.get() or 0.0),
@@ -1488,6 +1507,8 @@ class BotStrategyUI(ctk.CTkToplevel):
             existing_data["bot_safeguard"]["CLOSE_ON_REVERSE_MIN_TIME"] = (
                 self.temp_rev_time
             )
+            existing_data["bot_safeguard"]["REV_CONFIRM_SECONDS"] = self.temp_rev_confirm_seconds
+            existing_data["bot_safeguard"]["REV_CONFIRM_SCANS"] = self.temp_rev_confirm_scans
             existing_data["bot_safeguard"]["CLOSE_ON_REVERSE_USE_PNL"] = self.var_close_rev_pnl.get()
             existing_data["bot_safeguard"]["REV_CLOSE_ON_NONE"] = self.var_rev_none.get()
             existing_data["bot_safeguard"]["REV_CLOSE_MIN_PROFIT"] = float(self.var_rev_profit.get() or 0.0)

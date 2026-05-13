@@ -266,6 +266,7 @@ def apply_state_defaults(state: Dict[str, Any]) -> Dict[str, Any]:
     if "anti_cash_locks" not in state: state["anti_cash_locks"] = {}
     if "be_sl_locks" not in state: state["be_sl_locks"] = {}
     if "be_sl_arms" not in state: state["be_sl_arms"] = {}
+    if "rev_confirmations" not in state: state["rev_confirmations"] = {}
     if "current_session_id" not in state: state["current_session_id"] = _new_session_id()
     if "cooldown_until" not in state: state["cooldown_until"] = 0.0
     if "active_brake" not in state: state["active_brake"] = {"global": None, "symbols": {}}
@@ -515,6 +516,7 @@ def load_state() -> Dict[str, Any]:
         "trade_excursions": {},
         "anti_cash_locks": {},
         "be_sl_locks": {},
+        "rev_confirmations": {},
         "current_session_id": datetime.now().strftime("%Y%m%d_%H%M%S"),
         "cooldown_until": 0.0
     }

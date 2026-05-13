@@ -55,6 +55,8 @@ class TradeManager:
             self.state["be_sl_locks"] = {}
         if "be_sl_arms" not in self.state:
             self.state["be_sl_arms"] = {}
+        if "rev_confirmations" not in self.state:
+            self.state["rev_confirmations"] = {}
 
         # [NEW V4.4] Tracking chuyên sâu cho Cooldown và Log
         if "exit_reasons" not in self.state:
@@ -1138,6 +1140,7 @@ class TradeManager:
                         "last_tsl_rules",
                         "trade_excursions",
                         "be_sl_arms",
+                        "rev_confirmations",
                     ]:
                         if s_ticket in self.state.get(key, {}):
                             del self.state[key][s_ticket]
@@ -1585,26 +1588,67 @@ class TradeManager:
 
         is_buy = pos.type == mt5.ORDER_TYPE_BUY
         is_reversed = False
+        reverse_signal = 0
         safe_cfg = self._get_brain_settings(pos.symbol).get("bot_safeguard", {})
 
         # Logic: Nếu đang BUY mà signal là -1 (SELL) hoặc ngược lại
         if is_buy and current_signal == -1:
             is_reversed = True
+            reverse_signal = -1
         elif not is_buy and current_signal == 1:
             is_reversed = True
+            reverse_signal = 1
         elif current_signal == 0 and safe_cfg.get("REV_CLOSE_ON_NONE", False):
             is_reversed = True
+            reverse_signal = 0
+
+        s_ticket = str(pos.ticket)
+        rev_state = self.state.setdefault("rev_confirmations", {})
+        if not is_reversed:
+            if s_ticket in rev_state:
+                rev_state.pop(s_ticket, None)
+                save_state(self.state)
+            return
 
         if is_reversed:
-            s_ticket = str(pos.ticket)
             current_reason = self.state.get("exit_reasons", {}).get(s_ticket, "")
             if current_reason in ("Recovery_Close", "Recovery_None"):
                 return
 
             min_hold = float(safe_cfg.get("CLOSE_ON_REVERSE_MIN_TIME", 180))
+            confirm_seconds = float(safe_cfg.get("REV_CONFIRM_SECONDS", 300) or 0)
+            confirm_scans = int(safe_cfg.get("REV_CONFIRM_SCANS", 2) or 0)
 
             hold_time = time.time() - pos.time
             profit_usd = pos.profit + pos.swap + getattr(pos, "commission", 0.0)
+            now = time.time()
+            ctx_ts = context.get("timestamp", now)
+            try:
+                ctx_ts = float(ctx_ts)
+            except (TypeError, ValueError):
+                ctx_ts = now
+
+            confirm = rev_state.get(s_ticket)
+            if not confirm or int(confirm.get("signal", 999)) != reverse_signal:
+                confirm = {
+                    "signal": reverse_signal,
+                    "first_seen": now,
+                    "last_context_ts": ctx_ts,
+                    "scans": 1,
+                }
+                rev_state[s_ticket] = confirm
+                save_state(self.state)
+            elif ctx_ts > float(confirm.get("last_context_ts", 0.0) or 0.0):
+                confirm["last_context_ts"] = ctx_ts
+                confirm["scans"] = int(confirm.get("scans", 1) or 1) + 1
+                save_state(self.state)
+
+            confirm_age = now - float(confirm.get("first_seen", now) or now)
+            confirm_count = int(confirm.get("scans", 1) or 1)
+            confirm_ok = (
+                (confirm_seconds <= 0 or confirm_age >= confirm_seconds)
+                and (confirm_scans <= 0 or confirm_count >= confirm_scans)
+            )
 
             pnl_ok = True
             min_profit = 0.0
@@ -1632,15 +1676,16 @@ class TradeManager:
                 else:
                     pnl_ok = profit_usd <= max_loss if max_loss != 0 else True
 
-            if hold_time >= min_hold and pnl_ok:
+            if hold_time >= min_hold and pnl_ok and confirm_ok:
                 reverse_label = "NONE" if current_signal == 0 else ("SELL" if is_buy else "BUY")
                 self.log(
-                    f"  [RECOVERY] Đảo chiều Signal ({reverse_label}) | PnL: ${profit_usd:.2f} | Hold {hold_time:.0f}/{min_hold:.0f}s | MaxLoss ${abs(max_loss):.2f}. Đóng lệnh #{pos.ticket}",
+                    f"  [RECOVERY] Đảo chiều Signal ({reverse_label}) | Confirm {confirm_age:.0f}/{confirm_seconds:.0f}s, {confirm_count}/{confirm_scans} scan | PnL: ${profit_usd:.2f} | Hold {hold_time:.0f}/{min_hold:.0f}s | MaxLoss ${abs(max_loss):.2f}. Đóng lệnh #{pos.ticket}",
                     target="bot",
                 )
                 self.state["exit_reasons"][s_ticket] = (
                     "Recovery_None" if current_signal == 0 else "Recovery_Close"
                 )
+                rev_state.pop(s_ticket, None)
                 save_state(self.state)
                 threading.Thread(
                     target=self.connector.close_position, args=(pos,), daemon=True
@@ -1650,9 +1695,14 @@ class TradeManager:
                 log_cooldown = float(safe_cfg.get("LOG_COOLDOWN_MINUTES", 60.0)) * 60.0
                 if time.time() - last_log > log_cooldown:
                     reverse_label = "NONE" if current_signal == 0 else ("SELL" if is_buy else "BUY")
-                    reason = "HoldTime" if hold_time < min_hold else "PnL_Filter"
+                    if hold_time < min_hold:
+                        reason = "HoldTime"
+                    elif not confirm_ok:
+                        reason = "RevConfirm"
+                    else:
+                        reason = "PnL_Filter"
                     self.log(
-                        f"⏳ [RECOVERY] Giữ #{pos.ticket}: Signal {reverse_label} | {reason} | PnL ${profit_usd:.2f} | Hold {hold_time:.0f}/{min_hold:.0f}s | MaxLoss ${abs(max_loss):.2f}",
+                        f"⏳ [RECOVERY] Giữ #{pos.ticket}: Signal {reverse_label} | {reason} | Confirm {confirm_age:.0f}/{confirm_seconds:.0f}s, {confirm_count}/{confirm_scans} scan | PnL ${profit_usd:.2f} | Hold {hold_time:.0f}/{min_hold:.0f}s | MaxLoss ${abs(max_loss):.2f}",
                         target="bot",
                     )
                     self.state.setdefault("last_rev_log_time", {})[s_ticket] = time.time()

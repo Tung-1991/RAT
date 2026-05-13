@@ -163,6 +163,8 @@ BOT_SAFEGUARD = {
     "DCA_PCA_COOLDOWN_SECONDS": 300,  # [NEW V4.4] Khoảng nghỉ giữa 2 lần nhồi (Giây)
     "CLOSE_ON_REVERSE_USE_PNL": True,  # [NEW V4.4] Bật/Tắt kiểm tra PnL khi đảo chiều
     "REV_CLOSE_ON_NONE": False,  # Nếu True: Master Action NONE cũng được phép cắt theo reverse guard
+    "REV_CONFIRM_SECONDS": 300,  # Tin hieu dao chieu phai giu du lau truoc khi REV_C cat
+    "REV_CONFIRM_SCANS": 2,  # So lan quet signal dao chieu lien tiep toi thieu
     "REV_CLOSE_MIN_PROFIT": 0.0,  # Chỉ đảo khi lãi ít nhất X (0 = ko tính)
     "REV_CLOSE_MIN_PROFIT_UNIT": "USD",
     "REV_CLOSE_MAX_LOSS": 0.0,  # Chỉ đảo khi lỗ ko quá Y (âm, ví dụ -10, 0 = ko tính)
