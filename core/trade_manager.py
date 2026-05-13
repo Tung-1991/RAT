@@ -1743,6 +1743,76 @@ class TradeManager:
         brain = self._get_brain_settings(pos.symbol)
         tsl_cfg = brain.get("TSL_CONFIG", getattr(config, "TSL_CONFIG", {}))
 
+        if "ANTI_CASH" in active_modes or "ANTI" in active_modes:
+            acc = self.connector.get_account_info()
+            equity = acc.get("equity", 0.0) if acc else 0.0
+            s_ticket = str(pos.ticket)
+            initial_cost = float(self.state.get("initial_costs", {}).get(s_ticket, 0.0) or 0.0)
+            hard_stop_limit = self._resolve_money_value(
+                tsl_cfg.get("ANTI_CASH_USD", 10.0),
+                tsl_cfg.get("ANTI_CASH_HARD_STOP_UNIT", "USD"),
+                pos=pos,
+                equity=equity,
+            )
+            hard_threshold = hard_stop_limit + initial_cost
+            if hard_threshold > 0 and profit_usd > -hard_threshold:
+                milestones.append(
+                    (
+                        profit_usd + hard_threshold,
+                        f"ANTI Hard đợi -${hard_threshold:.2f}",
+                    )
+                )
+
+            if tsl_cfg.get("ANTI_CASH_MFE_ENABLE", True):
+                excursion = self.state.get("trade_excursions", {}).get(s_ticket, {})
+                mfe_usd = float(excursion.get("mfe_usd", profit_usd))
+                mfe_trigger = self._resolve_money_value(
+                    tsl_cfg.get("ANTI_CASH_MFE_TRIGGER_USD", 30.0),
+                    tsl_cfg.get("ANTI_CASH_MFE_TRIGGER_UNIT", "USD"),
+                    pos=pos,
+                    equity=equity,
+                )
+                mfe_giveback = self._resolve_money_value(
+                    tsl_cfg.get("ANTI_CASH_MFE_GIVEBACK_USD", 20.0),
+                    tsl_cfg.get("ANTI_CASH_MFE_GIVEBACK_UNIT", "USD"),
+                    pos=pos,
+                    equity=equity,
+                )
+                mfe_floor = self._resolve_money_value(
+                    tsl_cfg.get("ANTI_CASH_MFE_FLOOR_USD", 0.0),
+                    tsl_cfg.get("ANTI_CASH_MFE_FLOOR_UNIT", "USD"),
+                    pos=pos,
+                    equity=equity,
+                )
+                if mfe_trigger > 0:
+                    if mfe_usd < mfe_trigger:
+                        milestones.append(
+                            (
+                                mfe_trigger - mfe_usd,
+                                f"ANTI MFE đợi +${mfe_trigger:.2f}",
+                            )
+                        )
+                    else:
+                        cut_levels = []
+                        if mfe_giveback > 0:
+                            cut_levels.append(mfe_usd - mfe_giveback)
+                        cut_levels.append(mfe_floor)
+                        cut_level = max(cut_levels)
+                        if profit_usd > cut_level:
+                            milestones.append(
+                                (
+                                    profit_usd - cut_level,
+                                    f"ANTI MFE guard ${cut_level:.2f}",
+                                )
+                            )
+                        else:
+                            milestones.append(
+                                (
+                                    0.0,
+                                    f"ANTI MFE ready <= ${cut_level:.2f}",
+                                )
+                            )
+
         # [NEW V4.4] ONE-TIME BE: Bỏ qua BE/BE_CASH nếu SL đã được khoá an toàn
         one_time_be = tsl_cfg.get("ONE_TIME_BE", False)
         sl_better_than_entry = (is_buy and pos.sl >= pos.price_open) or (
