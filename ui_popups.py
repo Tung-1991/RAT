@@ -43,7 +43,7 @@ def _add_popup_hint(parent, text, padx=15, pady=(5, 10), wraplength=900):
 # ==============================================================================
 # 1. POPUP CẤU HÌNH TỪNG CẶP GIAO DỊCH (SYMBOL CONFIG)
 # ==============================================================================
-def open_symbol_config_popup(app, symbol):
+def open_symbol_config_popup(app, symbol, on_change=None):
     import json
 
     import core.storage_manager as storage_manager
@@ -58,6 +58,7 @@ def open_symbol_config_popup(app, symbol):
 
     symbol_configs = existing_data.get("symbol_configs", {})
     sym_cfg = symbol_configs.get(symbol, {})
+    has_symbol_override = symbol in symbol_configs and bool(sym_cfg)
 
     top = ctk.CTkToplevel(app)
     top.title(f"Cấu hình riêng: {symbol}")
@@ -73,6 +74,12 @@ def open_symbol_config_popup(app, symbol):
     ctk.CTkLabel(
         body, text=f"THIẾT LẬP SAFEGUARD: {symbol}", font=FONT_BOLD, text_color="#2196F3"
     ).pack(pady=10)
+    ctk.CTkLabel(
+        body,
+        text="ĐANG GHI ĐÈ SYMBOL" if has_symbol_override else "ĐANG DÙNG GLOBAL DEFAULT",
+        font=("Roboto", 12, "bold"),
+        text_color=COL_WARN if has_symbol_override else "#9E9E9E",
+    ).pack(pady=(0, 6))
     _add_popup_hint(
         body,
         "- Cấu hình này chỉ áp dụng cho symbol đang chọn.\n"
@@ -205,18 +212,44 @@ def open_symbol_config_popup(app, symbol):
             from core.storage_manager import invalidate_settings_cache
             invalidate_settings_cache()
             app.log_message(f"✅ Đã lưu cấu hình riêng cho {symbol}.", target="bot")
+            if callable(on_change):
+                on_change()
             top.destroy()
         except ValueError:
             messagebox.showerror("Lỗi", "Dữ liệu nhập sai, vui lòng nhập số nguyên!", parent=top)
 
+    def reset_sym():
+        if "symbol_configs" in existing_data and symbol in existing_data["symbol_configs"]:
+            existing_data["symbol_configs"].pop(symbol, None)
+            with open(cfg_path, "w", encoding="utf-8") as f:
+                json.dump(existing_data, f, indent=4, ensure_ascii=False)
+            from core.storage_manager import invalidate_settings_cache
+            invalidate_settings_cache()
+            app.log_message(f"↩ Đã reset cấu hình riêng cho {symbol}; dùng Global default.", target="bot")
+            if callable(on_change):
+                on_change()
+        top.destroy()
+
+    f_actions = ctk.CTkFrame(top, fg_color="transparent")
+    f_actions.pack(pady=15, fill="x", padx=30)
     ctk.CTkButton(
-        top,
+        f_actions,
         text="LƯU CẤU HÌNH",
         fg_color=COL_GREEN,
         font=FONT_BOLD,
         height=40,
         command=save_sym,
-    ).pack(pady=15, fill="x", padx=30)
+    ).pack(side="left", expand=True, fill="x", padx=(0, 8))
+    ctk.CTkButton(
+        f_actions,
+        text="RESET VỀ GLOBAL",
+        fg_color="#5D4037" if has_symbol_override else "#424242",
+        hover_color="#795548",
+        font=FONT_BOLD,
+        height=40,
+        state="normal" if has_symbol_override else "disabled",
+        command=reset_sym,
+    ).pack(side="left", expand=True, fill="x", padx=(8, 0))
 
 
 # ==============================================================================
@@ -297,6 +330,31 @@ def open_bot_setting_popup(app):
     f_coins.pack(fill="x", padx=30, pady=(0, 10))
     app.bot_coin_vars = {}
     allowed_list = getattr(config, "BOT_ACTIVE_SYMBOLS", config.COIN_LIST)
+    symbol_cfg_buttons = {}
+
+    def _symbol_has_override(symbol_name):
+        try:
+            import json
+            import core.storage_manager as storage_manager
+
+            cfg_path = storage_manager.BRAIN_FILE
+            if os.path.exists(cfg_path):
+                with open(cfg_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                return bool(data.get("symbol_configs", {}).get(symbol_name))
+        except Exception:
+            pass
+        return False
+
+    def refresh_symbol_cfg_buttons():
+        for symbol_name, btn in symbol_cfg_buttons.items():
+            has_override = _symbol_has_override(symbol_name)
+            btn.configure(
+                text="⚙*" if has_override else "⚙",
+                fg_color=COL_WARN if has_override else "#444",
+                hover_color="#FFB300" if has_override else "#666",
+                text_color="#212121" if has_override else "#FFFFFF",
+            )
 
     # Tạo layout lưới cho các cặp tiền
     row_idx = 0
@@ -313,16 +371,21 @@ def open_bot_setting_popup(app):
         )
         chk.pack(side="left")
 
+        has_override = _symbol_has_override(coin)
         btn_cfg = ctk.CTkButton(
             f_single_coin,
-            text="⚙",
+            text="⚙*" if has_override else "⚙",
             width=25,
             height=20,
-            fg_color="#444",
-            hover_color="#666",
-            command=lambda c=coin: open_symbol_config_popup(app, c),
+            fg_color=COL_WARN if has_override else "#444",
+            hover_color="#FFB300" if has_override else "#666",
+            text_color="#212121" if has_override else "#FFFFFF",
+            command=lambda c=coin: open_symbol_config_popup(
+                app, c, on_change=refresh_symbol_cfg_buttons
+            ),
         )
         btn_cfg.pack(side="left", padx=(5, 0))
+        symbol_cfg_buttons[coin] = btn_cfg
 
         col_idx += 1
         if col_idx > 1:
