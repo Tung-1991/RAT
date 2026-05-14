@@ -95,21 +95,35 @@ def open_symbol_config_popup(app, symbol):
     e_max_orders.insert(0, str(sym_cfg.get("max_orders", 1)))
     e_max_orders.grid(row=0, column=1, sticky="e", pady=10)
 
+    ctk.CTkLabel(f_grid, text="Max BUY Orders (0=Off):").grid(
+        row=1, column=0, sticky="w", pady=10
+    )
+    e_max_buy_orders = ctk.CTkEntry(f_grid, width=100, justify="center")
+    e_max_buy_orders.insert(0, str(sym_cfg.get("max_buy_orders", 0)))
+    e_max_buy_orders.grid(row=1, column=1, sticky="e", pady=10)
+
+    ctk.CTkLabel(f_grid, text="Max SELL Orders (0=Off):").grid(
+        row=2, column=0, sticky="w", pady=10
+    )
+    e_max_sell_orders = ctk.CTkEntry(f_grid, width=100, justify="center")
+    e_max_sell_orders.insert(0, str(sym_cfg.get("max_sell_orders", 0)))
+    e_max_sell_orders.grid(row=2, column=1, sticky="e", pady=10)
+
     # Max Spread
     ctk.CTkLabel(f_grid, text="Max Spread (points):").grid(
-        row=1, column=0, sticky="w", pady=10
+        row=3, column=0, sticky="w", pady=10
     )
     e_max_spread = ctk.CTkEntry(f_grid, width=100, justify="center")
     e_max_spread.insert(0, str(sym_cfg.get("max_spread", 150)))
-    e_max_spread.grid(row=1, column=1, sticky="e", pady=10)
+    e_max_spread.grid(row=3, column=1, sticky="e", pady=10)
 
     # Max Ping
     ctk.CTkLabel(f_grid, text="Max Ping (ms):").grid(
-        row=2, column=0, sticky="w", pady=10
+        row=4, column=0, sticky="w", pady=10
     )
     e_max_ping = ctk.CTkEntry(f_grid, width=100, justify="center")
     e_max_ping.insert(0, str(sym_cfg.get("max_ping", 150)))
-    e_max_ping.grid(row=2, column=1, sticky="e", pady=10)
+    e_max_ping.grid(row=4, column=1, sticky="e", pady=10)
 
     # [NEW V4.4] Fixed Lot Mode
     ctk.CTkLabel(
@@ -117,10 +131,10 @@ def open_symbol_config_popup(app, symbol):
         text="Fixed Lot (0 = Tắt):",
         text_color="#FFB300",
         font=("Roboto", 12, "bold"),
-    ).grid(row=3, column=0, sticky="w", pady=10)
+    ).grid(row=5, column=0, sticky="w", pady=10)
     e_fixed_lot = ctk.CTkEntry(f_grid, width=100, justify="center")
     e_fixed_lot.insert(0, str(sym_cfg.get("fixed_lot", 0.0)))
-    e_fixed_lot.grid(row=3, column=1, sticky="e", pady=10)
+    e_fixed_lot.grid(row=5, column=1, sticky="e", pady=10)
 
     # [NEW V4.4] Max Lot Cap
     ctk.CTkLabel(
@@ -128,47 +142,49 @@ def open_symbol_config_popup(app, symbol):
         text="Max Lot Cap (0=Tắt):",
         text_color="#FFB300",
         font=("Roboto", 12, "bold"),
-    ).grid(row=4, column=0, sticky="w", pady=10)
+    ).grid(row=6, column=0, sticky="w", pady=10)
     e_max_lot_cap = ctk.CTkEntry(f_grid, width=100, justify="center")
     e_max_lot_cap.insert(0, str(sym_cfg.get("max_lot_cap", 0.0)))
-    e_max_lot_cap.grid(row=4, column=1, sticky="e", pady=10)
+    e_max_lot_cap.grid(row=6, column=1, sticky="e", pady=10)
 
     # [NEW V5] Watermark & Options
-    ctk.CTkLabel(f_grid, text="Watermark Trigger:", text_color="#00C853").grid(row=5, column=0, sticky="w", pady=10)
+    ctk.CTkLabel(f_grid, text="Watermark Trigger:", text_color="#00C853").grid(row=7, column=0, sticky="w", pady=10)
     e_wm_trigger = ctk.CTkEntry(f_grid, width=100, justify="center")
     e_wm_trigger.insert(0, str(sym_cfg.get("watermark_trigger", 0.0)))
-    e_wm_trigger.grid(row=5, column=1, sticky="e", pady=10)
+    e_wm_trigger.grid(row=7, column=1, sticky="e", pady=10)
     cbo_wm_trigger_unit = ctk.CTkOptionMenu(f_grid, values=["USD", "%Equity"], width=90)
     cbo_wm_trigger_unit.set(sym_cfg.get("watermark_trigger_unit", "USD"))
-    cbo_wm_trigger_unit.grid(row=5, column=2, sticky="w", padx=(8, 0), pady=10)
+    cbo_wm_trigger_unit.grid(row=7, column=2, sticky="w", padx=(8, 0), pady=10)
 
-    ctk.CTkLabel(f_grid, text="Watermark Sụt giảm:", text_color="#00C853").grid(row=6, column=0, sticky="w", pady=10)
+    ctk.CTkLabel(f_grid, text="Watermark Sụt giảm:", text_color="#00C853").grid(row=8, column=0, sticky="w", pady=10)
     e_wm_drawdown = ctk.CTkEntry(f_grid, width=100, justify="center")
     e_wm_drawdown.insert(0, str(sym_cfg.get("watermark_drawdown", 0.0)))
-    e_wm_drawdown.grid(row=6, column=1, sticky="e", pady=10)
+    e_wm_drawdown.grid(row=8, column=1, sticky="e", pady=10)
     cbo_wm_drawdown_unit = ctk.CTkOptionMenu(f_grid, values=["USD", "%Equity"], width=90)
     cbo_wm_drawdown_unit.set(sym_cfg.get("watermark_drawdown_unit", "USD"))
-    cbo_wm_drawdown_unit.grid(row=6, column=2, sticky="w", padx=(8, 0), pady=10)
+    cbo_wm_drawdown_unit.grid(row=8, column=2, sticky="w", padx=(8, 0), pady=10)
 
-    ctk.CTkLabel(f_grid, text="SL Tối thiểu (Points):").grid(row=7, column=0, sticky="w", pady=10)
+    ctk.CTkLabel(f_grid, text="SL Tối thiểu (Points):").grid(row=9, column=0, sticky="w", pady=10)
     e_min_sl = ctk.CTkEntry(f_grid, width=100, justify="center")
     e_min_sl.insert(0, str(sym_cfg.get("min_sl_points", 0)))
-    e_min_sl.grid(row=7, column=1, sticky="e", pady=10)
+    e_min_sl.grid(row=9, column=1, sticky="e", pady=10)
 
-    ctk.CTkLabel(f_grid, text="Max Basket Drawdown (DCA/PCA):").grid(row=8, column=0, sticky="w", pady=10)
+    ctk.CTkLabel(f_grid, text="Max Basket Drawdown (DCA/PCA):").grid(row=10, column=0, sticky="w", pady=10)
     e_basket_dd = ctk.CTkEntry(f_grid, width=100, justify="center")
     e_basket_dd.insert(0, str(sym_cfg.get("max_basket_drawdown", 0.0)))
-    e_basket_dd.grid(row=8, column=1, sticky="e", pady=10)
+    e_basket_dd.grid(row=10, column=1, sticky="e", pady=10)
     cbo_basket_dd_unit = ctk.CTkOptionMenu(f_grid, values=["USD", "%Equity"], width=90)
     cbo_basket_dd_unit.set(sym_cfg.get("max_basket_drawdown_unit", "USD"))
-    cbo_basket_dd_unit.grid(row=8, column=2, sticky="w", padx=(8, 0), pady=10)
+    cbo_basket_dd_unit.grid(row=10, column=2, sticky="w", padx=(8, 0), pady=10)
 
     var_reject_lot = ctk.BooleanVar(value=sym_cfg.get("reject_on_max_lot", False))
-    ctk.CTkCheckBox(f_grid, text="Hủy lệnh nếu vượt Max Lot (Tắt = Ép bằng Max Lot)", variable=var_reject_lot, font=("Roboto", 11)).grid(row=9, column=0, columnspan=2, sticky="w", pady=10)
+    ctk.CTkCheckBox(f_grid, text="Hủy lệnh nếu vượt Max Lot (Tắt = Ép bằng Max Lot)", variable=var_reject_lot, font=("Roboto", 11)).grid(row=11, column=0, columnspan=2, sticky="w", pady=10)
 
     def save_sym():
         try:
             mo = int(e_max_orders.get())
+            mbo = int(e_max_buy_orders.get())
+            mso = int(e_max_sell_orders.get())
             ms = int(e_max_spread.get())
             mp = int(e_max_ping.get())
 
@@ -176,6 +192,8 @@ def open_symbol_config_popup(app, symbol):
                 existing_data["symbol_configs"] = {}
             existing_data["symbol_configs"][symbol] = {
                 "max_orders": mo,
+                "max_buy_orders": max(0, mbo),
+                "max_sell_orders": max(0, mso),
                 "max_spread": ms,
                 "max_ping": mp,
                 "fixed_lot": float(e_fixed_lot.get()),

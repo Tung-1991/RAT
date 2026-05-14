@@ -545,7 +545,7 @@ class BotStrategyUI(ctk.CTkToplevel):
             # Cập nhật Block Reason (Highlight lý do chặn)
             block_reason = context.get("block_reason", "OK / Ready")
             reason_color = "#00C853" if "OK" in block_reason else "#FFAB00"
-            self.master_reason_lbl.configure(text=f"L� do: {block_reason}", text_color=reason_color)
+            self.master_reason_lbl.configure(text=f"Lý do: {block_reason}", text_color=reason_color)
 
         except Exception as e:
             pass
@@ -841,7 +841,7 @@ class BotStrategyUI(ctk.CTkToplevel):
         ).grid(row=0, column=1, padx=5, pady=5)
 
         ctk.CTkLabel(
-            top_frame, text="Min Votes (D�ng cho VOTING):", font=("Roboto", 12, "bold")
+            top_frame, text="Min Votes (Dùng cho VOTING):", font=("Roboto", 12, "bold")
         ).grid(row=0, column=2, padx=20, pady=5, sticky="w")
         self.min_votes_var = ctk.StringVar(
             value=str(self.brain_data.get("MIN_MATCHING_VOTES", 3))

@@ -385,7 +385,7 @@ class TradeManager:
 
         # Gọi Checklist độc lập của Bot
         res = self.checklist.run_bot_safeguard_checks(
-            acc_info, self.state, symbol, safeguard_cfg, signal_class
+            acc_info, self.state, symbol, safeguard_cfg, signal_class, direction
         )
 
         if not res["passed"]:

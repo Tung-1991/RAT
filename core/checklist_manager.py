@@ -174,7 +174,7 @@ class ChecklistManager:
         return {"passed": all_passed, "checks": checks}
 
     def run_bot_safeguard_checks(
-        self, account_info, state, symbol, safeguard_cfg, signal_class="ENTRY"
+        self, account_info, state, symbol, safeguard_cfg, signal_class="ENTRY", direction=None
     ) -> dict:
         apply_state_defaults(state)
         changed = rollover_daily_session(state)
@@ -193,6 +193,8 @@ class ChecklistManager:
 
         # Giới hạn số lệnh trên mỗi Symbol (Mặc định 1 lệnh ENTRY cho mỗi coin)
         max_per_symbol = int(safeguard_cfg.get("MAX_POS_PER_SYMBOL", 1))
+        max_buy_per_symbol = 0
+        max_sell_per_symbol = 0
 
         check_ping = safeguard_cfg.get("CHECK_PING", True)
         max_ping = int(safeguard_cfg.get("MAX_PING_MS", 150))
@@ -211,6 +213,8 @@ class ChecklistManager:
                     if symbol in sym_cfgs:
                         sc = sym_cfgs[symbol]
                         max_per_symbol = sc.get("max_orders", max_per_symbol)
+                        max_buy_per_symbol = int(sc.get("max_buy_orders", 0) or 0)
+                        max_sell_per_symbol = int(sc.get("max_sell_orders", 0) or 0)
                         max_ping = sc.get("max_ping", max_ping)
                         max_spread = sc.get("max_spread", max_spread)
         except:
@@ -397,6 +401,24 @@ class ChecklistManager:
                     }
                 )
                 all_passed = False
+
+            # 3. Optional per-direction cap. 0 = unlimited within max_orders.
+            # This lets a symbol allow 2 total entries while limiting same-side stacking.
+            if direction:
+                direction = str(direction).upper()
+                dir_type = mt5.ORDER_TYPE_BUY if direction == "BUY" else mt5.ORDER_TYPE_SELL
+                dir_limit = max_buy_per_symbol if direction == "BUY" else max_sell_per_symbol
+                if dir_limit > 0:
+                    same_dir_pos = [p for p in symbol_parent_pos if p.type == dir_type]
+                    if len(same_dir_pos) >= dir_limit:
+                        checks.append(
+                            {
+                                "name": f"{direction} Limit",
+                                "status": "FAIL",
+                                "msg": f"{symbol} đã có {len(same_dir_pos)} lệnh {direction} gốc (Max {dir_limit})",
+                            }
+                        )
+                        all_passed = False
 
             # [NEW] Kiểm tra Cooldown (Thời gian nghỉ giữa 2 lệnh ENTRY của cùng 1 coin)
             last_entry = state.get("bot_last_entry_times", {}).get(symbol, 0)
