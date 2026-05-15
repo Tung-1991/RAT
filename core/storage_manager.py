@@ -273,7 +273,7 @@ def apply_state_defaults(state: Dict[str, Any]) -> Dict[str, Any]:
     return state
 
 def rollover_daily_session(state: Dict[str, Any], now=None) -> bool:
-    """Move to a new log/session bucket without clearing safeguard state."""
+    """Move to a new daily session while preserving active safeguard brakes."""
     now = now or datetime.now()
     apply_state_defaults(state)
     current_date = get_today_str(now)
@@ -290,6 +290,25 @@ def rollover_daily_session(state: Dict[str, Any], now=None) -> bool:
     )
 
     state["date"] = current_date
+    state["pnl_today"] = 0.0
+    state["fee_today"] = 0.0
+    state["trades_today_count"] = 0
+    state["daily_loss_count"] = 0
+    state["losing_streak"] = 0
+    state["bot_pnl_today"] = 0.0
+    state["bot_trades_today"] = 0
+    state["bot_daily_loss_count"] = 0
+    state["bot_losing_streak"] = 0
+    state["bot_symbol_losing_streak"] = {}
+    state["manual_pnl_today"] = 0.0
+    state["manual_trades_today"] = 0
+    state["manual_daily_loss_count"] = 0
+    state["highest_pnl_recorded"] = {}
+    state["highest_pnl_tickets"] = {}
+    state["trade_excursions"] = {}
+    state["anti_cash_locks"] = {}
+    state["be_sl_locks"] = {}
+    state["be_sl_arms"] = {}
     state["current_session_id"] = _new_session_id(now)
     return True
 
@@ -304,38 +323,61 @@ def _normalize_active_brake(state: Dict[str, Any]) -> Dict[str, Any]:
     state["active_brake"] = brake
     return brake
 
+def _brake_until(item: Any) -> float:
+    if not isinstance(item, dict):
+        return 0.0
+    try:
+        return float(item.get("until", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+
+def get_active_safeguard_brake(state: Dict[str, Any], scope: str, symbol: str = None, now=None):
+    """Return an active brake item for the requested scope, if one is still valid."""
+    now = time.time() if now is None else float(now)
+    brake = _normalize_active_brake(state)
+    scope = str(scope or "").upper()
+    item = brake.get("symbols", {}).get(symbol) if scope == "SYMBOL" and symbol else brake.get("global")
+    return item if _brake_until(item) > now else None
+
 def mark_safeguard_brake(state: Dict[str, Any], scope: str, reason: str, until: float, symbol: str = None, trigger: Dict[str, Any] = None):
+    """Arm a safeguard brake. Existing active brakes win and are not extended."""
     apply_state_defaults(state)
     brake = _normalize_active_brake(state)
+    scope = str(scope or "").upper()
+    now = time.time()
+    existing = get_active_safeguard_brake(state, scope, symbol=symbol, now=now)
+    if existing:
+        return existing, False
+
     item = {
         "scope": scope,
         "symbol": symbol,
         "reason": reason,
         "until": float(until or 0.0),
         "trigger": copy.deepcopy(trigger or {}),
-        "created_at": time.time(),
+        "created_at": now,
     }
     if scope == "SYMBOL" and symbol:
         brake["symbols"][symbol] = item
     else:
         brake["global"] = item
     state["active_brake"] = brake
+    return item, True
 
-def _clear_safeguard_runtime_state(state: Dict[str, Any], symbol: str = None):
+def _clear_safeguard_runtime_state(state: Dict[str, Any], symbol: str = None, clear_symbol_cooldowns: bool = True):
     state["bot_pnl_today"] = 0.0
     state["bot_trades_today"] = 0
     state["bot_daily_loss_count"] = 0
     state["bot_losing_streak"] = 0
     state["daily_loss_count"] = 0
     state["losing_streak"] = 0
-    state["bot_last_entry_times"] = {}
-    state["last_close_times"] = {}
     if symbol:
         state.setdefault("bot_symbol_losing_streak", {})[symbol] = 0
         state.setdefault("bot_last_fail_times", {}).pop(symbol, None)
     else:
         state["bot_symbol_losing_streak"] = {}
-        state["bot_last_fail_times"] = {}
+        if clear_symbol_cooldowns:
+            state["bot_last_fail_times"] = {}
 
 def release_expired_safeguard_brakes(state: Dict[str, Any], now=None) -> bool:
     """Release expired safeguard punishment so old counters cannot re-lock the bot."""
@@ -352,8 +394,7 @@ def release_expired_safeguard_brakes(state: Dict[str, Any], now=None) -> bool:
     if global_until > 0 and now >= global_until:
         state["cooldown_until"] = 0.0
         brake["global"] = None
-        brake["symbols"] = {}
-        _clear_safeguard_runtime_state(state)
+        _clear_safeguard_runtime_state(state, clear_symbol_cooldowns=False)
         changed = True
     else:
         global_brake = brake.get("global")
@@ -365,8 +406,7 @@ def release_expired_safeguard_brakes(state: Dict[str, Any], now=None) -> bool:
             if brake_until > 0 and now >= brake_until:
                 state["cooldown_until"] = 0.0
                 brake["global"] = None
-                brake["symbols"] = {}
-                _clear_safeguard_runtime_state(state)
+                _clear_safeguard_runtime_state(state, clear_symbol_cooldowns=False)
                 changed = True
 
     fail_times = state.get("bot_last_fail_times", {})
@@ -530,8 +570,10 @@ def load_state() -> Dict[str, Any]:
         with open(STATE_FILE, "r") as f:
             state = json.load(f)
             apply_state_defaults(state)
-            rollover_daily_session(state)
-            release_expired_safeguard_brakes(state)
+            changed = rollover_daily_session(state)
+            changed = release_expired_safeguard_brakes(state) or changed
+            if changed:
+                save_state(state)
             return state
             
             if "daily_history" not in state: state["daily_history"] = []

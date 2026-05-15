@@ -8,6 +8,8 @@ import MetaTrader5 as mt5
 from core.market_hours import is_symbol_trade_window_open
 from core.storage_manager import (
     apply_state_defaults,
+    get_active_safeguard_brake,
+    mark_safeguard_brake,
     release_expired_safeguard_brakes,
     rollover_daily_session,
     save_state,
@@ -189,7 +191,10 @@ class ChecklistManager:
         max_open = int(safeguard_cfg.get("MAX_OPEN_POSITIONS", 3))
         max_trades = int(safeguard_cfg.get("MAX_TRADES_PER_DAY", 30))
         max_streak = int(safeguard_cfg.get("MAX_LOSING_STREAK", 3))
-        loss_mode = safeguard_cfg.get("LOSS_COUNT_MODE", "TOTAL")
+        loss_mode = str(safeguard_cfg.get("LOSS_COUNT_MODE", "TOTAL")).upper()
+        brake_mode = str(safeguard_cfg.get("GLOBAL_BRAKE_MODE", "Mode 1: Total Freeze"))
+        is_symbol_brake_mode = "Mode 2" in brake_mode
+        cooldown_hours = float(safeguard_cfg.get("GLOBAL_COOLDOWN_HOURS", 4.0))
 
         # Giới hạn số lệnh trên mỗi Symbol (Mặc định 1 lệnh ENTRY cho mỗi coin)
         max_per_symbol = int(safeguard_cfg.get("MAX_POS_PER_SYMBOL", 1))
@@ -250,6 +255,35 @@ class ChecklistManager:
                 ],
             }
 
+        global_brake = get_active_safeguard_brake(state, "GLOBAL", now=now)
+        if global_brake:
+            state["cooldown_until"] = float(global_brake.get("until", 0.0))
+            rem_minutes = int((state["cooldown_until"] - now) / 60)
+            save_state(state)
+            return {
+                "passed": False,
+                "checks": [
+                    {
+                        "name": "Global Cooldown",
+                        "status": "FAIL",
+                        "msg": f"Bot bị chặn safeguard. Mở lại sau {rem_minutes} phút",
+                    }
+                ],
+            }
+
+        symbol_brake = get_active_safeguard_brake(state, "SYMBOL", symbol=symbol, now=now)
+        if is_symbol_brake_mode and symbol_brake:
+            rem_seconds = max(0, int(float(symbol_brake.get("until", 0.0)) - now))
+            msg = (
+                f"{symbol} cách ly safeguard (Còn {rem_seconds//60}m {rem_seconds%60}s)"
+                if rem_seconds >= 60
+                else f"{symbol} cách ly safeguard (Còn {rem_seconds}s)"
+            )
+            return {
+                "passed": False,
+                "checks": [{"name": "Isolation", "status": "FAIL", "msg": msg}],
+            }
+
         if not account_info:
             return {
                 "passed": False,
@@ -299,7 +333,10 @@ class ChecklistManager:
         start_bal = state["starting_balance"]
         pnl_today = state.get("bot_pnl_today", 0.0)
         loss_pct = (pnl_today / start_bal * 100) if start_bal > 0 else 0
+        threshold_reason = None
+        trigger_losses = 0
         if loss_pct <= -max_loss_pct:
+            threshold_reason = f"Chạm Max Loss ({loss_pct:.2f}% / {max_loss_pct}%)"
             checks.append(
                 {
                     "name": "Daily Loss",
@@ -311,6 +348,8 @@ class ChecklistManager:
 
         count = state.get("bot_trades_today", 0)
         if count >= max_trades:
+            if threshold_reason is None:
+                threshold_reason = f"Chạm Max Trades ({count}/{max_trades})"
             checks.append(
                 {
                     "name": "Số Lệnh",
@@ -322,10 +361,14 @@ class ChecklistManager:
 
         current_losses = (
             state.get("bot_symbol_losing_streak", {}).get(symbol, 0)
-            if str(loss_mode).upper() == "STREAK"
+            if loss_mode == "STREAK"
             else state.get("bot_daily_loss_count", 0)
         )
+        trigger_losses = current_losses
         if current_losses >= max_streak:
+            if threshold_reason is None:
+                scope_label = symbol if loss_mode == "STREAK" and symbol else "BOT"
+                threshold_reason = f"Chạm Max {loss_mode} Loss {scope_label} ({current_losses}/{max_streak})"
             checks.append(
                 {
                     "name": "Lệnh Thua",
@@ -334,6 +377,40 @@ class ChecklistManager:
                 }
             )
             all_passed = False
+
+        if threshold_reason:
+            cooldown_time = now + (cooldown_hours * 3600)
+            trigger_snapshot = {
+                "loss_pct": loss_pct,
+                "trades": count,
+                "losses": trigger_losses,
+                "loss_mode": loss_mode,
+                "max_loss_pct": max_loss_pct,
+                "max_trades": max_trades,
+                "max_streak": max_streak,
+            }
+            if is_symbol_brake_mode and symbol:
+                item, _created = mark_safeguard_brake(
+                    state,
+                    "SYMBOL",
+                    threshold_reason,
+                    cooldown_time,
+                    symbol=symbol,
+                    trigger=trigger_snapshot,
+                )
+                state.setdefault("bot_last_fail_times", {})[symbol] = float(
+                    item.get("until", cooldown_time)
+                )
+            else:
+                item, _created = mark_safeguard_brake(
+                    state,
+                    "GLOBAL",
+                    threshold_reason,
+                    cooldown_time,
+                    trigger=trigger_snapshot,
+                )
+                state["cooldown_until"] = float(item.get("until", cooldown_time))
+            save_state(state)
 
         positions = self.connector.get_all_open_positions()
         import core.storage_manager as storage_manager
@@ -365,13 +442,13 @@ class ChecklistManager:
         except:
             cooldown_min = 1.0
 
-        if isolation_deadline > now:
+        if is_symbol_brake_mode and isolation_deadline > now:
             # Phạt nặng Mode 2: vẫn còn trong thời gian cách ly
             rem_fail = int(isolation_deadline - now)
             msg = f"{symbol} cách ly (Còn {rem_fail//60}m {rem_fail%60}s)" if rem_fail >= 60 else f"{symbol} cách ly (Còn {rem_fail}s)"
             checks.append({"name": "Isolation", "status": "FAIL", "msg": msg})
             all_passed = False
-        elif isolation_deadline > 0 and (now - isolation_deadline) < (cooldown_min * 60):
+        elif is_symbol_brake_mode and isolation_deadline > 0 and (now - isolation_deadline) < (cooldown_min * 60):
             # Phạt nhẹ: lưu timestamp quá khứ, kiểm tra theo COOLDOWN_MINUTES
             rem_fail = int((cooldown_min * 60) - (now - isolation_deadline))
             checks.append({"name": "Fail Cooldown", "status": "FAIL", "msg": f"{symbol} vừa lỗi kỹ thuật (Còn {rem_fail}s)"})

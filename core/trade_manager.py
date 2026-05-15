@@ -20,6 +20,7 @@ from core.storage_manager import (
     apply_state_defaults,
     rollover_daily_session,
     release_expired_safeguard_brakes,
+    get_active_safeguard_brake,
     mark_safeguard_brake,
 )
 from core.market_hours import is_symbol_trade_window_open
@@ -234,6 +235,14 @@ class TradeManager:
         if triggered:
             # [NEW V5.2] Xử lý theo GLOBAL_BRAKE_MODE
             brake_mode = safeguard_cfg.get("GLOBAL_BRAKE_MODE", "Mode 1: Total Freeze")
+            is_symbol_brake_mode = "Mode 2" in str(brake_mode)
+            if get_active_safeguard_brake(self.state, "GLOBAL"):
+                return
+            if is_symbol_brake_mode and symbol and get_active_safeguard_brake(
+                self.state, "SYMBOL", symbol=symbol
+            ):
+                return
+
             cooldown_time = time.time() + (cooldown_hours * 3600)
             trigger_snapshot = {
                 "loss_pct": loss_pct,
@@ -245,18 +254,33 @@ class TradeManager:
                 "max_streak": max_streak,
             }
 
-            if "Mode 2" in brake_mode and symbol:
+            if is_symbol_brake_mode and symbol:
                 # Mode 2: Symbol Isolation (Chỉ phạt mã này)
-                if "bot_last_fail_times" not in self.state:
-                    self.state["bot_last_fail_times"] = {}
-                self.state["bot_last_fail_times"][symbol] = cooldown_time
-                mark_safeguard_brake(self.state, "SYMBOL", reason, cooldown_time, symbol=symbol, trigger=trigger_snapshot)
-                self.log(f"🛑 [SAFEGUARD] {reason}. Bot Phạt Cooldown CÁCH LY {symbol} (Mode 2) trong {cooldown_hours} giờ.", target="bot")
+                item, created = mark_safeguard_brake(
+                    self.state,
+                    "SYMBOL",
+                    reason,
+                    cooldown_time,
+                    symbol=symbol,
+                    trigger=trigger_snapshot,
+                )
+                self.state.setdefault("bot_last_fail_times", {})[symbol] = float(
+                    item.get("until", cooldown_time)
+                )
+                if created:
+                    self.log(f"🛑 [SAFEGUARD] {reason}. Bot Phạt Cooldown CÁCH LY {symbol} (Mode 2) trong {cooldown_hours} giờ.", target="bot")
             else:
                 # Mode 1: Total Freeze (Phạt toàn hệ thống)
-                self.state["cooldown_until"] = cooldown_time
-                mark_safeguard_brake(self.state, "GLOBAL", reason, cooldown_time, trigger=trigger_snapshot)
-                self.log(f"🛑 [SAFEGUARD] {reason}. Bot Phạt TOÀN HỆ THỐNG (Mode 1) trong {cooldown_hours} giờ.", target="bot")
+                item, created = mark_safeguard_brake(
+                    self.state,
+                    "GLOBAL",
+                    reason,
+                    cooldown_time,
+                    trigger=trigger_snapshot,
+                )
+                self.state["cooldown_until"] = float(item.get("until", cooldown_time))
+                if created:
+                    self.log(f"🛑 [SAFEGUARD] {reason}. Bot Phạt TOÀN HỆ THỐNG (Mode 1) trong {cooldown_hours} giờ.", target="bot")
 
             save_state(self.state)
 
@@ -1321,14 +1345,31 @@ class TradeManager:
                                 brake_mode = sg_cfg.get("GLOBAL_BRAKE_MODE", "Mode 1: Total Freeze")
                                 hours = float(sg_cfg.get("GLOBAL_COOLDOWN_HOURS", 4.0))
                                 cooldown_time = time.time() + (hours * 3600)
-                                if "Mode 2" in brake_mode:
-                                    if "bot_last_fail_times" not in self.state:
-                                        self.state["bot_last_fail_times"] = {}
-                                    self.state["bot_last_fail_times"][sym] = cooldown_time
-                                    self.log(f"🛑 [SYMBOL BRAKE] Cách ly {sym} trong {hours} giờ do dính Watermark!", target="bot")
-                                else:
-                                    self.state["cooldown_until"] = cooldown_time
-                                    self.log(f"🛑 [GLOBAL BRAKE] Phanh Toàn Hệ Thống trong {hours} giờ do dính Watermark {sym}!", target="bot")
+                                if not get_active_safeguard_brake(self.state, "GLOBAL"):
+                                    if "Mode 2" in str(brake_mode):
+                                        if not get_active_safeguard_brake(self.state, "SYMBOL", symbol=sym):
+                                            item, created = mark_safeguard_brake(
+                                                self.state,
+                                                "SYMBOL",
+                                                f"Watermark {sym}",
+                                                cooldown_time,
+                                                symbol=sym,
+                                                trigger={"source": "WATERMARK", "symbol": sym, "pnl": current_pnl},
+                                            )
+                                            self.state.setdefault("bot_last_fail_times", {})[sym] = float(item.get("until", cooldown_time))
+                                            if created:
+                                                self.log(f"🛑 [SYMBOL BRAKE] Cách ly {sym} trong {hours} giờ do dính Watermark!", target="bot")
+                                    else:
+                                        item, created = mark_safeguard_brake(
+                                            self.state,
+                                            "GLOBAL",
+                                            f"Watermark {sym}",
+                                            cooldown_time,
+                                            trigger={"source": "WATERMARK", "symbol": sym, "pnl": current_pnl},
+                                        )
+                                        self.state["cooldown_until"] = float(item.get("until", cooldown_time))
+                                        if created:
+                                            self.log(f"🛑 [GLOBAL BRAKE] Phanh Toàn Hệ Thống trong {hours} giờ do dính Watermark {sym}!", target="bot")
 
                             # Xóa mốc để chu kỳ mới làm lại
                             self.state["highest_pnl_recorded"][sym] = 0.0
@@ -1389,14 +1430,31 @@ class TradeManager:
                                 brake_mode = sg_cfg.get("GLOBAL_BRAKE_MODE", "Mode 1: Total Freeze")
                                 hours = float(sg_cfg.get("GLOBAL_COOLDOWN_HOURS", 4.0))
                                 cooldown_time = time.time() + (hours * 3600)
-                                if "Mode 2" in brake_mode:
-                                    if "bot_last_fail_times" not in self.state:
-                                        self.state["bot_last_fail_times"] = {}
-                                    self.state["bot_last_fail_times"][sym] = cooldown_time
-                                    self.log(f"🛑 [SYMBOL BRAKE] Cách ly {sym} trong {hours} giờ do dính Basket Loss!", target="bot")
-                                else:
-                                    self.state["cooldown_until"] = cooldown_time
-                                    self.log(f"🛑 [GLOBAL BRAKE] Phanh Toàn Hệ Thống trong {hours} giờ do dính Basket Loss {sym}!", target="bot")
+                                if not get_active_safeguard_brake(self.state, "GLOBAL"):
+                                    if "Mode 2" in str(brake_mode):
+                                        if not get_active_safeguard_brake(self.state, "SYMBOL", symbol=sym):
+                                            item, created = mark_safeguard_brake(
+                                                self.state,
+                                                "SYMBOL",
+                                                f"Basket Loss {sym}",
+                                                cooldown_time,
+                                                symbol=sym,
+                                                trigger={"source": "BASKET_LOSS", "symbol": sym, "pnl": total_basket_pnl},
+                                            )
+                                            self.state.setdefault("bot_last_fail_times", {})[sym] = float(item.get("until", cooldown_time))
+                                            if created:
+                                                self.log(f"🛑 [SYMBOL BRAKE] Cách ly {sym} trong {hours} giờ do dính Basket Loss!", target="bot")
+                                    else:
+                                        item, created = mark_safeguard_brake(
+                                            self.state,
+                                            "GLOBAL",
+                                            f"Basket Loss {sym}",
+                                            cooldown_time,
+                                            trigger={"source": "BASKET_LOSS", "symbol": sym, "pnl": total_basket_pnl},
+                                        )
+                                        self.state["cooldown_until"] = float(item.get("until", cooldown_time))
+                                        if created:
+                                            self.log(f"🛑 [GLOBAL BRAKE] Phanh Toàn Hệ Thống trong {hours} giờ do dính Basket Loss {sym}!", target="bot")
 
                             needs_save = True
             # ---------------------------------------------------------------

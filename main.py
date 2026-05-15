@@ -1381,6 +1381,8 @@ class BotUI(ctk.CTk):
                     "bot_pnl_today": 0.0,
                     "bot_trades_today": 0,
                     "bot_daily_loss_count": 0,
+                    "bot_losing_streak": 0,
+                    "bot_symbol_losing_streak": {},
                     "manual_pnl_today": 0.0,
                     "manual_trades_today": 0,
                     "manual_daily_loss_count": 0,
