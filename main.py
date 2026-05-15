@@ -126,10 +126,17 @@ class BotUI(ctk.CTk):
             "REV_C": False,  # [NEW V4.4] Recovery/Safelock
             "ANTI_CASH": False,  # [NEW V4.4] Hard stop logic
         }
+        self.entry_exit_tactic_states = {
+            "FALLBACK_R": False,
+            "SWING_REJECTION": False,
+            "FIB_RETRACE": False,
+            "PULLBACK_ZONE": False,
+        }
         self.running = True
         self.tsl_states_map = {}
         self.last_price_val = 0.0
         self.latest_market_context = {}
+        self.latest_entry_exit_decisions = {}
         self.group_status_tracker = {}
 
         self.brain_status = "CHỜ KẾT NỐI..."
@@ -344,12 +351,43 @@ class BotUI(ctk.CTk):
             base_tactic += "+AUTO_PCA"
         return base_tactic
 
+    def get_current_entry_exit_tactic_string(self):
+        active = [k for k, v in self.entry_exit_tactic_states.items() if v]
+        return "+".join(active) if active else "OFF"
+
+    def _save_entry_exit_live_config(self):
+        os.makedirs(os.path.dirname(BRAIN_SETTINGS_FILE), exist_ok=True)
+        existing_data = {}
+        try:
+            if os.path.exists(BRAIN_SETTINGS_FILE):
+                with open(BRAIN_SETTINGS_FILE, "r", encoding="utf-8") as f:
+                    existing_data = json.load(f)
+        except:
+            existing_data = {}
+
+        entry_exit = existing_data.setdefault("entry_exit", {})
+        active = [k for k, v in self.entry_exit_tactic_states.items() if v]
+        entry_exit["enabled"] = bool(active)
+        entry_exit["preview_only"] = entry_exit.get("preview_only", True)
+        entry_exit["active_tactics"] = active
+
+        try:
+            with open(BRAIN_SETTINGS_FILE, "w", encoding="utf-8") as f:
+                json.dump(existing_data, f, indent=4)
+        except Exception as e:
+            self.log_message(f"Lỗi lưu Entry/Exit live config: {e}", error=True)
+
     def toggle_tactic(self, mode):
         next_state = not self.tactic_states[mode]
         self.tactic_states[mode] = next_state
         if mode == "BE_CASH" and next_state:
             self.tactic_states["BE"] = False
         self.update_tactic_buttons_ui()
+
+    def toggle_entry_exit_tactic(self, mode):
+        self.entry_exit_tactic_states[mode] = not self.entry_exit_tactic_states[mode]
+        self.update_entry_exit_buttons_ui()
+        self._save_entry_exit_live_config()
 
     def update_tactic_buttons_ui(self):
         def set_btn(btn, is_active):
@@ -374,6 +412,22 @@ class BotUI(ctk.CTk):
         if hasattr(self, "btn_tactic_anti_cash"):
             set_btn(self.btn_tactic_anti_cash, self.tactic_states["ANTI_CASH"])
 
+    def update_entry_exit_buttons_ui(self):
+        def set_btn(btn, is_active):
+            btn.configure(
+                fg_color="#00838F" if is_active else COL_GRAY_BTN,
+                hover_color="#006064" if is_active else "#616161",
+            )
+
+        if hasattr(self, "btn_entry_r"):
+            set_btn(self.btn_entry_r, self.entry_exit_tactic_states["FALLBACK_R"])
+        if hasattr(self, "btn_entry_swing"):
+            set_btn(self.btn_entry_swing, self.entry_exit_tactic_states["SWING_REJECTION"])
+        if hasattr(self, "btn_entry_fib"):
+            set_btn(self.btn_entry_fib, self.entry_exit_tactic_states["FIB_RETRACE"])
+        if hasattr(self, "btn_entry_pullback"):
+            set_btn(self.btn_entry_pullback, self.entry_exit_tactic_states["PULLBACK_ZONE"])
+
     def on_symbol_change(self, new_symbol):
         config.UI_ACTIVE_SYMBOL = new_symbol
         self._save_brain_live_config()
@@ -382,6 +436,16 @@ class BotUI(ctk.CTk):
 
     def on_direction_change(self, value):
         self.var_direction.set(value)
+        if hasattr(self, "btn_dir_buy") and hasattr(self, "btn_dir_sell"):
+            buy_on = value == "BUY"
+            self.btn_dir_buy.configure(
+                fg_color=COL_GREEN if buy_on else "#424242",
+                hover_color="#009624" if buy_on else "#616161",
+            )
+            self.btn_dir_sell.configure(
+                fg_color=COL_RED if not buy_on else "#424242",
+                hover_color="#B71C1C" if not buy_on else "#616161",
+            )
         sym = self.cbo_symbol.get()
         if getattr(self, "var_manual_trade_mode", None) and self.var_manual_trade_mode.get() == "GRID":
             self.btn_action.configure(
@@ -422,8 +486,8 @@ class BotUI(ctk.CTk):
                 hover_color="#006064" if not normal_on else "#616161",
             )
         if value == "GRID":
-            if hasattr(self, "seg_direction"):
-                self.seg_direction.pack_forget()
+            if hasattr(self, "frame_direction"):
+                self.frame_direction.grid_remove()
             if hasattr(self, "seg_grid_mode"):
                 self.seg_grid_mode.pack(fill="x", padx=10, pady=(5, 5), before=self.btn_action)
             if hasattr(self, "chk_grid_bypass"):
@@ -434,9 +498,9 @@ class BotUI(ctk.CTk):
                 self.seg_grid_mode.pack_forget()
             if hasattr(self, "chk_grid_bypass"):
                 self.chk_grid_bypass.pack_forget()
-            if hasattr(self, "seg_direction"):
-                self.seg_direction.pack(fill="x", padx=10, pady=(5, 5), before=self.btn_action)
-            self.on_direction_change(self.seg_direction.get())
+            if hasattr(self, "frame_direction"):
+                self.frame_direction.grid()
+            self.on_direction_change(self.var_direction.get())
 
     # ==========================================
     # CÁC HÀM MỞ POPUP & GIAO DIỆN PHỤ
@@ -449,6 +513,11 @@ class BotUI(ctk.CTk):
 
     def open_tsl_popup(self):
         ui_popups.open_tsl_popup(self)
+
+    def open_entry_exit_popup(self):
+        from ui_entry_exit_popup import open_entry_exit_popup
+
+        open_entry_exit_popup(self)
 
     def open_edit_popup(self, ticket):
         ui_popups.open_edit_popup(self, ticket)
@@ -574,6 +643,11 @@ class BotUI(ctk.CTk):
                                 self._merge_dict(current_val, v)
                             else:
                                 setattr(config, k, v)
+                    active_entry_tactics = set(bs.get("entry_exit", {}).get("active_tactics", []))
+                    for key in self.entry_exit_tactic_states:
+                        self.entry_exit_tactic_states[key] = key in active_entry_tactics
+                    if hasattr(self, "btn_entry_swing"):
+                        self.update_entry_exit_buttons_ui()
             except:
                 pass
 
@@ -749,8 +823,7 @@ class BotUI(ctk.CTk):
                 text="H: -- | L: -- | ATR: --", text_color="gray"
             )
 
-        d = self.seg_direction.get()
-        self.var_direction.set(d)
+        d = self.var_direction.get()
         cur_tactic_str = self.get_current_tactic_string()
 
         balance = acc["balance"] if acc else 1.0
@@ -798,9 +871,6 @@ class BotUI(ctk.CTk):
             current_risk_pct = params.get("RISK_PERCENT", 0.3)
             sl_pct_display = params.get("SL_PERCENT", 0.0)
             tp_r_display = params.get("TP_RR_RATIO", 0.0)
-
-            self.lbl_head_sl.configure(text=f"STOPLOSS ({sl_pct_display}%)")
-            self.lbl_head_tp.configure(text=f"TARGET ({tp_r_display}R)")
 
             # --- ĐOẠN CẦN THAY THẾ BẮT ĐẦU TỪ ĐÂY ---
             try:
@@ -867,12 +937,48 @@ class BotUI(ctk.CTk):
 
             if mtp > 0:
                 p_tp = mtp
-            elif use_swing_tp and p_tp_tech > 0:
+                tp_label = "MANUAL"
+                swing_tp_missing = False
+            elif use_swing_tp:
                 p_tp = p_tp_tech
+                tp_label = "SWING"
+                swing_tp_missing = p_tp_tech <= 0
             else:
                 p_tp = (
                     cur_price + (active_sl_dist * params["TP_RR_RATIO"]) if d == "BUY" else cur_price - (active_sl_dist * params["TP_RR_RATIO"])
                 )
+                tp_label = f"{tp_r_display}R"
+                swing_tp_missing = False
+
+            self.lbl_head_sl.configure(
+                text="STOPLOSS (SWING)" if use_swing_sl and tech_sl_dist > 0 else f"STOPLOSS ({sl_pct_display}%)"
+            )
+            self.lbl_head_tp.configure(text=f"TARGET ({tp_label})")
+            try:
+                from core.entry_exit_engine import evaluate_entry_exit, format_decision
+
+                brain = self.trade_mgr._get_brain_settings(sym)
+                ee_decision = evaluate_entry_exit(
+                    sym,
+                    d,
+                    cur_price,
+                    sym_ctx or {},
+                    brain.get("entry_exit", {}),
+                )
+                self.latest_entry_exit_decisions[sym] = ee_decision
+                if hasattr(self, "lbl_entry_exit_preview"):
+                    self.lbl_entry_exit_preview.configure(
+                        text=format_decision(ee_decision),
+                        text_color=COL_GREEN
+                        if ee_decision.get("status") == "READY"
+                        else (COL_WARN if ee_decision.get("status") == "WAIT" else "#00B8D4"),
+                    )
+            except Exception as exc:
+                if hasattr(self, "lbl_entry_exit_preview"):
+                    self.lbl_entry_exit_preview.configure(
+                        text=f"E/E: ERROR | {exc}",
+                        text_color=COL_WARN,
+                    )
 
             # 4. TÍNH TOÁN LOT PREVIEW DỰA TRÊN active_sl_dist
             f_lot = mlot if mlot > 0 else 0
@@ -926,10 +1032,10 @@ class BotUI(ctk.CTk):
                 self.lbl_prev_sl.configure(text="LỖI", text_color=COL_WARN)
                 self.lbl_prev_risk.configure(text="$ ---", text_color=COL_WARN)
 
-            is_valid_tp = True
-            if d == "BUY" and p_tp <= cur_price:
+            is_valid_tp = not swing_tp_missing
+            if is_valid_tp and d == "BUY" and p_tp <= cur_price:
                 is_valid_tp = False
-            if d == "SELL" and p_tp >= cur_price:
+            if is_valid_tp and d == "SELL" and p_tp >= cur_price:
                 is_valid_tp = False
 
             if is_valid_tp:
@@ -1173,6 +1279,21 @@ class BotUI(ctk.CTk):
                     tactic_badges.append("+".join(stt_extras))
                 if tactic_badges:
                     stt_txt += f" | {'+'.join(tactic_badges)}"
+                ee_tactic = self.trade_mgr.get_trade_entry_exit_tactic(p.ticket)
+                if ee_tactic and ee_tactic != "OFF":
+                    ee_labels = {
+                        "FALLBACK_R": "R",
+                        "SWING_REJECTION": "SWING",
+                        "FIB_RETRACE": "FIB",
+                        "PULLBACK_ZONE": "PULL",
+                    }
+                    ee_badges = [
+                        ee_labels.get(mode, mode)
+                        for mode in ee_tactic.split("+")
+                        if mode and mode != "OFF"
+                    ]
+                    if ee_badges:
+                        stt_txt += f" | E/E:{'+'.join(ee_badges)}"
 
             net_pnl = p.profit + getattr(p, "swap", 0.0)
             if acc_type not in ["PRO", "STANDARD"]:
@@ -1243,7 +1364,7 @@ class BotUI(ctk.CTk):
             return
 
         d, s, p, t = (
-            self.seg_direction.get(),
+            self.var_direction.get(),
             self.cbo_symbol.get(),
             self.cbo_preset.get(),
             self.get_current_tactic_string(),
@@ -1282,6 +1403,15 @@ class BotUI(ctk.CTk):
 
         # Truyền thêm biến target_sym_ctx vào execute_manual_trade
         target_sym_ctx = self.latest_market_context.get(s, {})
+        try:
+            ee_decision = self.latest_entry_exit_decisions.get(s, {})
+            if ee_decision.get("status") == "READY":
+                if ms == 0.0 and ee_decision.get("sl"):
+                    ms = float(ee_decision["sl"])
+                if mt == 0.0 and ee_decision.get("tp"):
+                    mt = float(ee_decision["tp"])
+        except Exception:
+            pass
 
         def run_trade_thread():
             result = self.trade_mgr.execute_manual_trade(
@@ -1391,6 +1521,7 @@ class BotUI(ctk.CTk):
                     "active_brake": {"global": None, "symbols": {}},
                     "bot_last_entry_times": {},
                     "bot_last_fail_times": {},
+                    "pending_entry_exit": {},
                     "last_close_times": {},
                     "trade_excursions": {},
                     "anti_cash_locks": {},
@@ -1552,6 +1683,27 @@ class BotUI(ctk.CTk):
                     label=f"🔄 Đảo Chiều Tự Cắt: {rev_status}",
                     command=toggle_rev,
                 )
+                ee_menu = Menu(menu, tearoff=0, font=("Arial", 13))
+                ee_options = [
+                    ("OFF", "OFF"),
+                    ("R", "FALLBACK_R"),
+                    ("SWING", "SWING_REJECTION"),
+                    ("FIB", "FIB_RETRACE"),
+                    ("PULL", "PULLBACK_ZONE"),
+                ]
+                current_ee = self.trade_mgr.get_trade_entry_exit_tactic(ticket)
+
+                def set_entry_exit_tactic(new_tactic):
+                    self.trade_mgr.update_trade_entry_exit_tactic(ticket, new_tactic)
+                    self.log_message(f"Update Entry/Exit #{ticket}: {new_tactic}", target="manual")
+
+                for label, value in ee_options:
+                    marker = "✓ " if current_ee == value else ""
+                    ee_menu.add_command(
+                        label=f"{marker}{label}",
+                        command=lambda v=value: set_entry_exit_tactic(v),
+                    )
+                menu.add_cascade(label="Entry/Exit Mode", menu=ee_menu)
                 menu.add_separator()
                 menu.add_command(
                     label="❌ Đóng Lệnh Này",

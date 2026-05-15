@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 # FILE: ui_popups.py
 # V3.8: SUPREME FINAL - TRANSIENT LOCK & TACTIC PREVIEW (KAISER EDITION)
 
@@ -8,8 +8,9 @@ from tkinter import ttk, messagebox
 import config
 import csv
 import os
+import json
 
-# --- BẢNG MÀU & FONT CHUẨN ---
+# --- Báº¢NG MÃ€U & FONT CHUáº¨N ---
 FONT_BOLD = ("Roboto", 13, "bold")
 COL_GREEN = "#00C853"
 COL_RED = "#D50000"
@@ -18,30 +19,8 @@ COL_GRAY_BTN = "#424242"
 COL_WARN = "#FFAB00"
 COL_BOT_TAG = "#E040FB"
 
-
-def _add_popup_hint(parent, text, padx=15, pady=(5, 10), wraplength=900):
-    hint_f = ctk.CTkFrame(
-        parent,
-        fg_color="#332B00",
-        corner_radius=6,
-        border_width=1,
-        border_color="#FFD600",
-    )
-    hint_f.pack(fill="x", padx=padx, pady=pady)
-    ctk.CTkLabel(
-        hint_f,
-        text=text,
-        font=("Arial", 12, "italic"),
-        text_color="#FFD600",
-        justify="left",
-        anchor="w",
-        wraplength=wraplength,
-    ).pack(fill="x", padx=10, pady=6)
-    return hint_f
-
-
 # ==============================================================================
-# 1. POPUP CẤU HÌNH TỪNG CẶP GIAO DỊCH (SYMBOL CONFIG)
+# 1. POPUP Cáº¤U HÃŒNH Tá»ªNG Cáº¶P GIAO Dá»ŠCH (SYMBOL CONFIG)
 # ==============================================================================
 def open_symbol_config_popup(app, symbol, on_change=None):
     import json
@@ -61,7 +40,7 @@ def open_symbol_config_popup(app, symbol, on_change=None):
     has_symbol_override = symbol in symbol_configs and bool(sym_cfg)
 
     top = ctk.CTkToplevel(app)
-    top.title(f"Cấu hình riêng: {symbol}")
+    top.title(f"Cáº¥u hÃ¬nh riÃªng: {symbol}")
     top.geometry("720x720")
     top.minsize(620, 520)
     top.attributes("-topmost", True)
@@ -69,24 +48,24 @@ def open_symbol_config_popup(app, symbol, on_change=None):
 
     body = ctk.CTkScrollableFrame(top, fg_color="transparent")
     body.pack(fill="both", expand=True, padx=12, pady=(10, 4))
-    top.grab_set()  # Khóa (Block) cửa sổ mẹ, bắt buộc người dùng thao tác trên popup này
+    top.grab_set()  # KhÃ³a (Block) cá»­a sá»• máº¹, báº¯t buá»™c ngÆ°á»i dÃ¹ng thao tÃ¡c trÃªn popup nÃ y
 
     ctk.CTkLabel(
-        body, text=f"THIẾT LẬP SAFEGUARD: {symbol}", font=FONT_BOLD, text_color="#2196F3"
+        body, text=f"THIáº¾T Láº¬P SAFEGUARD: {symbol}", font=FONT_BOLD, text_color="#2196F3"
     ).pack(pady=10)
     ctk.CTkLabel(
         body,
-        text="ĐANG GHI ĐÈ SYMBOL" if has_symbol_override else "ĐANG DÙNG GLOBAL DEFAULT",
+        text="ÄANG GHI ÄÃˆ SYMBOL" if has_symbol_override else "ÄANG DÃ™NG GLOBAL DEFAULT",
         font=("Roboto", 12, "bold"),
         text_color=COL_WARN if has_symbol_override else "#9E9E9E",
     ).pack(pady=(0, 6))
     _add_popup_hint(
         body,
-        "- Cấu hình này chỉ áp dụng cho symbol đang chọn.\n"
-        "- Max lệnh tối đa là tổng số ENTRY gốc của symbol.\n"
-        "- Max lệnh cùng chiều chặn stack quá nhiều BUY hoặc SELL; 0 = tắt, chỉ dùng tổng.\n"
-        "- Fixed Lot > 0 sẽ bỏ qua risk %, dùng lot cố định.\n"
-        "- Watermark/Basket/Max Lot là hàng rào riêng trước khi bot vào hoặc giữ lệnh.",
+        "- Cáº¥u hÃ¬nh nÃ y chá»‰ Ã¡p dá»¥ng cho symbol Ä‘ang chá»n.\n"
+        "- Max lá»‡nh tá»‘i Ä‘a lÃ  tá»•ng sá»‘ ENTRY gá»‘c cá»§a symbol.\n"
+        "- Max lá»‡nh cÃ¹ng chiá»u cháº·n stack quÃ¡ nhiá»u BUY hoáº·c SELL; 0 = táº¯t, chá»‰ dÃ¹ng tá»•ng.\n"
+        "- Fixed Lot > 0 sáº½ bá» qua risk %, dÃ¹ng lot cá»‘ Ä‘á»‹nh.\n"
+        "- Watermark/Basket/Max Lot lÃ  hÃ ng rÃ o riÃªng trÆ°á»›c khi bot vÃ o hoáº·c giá»¯ lá»‡nh.",
         padx=20,
         pady=(0, 5),
         wraplength=620,
@@ -97,14 +76,14 @@ def open_symbol_config_popup(app, symbol, on_change=None):
     f_grid.grid_columnconfigure(0, weight=1)
 
     # Max Orders
-    ctk.CTkLabel(f_grid, text="Max Lệnh Tối Đa:").grid(
+    ctk.CTkLabel(f_grid, text="Max Lá»‡nh Tá»‘i Äa:").grid(
         row=0, column=0, sticky="w", pady=10
     )
     e_max_orders = ctk.CTkEntry(f_grid, width=100, justify="center")
     e_max_orders.insert(0, str(sym_cfg.get("max_orders", 1)))
     e_max_orders.grid(row=0, column=1, sticky="e", pady=10)
 
-    ctk.CTkLabel(f_grid, text="Max Lệnh Cùng Chiều (0=Tắt):").grid(
+    ctk.CTkLabel(f_grid, text="Max Lá»‡nh CÃ¹ng Chiá»u (0=Táº¯t):").grid(
         row=1, column=0, sticky="w", pady=10
     )
     e_max_same_direction = ctk.CTkEntry(f_grid, width=100, justify="center")
@@ -130,7 +109,7 @@ def open_symbol_config_popup(app, symbol, on_change=None):
     # [NEW V4.4] Fixed Lot Mode
     ctk.CTkLabel(
         f_grid,
-        text="Fixed Lot (0 = Tắt):",
+        text="Fixed Lot (0 = Táº¯t):",
         text_color="#FFB300",
         font=("Roboto", 12, "bold"),
     ).grid(row=4, column=0, sticky="w", pady=10)
@@ -141,7 +120,7 @@ def open_symbol_config_popup(app, symbol, on_change=None):
     # [NEW V4.4] Max Lot Cap
     ctk.CTkLabel(
         f_grid,
-        text="Max Lot Cap (0=Tắt):",
+        text="Max Lot Cap (0=Táº¯t):",
         text_color="#FFB300",
         font=("Roboto", 12, "bold"),
     ).grid(row=5, column=0, sticky="w", pady=10)
@@ -158,7 +137,7 @@ def open_symbol_config_popup(app, symbol, on_change=None):
     cbo_wm_trigger_unit.set(sym_cfg.get("watermark_trigger_unit", "USD"))
     cbo_wm_trigger_unit.grid(row=6, column=2, sticky="w", padx=(8, 0), pady=10)
 
-    ctk.CTkLabel(f_grid, text="Watermark Sụt giảm:", text_color="#00C853").grid(row=7, column=0, sticky="w", pady=10)
+    ctk.CTkLabel(f_grid, text="Watermark Sá»¥t giáº£m:", text_color="#00C853").grid(row=7, column=0, sticky="w", pady=10)
     e_wm_drawdown = ctk.CTkEntry(f_grid, width=100, justify="center")
     e_wm_drawdown.insert(0, str(sym_cfg.get("watermark_drawdown", 0.0)))
     e_wm_drawdown.grid(row=7, column=1, sticky="e", pady=10)
@@ -166,7 +145,7 @@ def open_symbol_config_popup(app, symbol, on_change=None):
     cbo_wm_drawdown_unit.set(sym_cfg.get("watermark_drawdown_unit", "USD"))
     cbo_wm_drawdown_unit.grid(row=7, column=2, sticky="w", padx=(8, 0), pady=10)
 
-    ctk.CTkLabel(f_grid, text="SL Tối thiểu (Points):").grid(row=8, column=0, sticky="w", pady=10)
+    ctk.CTkLabel(f_grid, text="SL Tá»‘i thiá»ƒu (Points):").grid(row=8, column=0, sticky="w", pady=10)
     e_min_sl = ctk.CTkEntry(f_grid, width=100, justify="center")
     e_min_sl.insert(0, str(sym_cfg.get("min_sl_points", 0)))
     e_min_sl.grid(row=8, column=1, sticky="e", pady=10)
@@ -180,7 +159,7 @@ def open_symbol_config_popup(app, symbol, on_change=None):
     cbo_basket_dd_unit.grid(row=9, column=2, sticky="w", padx=(8, 0), pady=10)
 
     var_reject_lot = ctk.BooleanVar(value=sym_cfg.get("reject_on_max_lot", False))
-    ctk.CTkCheckBox(f_grid, text="Hủy lệnh nếu vượt Max Lot (Tắt = Ép bằng Max Lot)", variable=var_reject_lot, font=("Roboto", 11)).grid(row=10, column=0, columnspan=2, sticky="w", pady=10)
+    ctk.CTkCheckBox(f_grid, text="Há»§y lá»‡nh náº¿u vÆ°á»£t Max Lot (Táº¯t = Ã‰p báº±ng Max Lot)", variable=var_reject_lot, font=("Roboto", 11)).grid(row=10, column=0, columnspan=2, sticky="w", pady=10)
 
     def save_sym():
         try:
@@ -211,12 +190,12 @@ def open_symbol_config_popup(app, symbol, on_change=None):
                 json.dump(existing_data, f, indent=4)
             from core.storage_manager import invalidate_settings_cache
             invalidate_settings_cache()
-            app.log_message(f"✅ Đã lưu cấu hình riêng cho {symbol}.", target="bot")
+            app.log_message(f"âœ… ÄÃ£ lÆ°u cáº¥u hÃ¬nh riÃªng cho {symbol}.", target="bot")
             if callable(on_change):
                 on_change()
             top.destroy()
         except ValueError:
-            messagebox.showerror("Lỗi", "Dữ liệu nhập sai, vui lòng nhập số nguyên!", parent=top)
+            messagebox.showerror("Lá»—i", "Dá»¯ liá»‡u nháº­p sai, vui lÃ²ng nháº­p sá»‘ nguyÃªn!", parent=top)
 
     def reset_sym():
         if "symbol_configs" in existing_data and symbol in existing_data["symbol_configs"]:
@@ -225,7 +204,7 @@ def open_symbol_config_popup(app, symbol, on_change=None):
                 json.dump(existing_data, f, indent=4, ensure_ascii=False)
             from core.storage_manager import invalidate_settings_cache
             invalidate_settings_cache()
-            app.log_message(f"↩ Đã reset cấu hình riêng cho {symbol}; dùng Global default.", target="bot")
+            app.log_message(f"â†© ÄÃ£ reset cáº¥u hÃ¬nh riÃªng cho {symbol}; dÃ¹ng Global default.", target="bot")
             if callable(on_change):
                 on_change()
         top.destroy()
@@ -234,7 +213,7 @@ def open_symbol_config_popup(app, symbol, on_change=None):
     f_actions.pack(pady=15, fill="x", padx=30)
     ctk.CTkButton(
         f_actions,
-        text="LƯU CẤU HÌNH",
+        text="LÆ¯U Cáº¤U HÃŒNH",
         fg_color=COL_GREEN,
         font=FONT_BOLD,
         height=40,
@@ -242,7 +221,7 @@ def open_symbol_config_popup(app, symbol, on_change=None):
     ).pack(side="left", expand=True, fill="x", padx=(0, 8))
     ctk.CTkButton(
         f_actions,
-        text="RESET VỀ GLOBAL",
+        text="RESET Vá»€ GLOBAL",
         fg_color="#5D4037" if has_symbol_override else "#424242",
         hover_color="#795548",
         font=FONT_BOLD,
@@ -253,15 +232,15 @@ def open_symbol_config_popup(app, symbol, on_change=None):
 
 
 # ==============================================================================
-# 2. POPUP CẤU HÌNH LÕI (CHỈ CÒN SAFETY & WATCHLIST)
+# 2. POPUP Cáº¤U HÃŒNH LÃ•I (CHá»ˆ CÃ’N SAFETY & WATCHLIST)
 # ==============================================================================
 def open_bot_setting_popup(app):
     top = ctk.CTkToplevel(app)
-    top.title("Cấu hình Lõi Hệ Thống (Core Settings)")
+    top.title("Cáº¥u hÃ¬nh LÃµi Há»‡ Thá»‘ng (Core Settings)")
     top.geometry("1050x720")
     top.minsize(860, 560)
     top.attributes("-topmost", True)
-    # top.transient(app) # Khóa Z-index, luôn nổi trên App chính
+    # top.transient(app) # KhÃ³a Z-index, luÃ´n ná»•i trÃªn App chÃ­nh
 
     tab_core = ctk.CTkScrollableFrame(top, fg_color="transparent")
     tab_core.pack(fill="both", expand=True, padx=15, pady=15)
@@ -270,7 +249,7 @@ def open_bot_setting_popup(app):
     f_auto = ctk.CTkFrame(tab_core, fg_color="transparent")
     f_auto.pack(fill="x", pady=10)
     ctk.CTkLabel(
-        f_auto, text="Tự động bóp cò khi Brain có tín hiệu:", text_color="gray"
+        f_auto, text="Tá»± Ä‘á»™ng bÃ³p cÃ² khi Brain cÃ³ tÃ­n hiá»‡u:", text_color="gray"
     ).pack()
     sw_auto = ctk.CTkSwitch(
         f_auto,
@@ -311,18 +290,18 @@ def open_bot_setting_popup(app):
 
     ctk.CTkFrame(tab_core, height=2, fg_color="#333").pack(fill="x", padx=30, pady=5)
 
-    # Watchlist (Đã chuyển lên đầu)
+    # Watchlist (ÄÃ£ chuyá»ƒn lÃªn Ä‘áº§u)
     ctk.CTkLabel(
         tab_core,
-        text="WATCHLIST - BOT CHỈ QUÉT CÁC COIN SAU:",
+        text="WATCHLIST - BOT CHá»ˆ QUÃ‰T CÃC COIN SAU:",
         font=FONT_BOLD,
         text_color="#2196F3",
     ).pack(pady=(5, 5))
     _add_popup_hint(
         tab_core,
-        "- Watchlist quyết định symbol bot được quét; nút bánh răng là safeguard riêng từng symbol.\n"
-        "- AUTO-TRADING bật/tắt bóp cò thật, nhưng preview/context vẫn có thể chạy để quan sát.\n"
-        "- Cấu hình Global là mặc định; cấu hình riêng theo symbol sẽ ghi đè.",
+        "- Watchlist quyáº¿t Ä‘á»‹nh symbol bot Ä‘Æ°á»£c quÃ©t; nÃºt bÃ¡nh rÄƒng lÃ  safeguard riÃªng tá»«ng symbol.\n"
+        "- AUTO-TRADING báº­t/táº¯t bÃ³p cÃ² tháº­t, nhÆ°ng preview/context váº«n cÃ³ thá»ƒ cháº¡y Ä‘á»ƒ quan sÃ¡t.\n"
+        "- Cáº¥u hÃ¬nh Global lÃ  máº·c Ä‘á»‹nh; cáº¥u hÃ¬nh riÃªng theo symbol sáº½ ghi Ä‘Ã¨.",
         padx=30,
         pady=(0, 10),
     )
@@ -350,13 +329,13 @@ def open_bot_setting_popup(app):
         for symbol_name, btn in symbol_cfg_buttons.items():
             has_override = _symbol_has_override(symbol_name)
             btn.configure(
-                text="⚙*" if has_override else "⚙",
+                text="âš™*" if has_override else "âš™",
                 fg_color=COL_WARN if has_override else "#444",
                 hover_color="#FFB300" if has_override else "#666",
                 text_color="#212121" if has_override else "#FFFFFF",
             )
 
-    # Tạo layout lưới cho các cặp tiền
+    # Táº¡o layout lÆ°á»›i cho cÃ¡c cáº·p tiá»n
     row_idx = 0
     col_idx = 0
     for coin in config.COIN_LIST:
@@ -374,7 +353,7 @@ def open_bot_setting_popup(app):
         has_override = _symbol_has_override(coin)
         btn_cfg = ctk.CTkButton(
             f_single_coin,
-            text="⚙*" if has_override else "⚙",
+            text="âš™*" if has_override else "âš™",
             width=25,
             height=20,
             fg_color=COL_WARN if has_override else "#444",
@@ -394,18 +373,19 @@ def open_bot_setting_popup(app):
 
     ctk.CTkFrame(tab_core, height=2, fg_color="#333").pack(fill="x", padx=30, pady=5)
 
-    # Safety Guard (Bot ONLY - Độc lập hoàn toàn với Manual)
+    # Safety Guard (Bot ONLY - Äá»™c láº­p hoÃ n toÃ n vá»›i Manual)
     ctk.CTkLabel(
         tab_core,
-        text="HÀNG RÀO BẢO VỆ BOT (BOT SAFEGUARD)",
+        text="HÃ€NG RÃ€O Báº¢O Vá»† BOT (BOT SAFEGUARD)",
         font=FONT_BOLD,
         text_color="#FFB300",
     ).pack(pady=(5, 5))
     _add_popup_hint(
         tab_core,
-        "- Global Brake chặn toàn bot khi chạm ngưỡng lỗ/streak/cooldown.\n"
-        "- Safeguard bảo vệ lợi nhuận, rổ DCA/PCA, SL tối thiểu và điều kiện TP.\n"
-        "- Giá trị 0 thường là tắt giới hạn tương ứng.",
+        "- Global Brake cháº·n toÃ n bot khi cháº¡m ngÆ°á»¡ng lá»—/streak/cooldown.\n"
+        "- Safeguard báº£o vá»‡ lá»£i nhuáº­n, rá»• DCA/PCA, SL tá»‘i thiá»ƒu vÃ  Ä‘iá»u kiá»‡n TP.\n"
+        "- TP R/Swing á»Ÿ Ä‘Ã¢y lÃ  TP bot cÅ©; Entry/Exit Mode cÃ³ thá»ƒ override TP sau nÃ y theo tp_policy.\n"
+        "- GiÃ¡ trá»‹ 0 thÆ°á»ng lÃ  táº¯t giá»›i háº¡n tÆ°Æ¡ng á»©ng.",
         padx=30,
         pady=(0, 10),
     )
@@ -425,14 +405,14 @@ def open_bot_setting_popup(app):
     f_preview = ctk.CTkFrame(tab_core, fg_color="#1E1E1E", corner_radius=8)
     f_preview.pack(fill="x", padx=15, pady=(0, 10))
 
-    cooldown_str = "Sẵn sàng"
+    cooldown_str = "Sáºµn sÃ ng"
     now = time.time()
     if now < cooldown_until:
         rem = int((cooldown_until - now) / 60)
-        cooldown_str = f"BỊ CHẶN ({rem} phút)"
+        cooldown_str = f"Bá»Š CHáº¶N ({rem} phÃºt)"
 
     pnl_color = COL_GREEN if loss_pct >= 0 else COL_RED
-    preview_text = f"PNL Today: {loss_pct:+.2f}% | Lệnh: {trades} | Thua: {losses} | Cooldown: {cooldown_str}"
+    preview_text = f"PNL Today: {loss_pct:+.2f}% | Lá»‡nh: {trades} | Thua: {losses} | Cooldown: {cooldown_str}"
 
     ctk.CTkLabel(
         f_preview,
@@ -475,7 +455,7 @@ def open_bot_setting_popup(app):
         if not active_iso:
             ctk.CTkLabel(
                 f_iso,
-                text="Không có",
+                text="KhÃ´ng cÃ³",
                 font=("Consolas", 11),
                 text_color="#757575",
             ).pack(side="left", padx=4, pady=6)
@@ -489,7 +469,7 @@ def open_bot_setting_popup(app):
             if hasattr(app, "trade_mgr"):
                 app.trade_mgr.state = latest
             if hasattr(app, "log_message"):
-                app.log_message(f"✅ Đã reset isolation cho {sym}.", target="bot")
+                app.log_message(f"âœ… ÄÃ£ reset isolation cho {sym}.", target="bot")
             render_isolation_preview()
 
         for sym, rem in active_iso:
@@ -516,7 +496,7 @@ def open_bot_setting_popup(app):
     f_safety.pack(fill="x", padx=15, pady=5)
     f_safety.columnconfigure((0, 2), weight=1)
 
-    # [FIX] Đọc safeguard từ brain_settings.json TRƯỚC, fallback về config.py
+    # [FIX] Äá»c safeguard tá»« brain_settings.json TRÆ¯á»šC, fallback vá» config.py
     safe_cfg = {}
     try:
         import json as _json
@@ -529,15 +509,15 @@ def open_bot_setting_popup(app):
     except Exception:
         pass
 
-    # --- [GROUP 1: ⚠️ PHANH KHẨN CẤP GLOBAL (EMERGENCY)] ---
+    # --- [GROUP 1: âš ï¸ PHANH KHáº¨N Cáº¤P GLOBAL (EMERGENCY)] ---
     f_global = ctk.CTkFrame(f_safety, border_width=1, border_color="#F44336")
     f_global.grid(row=0, column=0, columnspan=4, sticky="nsew", padx=5, pady=8)
-    ctk.CTkLabel(f_global, text="⚠️ PHANH KHẨN CẤP (GLOBAL BRAKE)", text_color="#F44336", font=("Roboto", 13, "bold")).pack(pady=5)
+    ctk.CTkLabel(f_global, text="âš ï¸ PHANH KHáº¨N Cáº¤P (GLOBAL BRAKE)", text_color="#F44336", font=("Roboto", 13, "bold")).pack(pady=5)
     
     f_gl_content = ctk.CTkFrame(f_global, fg_color="transparent")
     f_gl_content.pack(fill="x", padx=10, pady=5)
     
-    ctk.CTkLabel(f_gl_content, text="Bot Max Loss/Ngày (%):").grid(row=0, column=0, sticky="w", padx=10, pady=5)
+    ctk.CTkLabel(f_gl_content, text="Bot Max Loss/NgÃ y (%):").grid(row=0, column=0, sticky="w", padx=10, pady=5)
     e_max_loss = ctk.CTkEntry(f_gl_content, width=70, justify="center")
     e_max_loss.insert(0, str(safe_cfg.get("MAX_DAILY_LOSS_PERCENT", 2.5)))
     e_max_loss.grid(row=0, column=1, sticky="w", padx=10, pady=5)
@@ -547,19 +527,19 @@ def open_bot_setting_popup(app):
     e_max_streak.insert(0, str(safe_cfg.get("MAX_LOSING_STREAK", 3)))
     e_max_streak.grid(row=0, column=3, sticky="w", padx=10, pady=5)
 
-    ctk.CTkLabel(f_gl_content, text="Global Cooldown (Giờ):", font=("Roboto", 12, "bold")).grid(row=1, column=0, sticky="w", padx=10, pady=5)
+    ctk.CTkLabel(f_gl_content, text="Global Cooldown (Giá»):", font=("Roboto", 12, "bold")).grid(row=1, column=0, sticky="w", padx=10, pady=5)
     e_global_cooldown = ctk.CTkEntry(f_gl_content, width=70, justify="center", fg_color="#311B92")
     e_global_cooldown.insert(0, str(safe_cfg.get("GLOBAL_COOLDOWN_HOURS", 4.0)))
     e_global_cooldown.grid(row=1, column=1, sticky="w", padx=10, pady=5)
 
     var_gl_on_sg = ctk.BooleanVar(value=safe_cfg.get("APPLY_GLOBAL_COOLDOWN_ON_SAFEGUARD", False))
-    chk_gl_on_sg = ctk.CTkCheckBox(f_gl_content, text="Dính Basket/Watermark -> Chặn Global luôn", variable=var_gl_on_sg, text_color="#FF5252", font=("Arial", 11, "italic"))
+    chk_gl_on_sg = ctk.CTkCheckBox(f_gl_content, text="DÃ­nh Basket/Watermark -> Cháº·n Global luÃ´n", variable=var_gl_on_sg, text_color="#FF5252", font=("Arial", 11, "italic"))
     chk_gl_on_sg.grid(row=1, column=2, columnspan=2, sticky="w", padx=10, pady=5)
 
-    # --- [GROUP 2: 📉 SAFEGUARD & PROFIT (PROTECTION)] ---
+    # --- [GROUP 2: ðŸ“‰ SAFEGUARD & PROFIT (PROTECTION)] ---
     f_sg = ctk.CTkFrame(f_safety, border_width=1, border_color="#00C853")
     f_sg.grid(row=1, column=0, columnspan=4, sticky="nsew", padx=5, pady=8)
-    ctk.CTkLabel(f_sg, text="📉 BẢO VỆ LỢI NHUẬN & RỔ LỆNH (SAFEGUARD)", text_color="#00C853", font=("Roboto", 13, "bold")).pack(pady=5)
+    ctk.CTkLabel(f_sg, text="ðŸ“‰ Báº¢O Vá»† Lá»¢I NHUáº¬N & Rá»” Lá»†NH (SAFEGUARD)", text_color="#00C853", font=("Roboto", 13, "bold")).pack(pady=5)
     
     f_sg_content = ctk.CTkFrame(f_sg, fg_color="transparent")
     f_sg_content.pack(fill="x", padx=10, pady=5)
@@ -588,29 +568,29 @@ def open_bot_setting_popup(app):
     cbo_gl_basket_dd_unit.set(safe_cfg.get("MAX_BASKET_DRAWDOWN_UNIT", "USD"))
     cbo_gl_basket_dd_unit.grid(row=1, column=2, sticky="w", padx=(0, 10), pady=5)
 
-    ctk.CTkLabel(f_sg_content, text="SL Tối thiểu (pts):").grid(row=1, column=3, sticky="w", padx=10, pady=5)
+    ctk.CTkLabel(f_sg_content, text="SL Tá»‘i thiá»ƒu (pts):").grid(row=1, column=3, sticky="w", padx=10, pady=5)
     e_gl_min_sl = ctk.CTkEntry(f_sg_content, width=60, justify="center")
     e_gl_min_sl.insert(0, str(safe_cfg.get("MIN_SL_POINTS", 0)))
     e_gl_min_sl.grid(row=1, column=4, sticky="w", padx=5, pady=5)
 
-    # Dòng TP & Safeguard bổ sung
+    # DÃ²ng TP & Safeguard bá»• sung
     var_bot_use_swing_tp = ctk.BooleanVar(value=safe_cfg.get("BOT_USE_SWING_TP", False))
-    ctk.CTkCheckBox(f_sg_content, text="Dùng TP SwingPoint", variable=var_bot_use_swing_tp, font=("Roboto", 11)).grid(row=2, column=0, columnspan=2, sticky="w", padx=10, pady=2)
-    
     var_bot_use_rr_tp = ctk.BooleanVar(value=safe_cfg.get("BOT_USE_RR_TP", True))
-    ctk.CTkCheckBox(f_sg_content, text="Dùng TP R (Ratio):", variable=var_bot_use_rr_tp, font=("Roboto", 11)).grid(row=2, column=2, sticky="w", padx=10, pady=2)
-    e_bot_tp_rr = ctk.CTkEntry(f_sg_content, width=50, justify="center")
-    e_bot_tp_rr.insert(0, str(safe_cfg.get("BOT_TP_RR_RATIO", 1.5)))
-    e_bot_tp_rr.grid(row=2, column=3, sticky="w", padx=5, pady=2)
+    class _HiddenValue:
+        def __init__(self, value):
+            self.value = value
+        def get(self):
+            return self.value
+    e_bot_tp_rr = _HiddenValue(str(safe_cfg.get("BOT_TP_RR_RATIO", 1.5)))
 
     var_strict_min_lot = ctk.BooleanVar(value=safe_cfg.get("STRICT_MIN_LOT", False))
-    ctk.CTkCheckBox(f_sg_content, text="Strict Min Lot", variable=var_strict_min_lot, text_color="#F44336", font=("Roboto", 11, "bold")).grid(row=3, column=0, columnspan=2, sticky="w", padx=10, pady=2)
+    ctk.CTkCheckBox(f_sg_content, text="Strict Min Lot", variable=var_strict_min_lot, text_color="#F44336", font=("Roboto", 11, "bold")).grid(row=2, column=0, columnspan=2, sticky="w", padx=10, pady=2)
 
     var_gl_reject_lot = ctk.BooleanVar(value=safe_cfg.get("REJECT_ON_MAX_LOT", False))
-    ctk.CTkCheckBox(f_sg_content, text="Hủy lệnh vượt Max Lot", variable=var_gl_reject_lot, font=("Roboto", 11)).grid(row=3, column=2, columnspan=2, sticky="w", padx=10, pady=2)
+    ctk.CTkCheckBox(f_sg_content, text="Há»§y lá»‡nh vÆ°á»£t Max Lot", variable=var_gl_reject_lot, font=("Roboto", 11)).grid(row=2, column=2, columnspan=2, sticky="w", padx=10, pady=2)
 
     # --- [NEW V5.2] GLOBAL BRAKE MODE ---
-    ctk.CTkLabel(f_sg_content, text="Global Brake Mode:").grid(row=4, column=0, sticky="w", padx=10, pady=(10, 0))
+    ctk.CTkLabel(f_sg_content, text="Global Brake Mode:").grid(row=3, column=0, sticky="w", padx=10, pady=(10, 0))
     current_brake_mode = safe_cfg.get("GLOBAL_BRAKE_MODE", "Mode 1: Total Freeze")
     cbo_brake_mode = ctk.CTkOptionMenu(
         f_sg_content, 
@@ -618,17 +598,17 @@ def open_bot_setting_popup(app):
         width=200
     )
     cbo_brake_mode.set(current_brake_mode)
-    cbo_brake_mode.grid(row=4, column=1, columnspan=3, sticky="w", padx=10, pady=(10, 0))
+    cbo_brake_mode.grid(row=3, column=1, columnspan=3, sticky="w", padx=10, pady=(10, 0))
 
-    # --- [GROUP 3: 🛡️ ĐIỀU KIỆN VẬN HÀNH (OPERATIONAL)] ---
+    # --- [GROUP 3: ðŸ›¡ï¸ ÄIá»€U KIá»†N Váº¬N HÃ€NH (OPERATIONAL)] ---
     f_op = ctk.CTkFrame(f_safety, border_width=1, border_color="#2196F3")
     f_op.grid(row=2, column=0, columnspan=4, sticky="nsew", padx=5, pady=8)
-    ctk.CTkLabel(f_op, text="🛡️ ĐIỀU KIỆN VẬN HÀNH (OPERATIONAL)", text_color="#2196F3", font=("Roboto", 13, "bold")).pack(pady=5)
+    ctk.CTkLabel(f_op, text="ðŸ›¡ï¸ ÄIá»€U KIá»†N Váº¬N HÃ€NH (OPERATIONAL)", text_color="#2196F3", font=("Roboto", 13, "bold")).pack(pady=5)
     
     f_op_content = ctk.CTkFrame(f_op, fg_color="transparent")
     f_op_content.pack(fill="x", padx=10, pady=5)
 
-    ctk.CTkLabel(f_op_content, text="Max Lệnh Mở:").grid(row=0, column=0, sticky="w", padx=10, pady=5)
+    ctk.CTkLabel(f_op_content, text="Max Lá»‡nh Má»Ÿ:").grid(row=0, column=0, sticky="w", padx=10, pady=5)
     e_max_open = ctk.CTkEntry(f_op_content, width=60, justify="center")
     e_max_open.insert(0, str(safe_cfg.get("MAX_OPEN_POSITIONS", 3)))
     e_max_open.grid(row=0, column=1, sticky="w", padx=5, pady=5)
@@ -638,12 +618,12 @@ def open_bot_setting_popup(app):
     e_cooldown.insert(0, str(safe_cfg.get("COOLDOWN_MINUTES", 1)))
     e_cooldown.grid(row=0, column=3, sticky="w", padx=5, pady=5)
 
-    ctk.CTkLabel(f_op_content, text="Tổng Lệnh/Ngày:").grid(row=1, column=0, sticky="w", padx=10, pady=5)
+    ctk.CTkLabel(f_op_content, text="Tá»•ng Lá»‡nh/NgÃ y:").grid(row=1, column=0, sticky="w", padx=10, pady=5)
     e_max_trades = ctk.CTkEntry(f_op_content, width=60, justify="center")
     e_max_trades.insert(0, str(safe_cfg.get("MAX_TRADES_PER_DAY", 30)))
     e_max_trades.grid(row=1, column=1, sticky="w", padx=5, pady=5)
 
-    ctk.CTkLabel(f_op_content, text="Chế độ tính Loss:").grid(row=1, column=2, sticky="w", padx=10, pady=5)
+    ctk.CTkLabel(f_op_content, text="Cháº¿ Ä‘á»™ tÃ­nh Loss:").grid(row=1, column=2, sticky="w", padx=10, pady=5)
     cbo_loss_mode = ctk.CTkOptionMenu(f_op_content, values=["TOTAL", "STREAK"], width=80, height=24)
     cbo_loss_mode.set(safe_cfg.get("LOSS_COUNT_MODE", "TOTAL"))
     cbo_loss_mode.grid(row=1, column=3, sticky="w", padx=5, pady=5)
@@ -660,15 +640,15 @@ def open_bot_setting_popup(app):
     e_max_spread.insert(0, str(safe_cfg.get("MAX_SPREAD_POINTS", 50)))
     e_max_spread.grid(row=2, column=3, sticky="w", padx=5, pady=5)
 
-    ctk.CTkLabel(f_op_content, text="Nghỉ sau đóng (s):", text_color="#FFB300").grid(row=3, column=0, sticky="w", padx=10, pady=5)
+    ctk.CTkLabel(f_op_content, text="Nghá»‰ sau Ä‘Ã³ng (s):", text_color="#FFB300").grid(row=3, column=0, sticky="w", padx=10, pady=5)
     e_post_close = ctk.CTkEntry(f_op_content, width=60, justify="center")
     e_post_close.insert(0, str(safe_cfg.get("POST_CLOSE_COOLDOWN", 0)))
     e_post_close.grid(row=3, column=1, sticky="w", padx=5, pady=5)
 
-    # --- [GROUP 4: ⚙️ HỆ THỐNG & TẦN SUẤT (SYSTEM)] ---
+    # --- [GROUP 4: âš™ï¸ Há»† THá»NG & Táº¦N SUáº¤T (SYSTEM)] ---
     f_sys = ctk.CTkFrame(f_safety, border_width=1, border_color="#757575")
     f_sys.grid(row=3, column=0, columnspan=4, sticky="nsew", padx=5, pady=8)
-    ctk.CTkLabel(f_sys, text="⚙️ HỆ THỐNG & TẦN SUẤT (SYSTEM)", text_color="#757575", font=("Roboto", 13, "bold")).pack(pady=5)
+    ctk.CTkLabel(f_sys, text="âš™ï¸ Há»† THá»NG & Táº¦N SUáº¤T (SYSTEM)", text_color="#757575", font=("Roboto", 13, "bold")).pack(pady=5)
     
     f_sys_content = ctk.CTkFrame(f_sys, fg_color="transparent")
     f_sys_content.pack(fill="x", padx=10, pady=5)
@@ -678,17 +658,17 @@ def open_bot_setting_popup(app):
     e_daemon_loop.insert(0, str(safe_cfg.get("DAEMON_LOOP_DELAY", 15)))
     e_daemon_loop.grid(row=0, column=1, sticky="w", padx=5, pady=5)
 
-    ctk.CTkLabel(f_sys_content, text="Nhồi (s):").grid(row=0, column=2, sticky="w", padx=10, pady=5)
+    ctk.CTkLabel(f_sys_content, text="Nhá»“i (s):").grid(row=0, column=2, sticky="w", padx=10, pady=5)
     e_scan_delay = ctk.CTkEntry(f_sys_content, width=50, justify="center")
     e_scan_delay.insert(0, str(safe_cfg.get("DCA_PCA_SCAN_INTERVAL", 2)))
     e_scan_delay.grid(row=0, column=3, sticky="w", padx=5, pady=5)
 
-    ctk.CTkLabel(f_sys_content, text="Nến Trend:").grid(row=1, column=0, sticky="w", padx=10, pady=5)
+    ctk.CTkLabel(f_sys_content, text="Náº¿n Trend:").grid(row=1, column=0, sticky="w", padx=10, pady=5)
     e_num_h1 = ctk.CTkEntry(f_sys_content, width=50, justify="center")
     e_num_h1.insert(0, str(safe_cfg.get("NUM_H1_BARS", 70)))
     e_num_h1.grid(row=1, column=1, sticky="w", padx=5, pady=5)
 
-    ctk.CTkLabel(f_sys_content, text="Nến Entry:").grid(row=1, column=2, sticky="w", padx=10, pady=5)
+    ctk.CTkLabel(f_sys_content, text="Náº¿n Entry:").grid(row=1, column=2, sticky="w", padx=10, pady=5)
     e_num_m15 = ctk.CTkEntry(f_sys_content, width=50, justify="center")
     e_num_m15.insert(0, str(safe_cfg.get("NUM_M15_BARS", 70)))
     e_num_m15.grid(row=1, column=3, sticky="w", padx=5, pady=5)
@@ -703,13 +683,13 @@ def open_bot_setting_popup(app):
     f_hint.grid(row=4, column=0, columnspan=4, sticky="nsew", padx=5, pady=5)
     for text, color in [
         ("Phanh Global", "#F44336"),
-        ("Bảo vệ", "#00C853"),
-        ("Điều kiện", "#2196F3"),
-        ("Hệ thống", "#BDBDBD"),
+        ("Báº£o vá»‡", "#00C853"),
+        ("Äiá»u kiá»‡n", "#2196F3"),
+        ("Há»‡ thá»‘ng", "#BDBDBD"),
     ]:
         ctk.CTkLabel(
             f_hint,
-            text=f"● {text}",
+            text=f"â— {text}",
             font=("Arial", 10, "italic"),
             text_color=color,
         ).pack(side="left", padx=(10, 2), pady=2)
@@ -777,15 +757,15 @@ def open_bot_setting_popup(app):
             if hasattr(app, "reload_config_from_json"):
                 app.reload_config_from_json()
 
-            app.log_message("✅ Đã cập nhật đầy đủ Bot Settings.", target="bot")
+            app.log_message("âœ… ÄÃ£ cáº­p nháº­t Ä‘áº§y Ä‘á»§ Bot Settings.", target="bot")
             top.destroy()
         except Exception as e:
             from tkinter import messagebox
-            messagebox.showerror("Lỗi", f"Lỗi lưu cấu hình: {e}", parent=top)
+            messagebox.showerror("Lá»—i", f"Lá»—i lÆ°u cáº¥u hÃ¬nh: {e}", parent=top)
 
     ctk.CTkButton(
         top,
-        text="LƯU CẤU HÌNH BOT SETTINGS",
+        text="LÆ¯U Cáº¤U HÃŒNH BOT SETTINGS",
         fg_color=COL_BLUE_ACCENT,
         height=45,
         font=("Roboto", 13, "bold"),
@@ -794,7 +774,7 @@ def open_bot_setting_popup(app):
 
 
 # ==============================================================================
-# 2. POPUP PRESET (CÓ LIVE PREVIEW ĐẦY ĐỦ)
+# 2. POPUP PRESET (CÃ“ LIVE PREVIEW Äáº¦Y Äá»¦)
 # ==============================================================================
 def open_advanced_tools_popup(app):
     top = ctk.CTkToplevel(app)
@@ -919,9 +899,9 @@ def open_preset_config_popup(app):
     ctk.CTkLabel(top, text=f"PRESET: {p_name}", font=FONT_BOLD).pack(pady=10)
     _add_popup_hint(
         top,
-        "- Preset này dùng cho lệnh manual theo preset đang chọn.\n"
-        "- Risk % + SL % quyết định lot; TP RR tính lời/lỗ theo R.\n"
-        "- SwingPoint nếu bật sẽ ưu tiên cấu trúc giá thay cho % cố định.",
+        "- Preset nÃ y dÃ¹ng cho lá»‡nh manual theo preset Ä‘ang chá»n.\n"
+        "- Risk % + SL % quyáº¿t Ä‘á»‹nh lot; TP RR tÃ­nh lá»i/lá»— theo R.\n"
+        "- SwingPoint náº¿u báº­t sáº½ Æ°u tiÃªn cáº¥u trÃºc giÃ¡ thay cho % cá»‘ Ä‘á»‹nh.",
         padx=20,
         pady=(0, 10),
         wraplength=370,
@@ -954,22 +934,22 @@ def open_preset_config_popup(app):
     )
     lbl_h_tp.pack(pady=(0, 10))
 
-    # [NEW] Thêm Checkbox Strict Risk (Tính phí Spread/Comm)
+    # [NEW] ThÃªm Checkbox Strict Risk (TÃ­nh phÃ­ Spread/Comm)
     var_strict = ctk.BooleanVar(value=data.get("STRICT_RISK", False))
     chk_strict = ctk.CTkCheckBox(
         top,
-        text="Strict Risk (Trừ phí Spread/Comm vào Lot)",
+        text="Strict Risk (Trá»« phÃ­ Spread/Comm vÃ o Lot)",
         variable=var_strict,
         text_color="#F44336",
         font=("Roboto", 12, "bold"),
     )
     chk_strict.pack(pady=(5, 10))
 
-    # --- THÊM MỚI TỪ ĐÂY ---
+    # --- THÃŠM Má»šI Tá»ª ÄÃ‚Y ---
     var_swing_sl = ctk.BooleanVar(value=data.get("USE_SWING_SL", False))
     chk_swing_sl = ctk.CTkCheckBox(
         top,
-        text="Dùng SL theo cấu trúc SwingPoint (Giống Bot)",
+        text="DÃ¹ng SL theo cáº¥u trÃºc SwingPoint (Giá»‘ng Bot)",
         variable=var_swing_sl,
         text_color="#29B6F6",
         font=("Roboto", 12, "bold"),
@@ -979,13 +959,13 @@ def open_preset_config_popup(app):
     var_swing_tp = ctk.BooleanVar(value=data.get("USE_SWING_TP", False))
     chk_swing_tp = ctk.CTkCheckBox(
         top,
-        text="Dùng TP theo cấu trúc SwingPoint (Giống Bot)",
+        text="DÃ¹ng TP theo cáº¥u trÃºc SwingPoint (Giá»‘ng Bot)",
         variable=var_swing_tp,
         text_color="#66BB6A",
         font=("Roboto", 12, "bold"),
     )
     chk_swing_tp.pack(pady=(0, 10))
-    # --- KẾT THÚC THÊM MỚI ---
+    # --- Káº¾T THÃšC THÃŠM Má»šI ---
 
     def live(*args):
         try:
@@ -996,14 +976,14 @@ def open_preset_config_popup(app):
             )
             risk_usd = eq * (r / 100)
             lbl_h_risk.configure(
-                text=f"(~ Mất ${risk_usd:.2f} nếu dính SL)", text_color="#EF5350"
+                text=f"(~ Máº¥t ${risk_usd:.2f} náº¿u dÃ­nh SL)", text_color="#EF5350"
             )
             lbl_h_sl.configure(
-                text=f"(~ Đặt SL quanh {cp * (1 - s / 100):.2f} cho BUY)",
+                text=f"(~ Äáº·t SL quanh {cp * (1 - s / 100):.2f} cho BUY)",
                 text_color="gray",
             )
             lbl_h_tp.configure(
-                text=f"(~ Lãi ${risk_usd * t:.2f} nếu chạm TP)", text_color="#66BB6A"
+                text=f"(~ LÃ£i ${risk_usd * t:.2f} náº¿u cháº¡m TP)", text_color="#66BB6A"
             )
         except ValueError:
             pass
@@ -1020,42 +1000,44 @@ def open_preset_config_popup(app):
                 "SL_PERCENT": float(e_sl.get()),
                 "TP_RR_RATIO": float(e_tp.get()),
                 "STRICT_RISK": var_strict.get(),
-                "USE_SWING_SL": var_swing_sl.get(),  # Lưu biến mới
+                "USE_SWING_SL": var_swing_sl.get(),  # LÆ°u biáº¿n má»›i
                 "USE_SWING_TP": var_swing_tp.get(),
             }
         )
         app.save_settings()
         top.destroy()
 
-    ctk.CTkButton(top, text="LƯU PRESET", command=save_preset, fg_color=COL_GREEN).pack(
+    ctk.CTkButton(top, text="LÆ¯U PRESET", command=save_preset, fg_color=COL_GREEN).pack(
         pady=20, fill="x", padx=30
     )
 
 
 # ==============================================================================
-# 3. POPUP TSL (CÓ BE SOFT/SMART, PNL LEVELS +, STEP R)
+# 3. POPUP TSL (CÃ“ BE SOFT/SMART, PNL LEVELS +, STEP R)
 # ==============================================================================
 def open_tsl_popup(app, override_symbol=None):
     top = ctk.CTkToplevel(app)
     title = "TSL Logic Configuration"
     if override_symbol:
-        title += f" - CẤU HÌNH CON: {override_symbol}"
+        title += f" - Cáº¤U HÃŒNH CON: {override_symbol}"
     top.title(title)
     top.geometry("900x780")
     top.minsize(760, 560)
     top.attributes("-topmost", True)
-    top.resizable(True, True)  # Khôi phục tính năng co giãn/phóng to
+    top.resizable(True, True)  # KhÃ´i phá»¥c tÃ­nh nÄƒng co giÃ£n/phÃ³ng to
     if override_symbol:
-        top.grab_set()  # Modal: Không cho chạm vào UI mẹ khi đang chỉnh UI con
+        top.grab_set()  # Modal: KhÃ´ng cho cháº¡m vÃ o UI máº¹ khi Ä‘ang chá»‰nh UI con
 
     tsl_cfg = config.TSL_CONFIG.copy()
+    tsl_logic_mode = getattr(config, "TSL_LOGIC_MODE", "STATIC")
     if override_symbol:
         from core.storage_manager import get_brain_settings_for_symbol
         brain = get_brain_settings_for_symbol(override_symbol)
         if "TSL_CONFIG" in brain:
             tsl_cfg.update(brain["TSL_CONFIG"])
+        tsl_logic_mode = brain.get("TSL_LOGIC_MODE", tsl_logic_mode)
 
-    # [FIX V4.4] CHIA LÀM 2 TAB GỌN GÀNG THEO YÊU CẦU CỦA BOSS
+    # [FIX V4.4] CHIA LÃ€M 2 TAB Gá»ŒN GÃ€NG THEO YÃŠU Cáº¦U Cá»¦A BOSS
     tabview = ctk.CTkTabview(top, height=620)
     tabview.pack(fill="both", expand=True, padx=10, pady=5)
 
@@ -1067,7 +1049,7 @@ def open_tsl_popup(app, override_symbol=None):
     tab_adv.pack(fill="both", expand=True, padx=4, pady=4)
     
     if not override_symbol:
-        tab_ow = tabview.add("Overwrite (Mẹ-Con)")
+        tab_ow = tabview.add("Overwrite (Máº¹-Con)")
 
     def sec(parent, t):
         ctk.CTkLabel(
@@ -1078,9 +1060,9 @@ def open_tsl_popup(app, override_symbol=None):
     # ================= TAB 1: BASIC =================
     _add_popup_hint(
         tab_basic,
-        "- BE_SL là loss-side guard: âm tới trigger R thì kéo SL sát giá theo step R.\n"
-        "- PNL Levels khóa lãi theo % win; STEP R bám theo từng bậc R.\n"
-        "- Chỉ tactic được bật ở lệnh/Bot TSL mới dùng các tham số này.",
+        "- BE_SL lÃ  loss-side guard: Ã¢m tá»›i trigger R thÃ¬ kÃ©o SL sÃ¡t giÃ¡ theo step R.\n"
+        "- PNL Levels khÃ³a lÃ£i theo % win; STEP R bÃ¡m theo tá»«ng báº­c R.\n"
+        "- Chá»‰ tactic Ä‘Æ°á»£c báº­t á»Ÿ lá»‡nh/Bot TSL má»›i dÃ¹ng cÃ¡c tham sá»‘ nÃ y.",
         padx=15,
         pady=(10, 5),
         wraplength=400,
@@ -1119,13 +1101,13 @@ def open_tsl_popup(app, override_symbol=None):
     e_be_sl_reentry_lock.pack(side="left", padx=(5, 10))
     ctk.CTkLabel(
         f_be_r3,
-        text="RECOVERY_GUARD: âm tới Loss Trig thì arm; hồi lên đủ Step thì đặt virtual guard dưới mức hồi tốt nhất theo Guard Buf. Hồi tiếp thì guard nâng lên; thủng guard thì bot close và khóa vào lại.",
+        text="RECOVERY_GUARD: Ã¢m tá»›i Loss Trig thÃ¬ arm; há»“i lÃªn Ä‘á»§ Step thÃ¬ Ä‘áº·t virtual guard dÆ°á»›i má»©c há»“i tá»‘t nháº¥t theo Guard Buf. Há»“i tiáº¿p thÃ¬ guard nÃ¢ng lÃªn; thá»§ng guard thÃ¬ bot close vÃ  khÃ³a vÃ o láº¡i.",
         text_color="#B0BEC5",
         font=("Arial", 11, "italic"),
         wraplength=620,
     ).pack(side="left", padx=5)
 
-    f_pnl = sec(tab_basic, "2. KHÓA LÃI PNL (LEVELS)")
+    f_pnl = sec(tab_basic, "2. KHÃ“A LÃƒI PNL (LEVELS)")
     f_pnl.pack(fill="both", expand=True, padx=15)
     scroll_pnl = ctk.CTkScrollableFrame(f_pnl, height=100)
     scroll_pnl.pack(fill="both", expand=True)
@@ -1171,25 +1153,48 @@ def open_tsl_popup(app, override_symbol=None):
     # ================= TAB 2: ADVANCED =================
     _add_popup_hint(
         tab_adv,
-        "- Swing/PSAR dùng group được chọn để bám cấu trúc giá.\n"
-        "- CASH trail khóa lãi theo USD/Percent/Point; One-Time chỉ khóa một lần.\n"
-        "- ANTI CASH giữ tên cũ nhưng có thêm MAE/MFE theo từng ticket.\n"
-        "- MAE = âm sâu nhất của ticket; MFE = lời cao nhất của ticket.\n"
-        "- Hard Stop là cầu dao lỗ; MFE Giveback chống trả lại lợi nhuận.",
+        "- Swing/PSAR dÃ¹ng group Ä‘Æ°á»£c chá»n Ä‘á»ƒ bÃ¡m cáº¥u trÃºc giÃ¡.\n"
+        "- CASH trail khÃ³a lÃ£i theo USD/Percent/Point; One-Time chá»‰ khÃ³a má»™t láº§n.\n"
+        "- ANTI CASH giá»¯ tÃªn cÅ© nhÆ°ng cÃ³ thÃªm MAE/MFE theo tá»«ng ticket.\n"
+        "- MAE = Ã¢m sÃ¢u nháº¥t cá»§a ticket; MFE = lá»i cao nháº¥t cá»§a ticket.\n"
+        "- Hard Stop lÃ  cáº§u dao lá»—; MFE Giveback chá»‘ng tráº£ láº¡i lá»£i nhuáº­n.",
         padx=15,
         pady=(10, 5),
         wraplength=400,
     )
-    f_swing_man = sec(tab_adv, "4. MANUAL SWING (Bám nến)")
+    f_swing_man = sec(tab_adv, "4. MANUAL SWING (BÃ¡m náº¿n)")
     f_swing_man.pack(fill="x", padx=15)
     cbo_swing_grp = ctk.CTkOptionMenu(
         f_swing_man, values=["G0", "G1", "G2", "G3", "DYNAMIC-G1/G2"], width=100
     )
     cbo_swing_grp.set(tsl_cfg.get("SWING_GROUP", "G2"))
     cbo_swing_grp.pack(side="right")
-    ctk.CTkLabel(f_swing_man, text="Group Theo Dõi:").pack(side="left")
+    ctk.CTkLabel(f_swing_man, text="Group Theo DÃµi:").pack(side="left")
 
-    f_cash = sec(tab_adv, "5. BE HARD CASH (Thang cuốn USD/Point/%/R)")
+    f_swing_logic = ctk.CTkFrame(f_swing_man, fg_color="transparent")
+    f_swing_logic.pack(fill="x", pady=(8, 4))
+    ctk.CTkLabel(f_swing_logic, text="Swing TSL Logic Mode:").pack(side="left", padx=5)
+    cbo_tsl_logic_mode = ctk.CTkOptionMenu(
+        f_swing_logic,
+        values=["STATIC", "DYNAMIC", "AGGRESSIVE"],
+        width=140,
+    )
+    cbo_tsl_logic_mode.set(tsl_logic_mode)
+    cbo_tsl_logic_mode.pack(side="left", padx=8)
+    ctk.CTkLabel(
+        f_swing_man,
+        text=(
+            "Chá»‰ dÃ¹ng cho TSL tactic SWING sau khi lá»‡nh Ä‘Ã£ má»Ÿ. "
+            "KhÃ´ng liÃªn quan tá»›i SL ban Ä‘áº§u cá»§a bot/manual theo Swing + ATR buffer. "
+            "STATIC giá»¯ má»‘c swing, DYNAMIC/AGGRESSIVE bÃ¡m Ä‘uÃ´i chá»§ Ä‘á»™ng hÆ¡n."
+        ),
+        text_color="#B0BEC5",
+        font=("Arial", 11, "italic"),
+        wraplength=620,
+        justify="left",
+    ).pack(anchor="w", padx=5, pady=(0, 5))
+
+    f_cash = sec(tab_adv, "5. BE HARD CASH (Thang cuá»‘n USD/Point/%/R)")
     f_cash.pack(fill="x", padx=15)
 
     f_cash_r1 = ctk.CTkFrame(f_cash, fg_color="transparent")
@@ -1232,7 +1237,7 @@ def open_tsl_popup(app, override_symbol=None):
 
     var_be_one_time = ctk.BooleanVar(value=tsl_cfg.get("ONE_TIME_BE", False))
     ctk.CTkCheckBox(
-        f_cash_r2, text="One-Time (Chỉ khóa mốc 1)", variable=var_be_one_time, width=60
+        f_cash_r2, text="One-Time (Chá»‰ khÃ³a má»‘c 1)", variable=var_be_one_time, width=60
     ).pack(side="left", padx=5)
 
     ctk.CTkLabel(f_cash_r3, text="Buffer:").pack(side="left", padx=2)
@@ -1253,13 +1258,13 @@ def open_tsl_popup(app, override_symbol=None):
 
     ctk.CTkLabel(
         f_cash,
-        text="SOFT LOCK: khóa = target - buffer; Min Lock là sàn khóa tối thiểu nếu kết quả còn dương.",
+        text="SOFT LOCK: khÃ³a = target - buffer; Min Lock lÃ  sÃ n khÃ³a tá»‘i thiá»ƒu náº¿u káº¿t quáº£ cÃ²n dÆ°Æ¡ng.",
         text_color="#B0BEC5",
         font=("Arial", 11, "italic"),
         wraplength=440,
     ).pack(anchor="w", padx=8, pady=(4, 0))
 
-    f_psar = sec(tab_adv, "6. PSAR TRAILING (Đuổi chấm)")
+    f_psar = sec(tab_adv, "6. PSAR TRAILING (Äuá»•i cháº¥m)")
     f_psar.pack(fill="x", padx=15)
 
     f_psar_row1 = ctk.CTkFrame(f_psar, fg_color="transparent")
@@ -1287,7 +1292,7 @@ def open_tsl_popup(app, override_symbol=None):
     e_psar_min_rr = ctk.CTkEntry(f_psar_row3, width=60)
     e_psar_min_rr.insert(0, str(tsl_cfg.get("PSAR_MIN_RR", 0.0)))
     e_psar_min_rr.pack(side="left", padx=5)
-    ctk.CTkLabel(f_psar_row3, text="Min RR kích hoạt:").pack(side="left")
+    ctk.CTkLabel(f_psar_row3, text="Min RR kÃ­ch hoáº¡t:").pack(side="left")
 
     ctk.CTkLabel(
         f_psar,
@@ -1322,9 +1327,9 @@ def open_tsl_popup(app, override_symbol=None):
     f_anti.pack(fill="x", padx=15)
     _add_popup_hint(
         f_anti,
-        "- Hard Stop: cắt lỗ cứng theo ngưỡng đã chọn.\n"
-        "- MAE Guard: chỉ cắt khi lệnh âm đủ sâu, giữ đủ lâu và MFE cao nhất vẫn thấp hơn Low MFE.\n"
-        "- MFE Guard: bảo vệ lãi nổi, cắt khi lệnh trả lại quá nhiều hoặc tụt về Floor.",
+        "- Hard Stop: cáº¯t lá»— cá»©ng theo ngÆ°á»¡ng Ä‘Ã£ chá»n.\n"
+        "- MAE Guard: chá»‰ cáº¯t khi lá»‡nh Ã¢m Ä‘á»§ sÃ¢u, giá»¯ Ä‘á»§ lÃ¢u vÃ  MFE cao nháº¥t váº«n tháº¥p hÆ¡n Low MFE.\n"
+        "- MFE Guard: báº£o vá»‡ lÃ£i ná»•i, cáº¯t khi lá»‡nh tráº£ láº¡i quÃ¡ nhiá»u hoáº·c tá»¥t vá» Floor.",
         padx=8,
         pady=(4, 8),
         wraplength=820,
@@ -1380,7 +1385,7 @@ def open_tsl_popup(app, override_symbol=None):
         value=tsl_cfg.get("ANTI_CASH_TIME_ENABLE", True)
     )
     ctk.CTkCheckBox(
-        row_hard, text="Dùng Time Cut", variable=var_anti_time_en, width=130
+        row_hard, text="DÃ¹ng Time Cut", variable=var_anti_time_en, width=130
     ).pack(side="left", padx=(8, 18))
 
     row_mae = anti_row(f_anti_grid)
@@ -1430,7 +1435,7 @@ def open_tsl_popup(app, override_symbol=None):
     )
     ctk.CTkLabel(
         row_reentry,
-        text="sau khi ANTI CASH cắt cùng chiều",
+        text="sau khi ANTI CASH cáº¯t cÃ¹ng chiá»u",
         text_color="#BDBDBD",
     ).pack(side="left", padx=(0, 10))
 
@@ -1491,6 +1496,7 @@ def open_tsl_popup(app, override_symbol=None):
                 "ANTI_CASH_MFE_FLOOR_UNIT": cbo_anti_mfe_floor_unit.get(),
                 "ANTI_CASH_REENTRY_LOCK_SEC": int(e_anti_reentry.get()),
             }
+            new_tsl_logic_mode = cbo_tsl_logic_mode.get()
             
             if override_symbol:
                 from core.storage_manager import load_symbol_overrides, save_symbol_overrides
@@ -1500,21 +1506,23 @@ def open_tsl_popup(app, override_symbol=None):
                 if "tsl" not in overrides[override_symbol]:
                     overrides[override_symbol]["tsl"] = {}
                 overrides[override_symbol]["tsl"]["TSL_CONFIG"] = output_tsl
+                overrides[override_symbol]["tsl"]["TSL_LOGIC_MODE"] = new_tsl_logic_mode
                 save_symbol_overrides(overrides)
-                app.log_message(f"✅ TSL Override Saved for {override_symbol}.", target="bot")
+                app.log_message(f"âœ… TSL Override Saved for {override_symbol}.", target="bot")
                 top.destroy()
                 return
 
             config.TSL_CONFIG.update(output_tsl)
+            config.TSL_LOGIC_MODE = new_tsl_logic_mode
             app.save_settings()
-            app.log_message("✅ TSL Saved.", target="bot")
+            app.log_message("âœ… TSL Saved.", target="bot")
             top.destroy()
         except:
-            messagebox.showerror("Lỗi", "Cấu hình sai!", parent=top)
+            messagebox.showerror("Lá»—i", "Cáº¥u hÃ¬nh sai!", parent=top)
 
     ctk.CTkButton(
         top,
-        text="LƯU TSL LOGIC",
+        text="LÆ¯U TSL LOGIC",
         fg_color=COL_GREEN,
         height=48,
         font=("Roboto", 14, "bold"),
@@ -1528,12 +1536,12 @@ def open_tsl_popup(app, override_symbol=None):
             if override_symbol in overrides and "tsl" in overrides[override_symbol]:
                 del overrides[override_symbol]["tsl"]
                 save_symbol_overrides(overrides)
-                app.log_message(f"✅ TSL Override Reset for {override_symbol}.", target="bot")
+                app.log_message(f"âœ… TSL Override Reset for {override_symbol}.", target="bot")
                 top.destroy()
                 
         ctk.CTkButton(
             top,
-            text="🗑️ RESET (VỀ MẶC ĐỊNH)",
+            text="ðŸ—‘ï¸ RESET (Vá»€ Máº¶C Äá»ŠNH)",
             fg_color="#D50000",
             hover_color="#B71C1C",
             height=40,
@@ -1546,12 +1554,12 @@ def open_tsl_popup(app, override_symbol=None):
             f = ctk.CTkScrollableFrame(tab_ow)
             f.pack(fill="both", expand=True, padx=5, pady=5)
             
-            ctk.CTkLabel(f, text="CẤU HÌNH GHI ĐÈ (PER-SYMBOL OVERRIDE)", font=("Roboto", 14, "bold")).pack(pady=10)
+            ctk.CTkLabel(f, text="Cáº¤U HÃŒNH GHI ÄÃˆ (PER-SYMBOL OVERRIDE)", font=("Roboto", 14, "bold")).pack(pady=10)
             _add_popup_hint(
                 f,
-                "- Symbol có override sẽ dùng TSL riêng thay cho Global.\n"
-                "- Reset override = xóa TSL con, quay về TSL mẹ.\n"
-                "- Override chỉ áp dụng cho symbol được chọn.",
+                "- Symbol cÃ³ override sáº½ dÃ¹ng TSL riÃªng thay cho Global.\n"
+                "- Reset override = xÃ³a TSL con, quay vá» TSL máº¹.\n"
+                "- Override chá»‰ Ã¡p dá»¥ng cho symbol Ä‘Æ°á»£c chá»n.",
                 padx=10,
                 pady=(0, 10),
                 wraplength=400,
@@ -1573,7 +1581,7 @@ def open_tsl_popup(app, override_symbol=None):
                 color = "#00C853" if has_override else "#424242"
                 btn = ctk.CTkButton(
                     grid_frame,
-                    text=f"{sym} {'(Có)' if has_override else ''}",
+                    text=f"{sym} {'(CÃ³)' if has_override else ''}",
                     fg_color=color,
                     command=lambda s=sym: open_tsl_popup(app, s)
                 )
@@ -1595,7 +1603,7 @@ def open_edit_popup(app, ticket):
     if not pos:
         return
     top = ctk.CTkToplevel(app)
-    top.title(f"Sửa lệnh #{ticket}")
+    top.title(f"Sá»­a lá»‡nh #{ticket}")
     top.geometry("450x760")
     top.attributes("-topmost", True)
     # top.transient(app)
@@ -1625,7 +1633,7 @@ def open_edit_popup(app, ticket):
     )
     lbl_h_tp.pack(pady=(0, 5))
 
-    # Khung chứa Live Tactic Preview
+    # Khung chá»©a Live Tactic Preview
     f_tactic_preview = ctk.CTkFrame(top, fg_color="#1a1a1a", corner_radius=6)
     f_tactic_preview.pack(fill="x", padx=20, pady=5)
     lbl_tactic_preview = ctk.CTkLabel(
@@ -1664,9 +1672,9 @@ def open_edit_popup(app, ticket):
                 prof = p_dist * pos.volume * 1.0
                 lbl_h_tp.configure(text=f"~ +${prof:.2f}", text_color="#66BB6A")
             else:
-                lbl_h_tp.configure(text="~ Thả rông (Vô cực)", text_color="#29B6F6")
+                lbl_h_tp.configure(text="~ Tháº£ rÃ´ng (VÃ´ cá»±c)", text_color="#29B6F6")
 
-            # Cập nhật Live Trigger Price Preview
+            # Cáº­p nháº­t Live Trigger Price Preview
             if nsl > 0:
                 r_dist = abs(pos.price_open - nsl)
                 if r_dist > 0:
@@ -1689,12 +1697,12 @@ def open_edit_popup(app, ticket):
                         preview_txts.append(f"Step 1 @ {trig_p:.2f}")
                     if states["PNL"] and config.TSL_CONFIG.get("PNL_LEVELS"):
                         lvl = config.TSL_CONFIG["PNL_LEVELS"][0]
-                        preview_txts.append(f"PNL @ Lãi {lvl[0]}%")
+                        preview_txts.append(f"PNL @ LÃ£i {lvl[0]}%")
                     if states["SWING"]:
-                        preview_txts.append("SWING (Đuổi theo nến H1/M15)")
+                        preview_txts.append("SWING (Äuá»•i theo náº¿n H1/M15)")
                     if states["CASH"]:
                         preview_txts.append(
-                            f"CASH TRAIL Bậc thang (Step: {config.TSL_CONFIG.get('BE_VALUE', 5)})"
+                            f"CASH TRAIL Báº­c thang (Step: {config.TSL_CONFIG.get('BE_VALUE', 5)})"
                         )
                     if states["PSAR"]:
                         preview_txts.append("PSAR TRAIL")
@@ -1705,7 +1713,7 @@ def open_edit_popup(app, ticket):
 
                     if preview_txts:
                         lbl_tactic_preview.configure(
-                            text="Dự kiến Trigger TSL:\n" + " | ".join(preview_txts)
+                            text="Dá»± kiáº¿n Trigger TSL:\n" + " | ".join(preview_txts)
                         )
                     else:
                         lbl_tactic_preview.configure(text="TSL: OFF")
@@ -1715,7 +1723,7 @@ def open_edit_popup(app, ticket):
     e_sl.bind("<KeyRelease>", live_edit)
     e_tp.bind("<KeyRelease>", live_edit)
 
-    # [UPGRADED] Math SL với dropdown chọn Group
+    # [UPGRADED] Math SL vá»›i dropdown chá»n Group
     f_math = ctk.CTkFrame(top, fg_color="#1a1a1a", corner_radius=6)
     f_math.pack(fill="x", padx=20, pady=(5, 0))
 
@@ -1739,11 +1747,11 @@ def open_edit_popup(app, ticket):
         ctx = app.latest_market_context.get(pos.symbol, {})
         group = var_sl_group.get()
 
-        # Xử lý DYNAMIC: tự chọn group dựa trên Market Mode
+        # Xá»­ lÃ½ DYNAMIC: tá»± chá»n group dá»±a trÃªn Market Mode
         if "DYNAMIC" in group:
             mode = ctx.get("market_mode", "ANY")
             group = "G1" if mode in ["TREND", "BREAKOUT"] else "G2"
-            var_sl_group.set(f"→{group}")  # Hiển thị group thực tế đã chọn
+            var_sl_group.set(f"â†’{group}")  # Hiá»ƒn thá»‹ group thá»±c táº¿ Ä‘Ã£ chá»n
 
         val = ctx.get(f"swing_low_{group}" if is_buy else f"swing_high_{group}")
         atr_val = ctx.get(f"atr_{group}")
@@ -1762,18 +1770,18 @@ def open_edit_popup(app, ticket):
             )
             e_sl.delete(0, "end")
             e_sl.insert(0, f"{calc_sl:.5f}")
-            do_tp()  # Tự động cập nhật TP theo SL mới
+            do_tp()  # Tá»± Ä‘á»™ng cáº­p nháº­t TP theo SL má»›i
             live_edit()
         else:
             messagebox.showwarning(
-                "Không có dữ liệu",
-                f"Không tìm thấy Swing/ATR của {group} cho {pos.symbol}.\nThử chọn Group khác.",
+                "KhÃ´ng cÃ³ dá»¯ liá»‡u",
+                f"KhÃ´ng tÃ¬m tháº¥y Swing/ATR cá»§a {group} cho {pos.symbol}.\nThá»­ chá»n Group khÃ¡c.",
                 parent=top
             )
 
     ctk.CTkButton(
         f_math,
-        text="Lấy Math SL",
+        text="Láº¥y Math SL",
         height=26,
         fg_color="#1565C0",
         hover_color="#0D47A1",
@@ -1821,18 +1829,18 @@ def open_edit_popup(app, ticket):
             e_tp.insert(0, f"{calc_tp:.5f}")
             live_edit()
         else:
-            messagebox.showwarning("Lỗi", "Không có dữ liệu Swing TP", parent=top)
+            messagebox.showwarning("Lá»—i", "KhÃ´ng cÃ³ dá»¯ liá»‡u Swing TP", parent=top)
 
     ctk.CTkButton(
-        f_ast, text="Lấy Preset TP", width=105, fg_color="#2E7D32", command=do_tp
+        f_ast, text="Láº¥y Preset TP", width=105, fg_color="#2E7D32", command=do_tp
     ).pack(side="left", padx=2)
 
     ctk.CTkButton(
-        f_ast, text="Lấy Swing TP", width=105, fg_color="#66BB6A", command=do_swing_tp
+        f_ast, text="Láº¥y Swing TP", width=105, fg_color="#66BB6A", command=do_swing_tp
     ).pack(side="left", padx=2)
 
     ctk.CTkButton(
-        f_ast, text="Bỏ TP (Vô cực)", width=105, fg_color="#455A64", command=do_clear_tp
+        f_ast, text="Bá» TP (VÃ´ cá»±c)", width=105, fg_color="#455A64", command=do_clear_tp
     ).pack(side="right", padx=2)
 
     f_tactic_row = ctk.CTkFrame(top, fg_color="transparent")
@@ -1847,7 +1855,7 @@ def open_edit_popup(app, ticket):
         btns[k].configure(fg_color=COL_BLUE_ACCENT if states[k] else COL_GRAY_BTN)
         live_edit()
 
-    # Dòng 1: TACTIC (6 nút giống hệt Panel)
+    # DÃ²ng 1: TACTIC (6 nÃºt giá»‘ng há»‡t Panel)
     tactic_widths = {"BE": 32, "PNL": 28, "STEP": 32, "SWING": 38, "CASH": 38, "PSAR": 38}
     for k in ["BE", "PNL", "STEP", "SWING", "CASH", "PSAR"]:
         btns[k] = ctk.CTkButton(
@@ -1864,7 +1872,7 @@ def open_edit_popup(app, ticket):
     
     ctk.CTkLabel(f_def_row, text="DEF:", font=("Roboto", 11, "bold"), text_color="gray").pack(side="left", padx=(0, 5))
 
-    # Dòng 2: DEF (DCA, PCA checkboxes + REV, A.CUT buttons)
+    # DÃ²ng 2: DEF (DCA, PCA checkboxes + REV, A.CUT buttons)
     chk_dca = ctk.CTkCheckBox(f_def_row, text="DCA", font=("Roboto", 11), width=45)
     chk_dca.pack(side="left", padx=4)
     chk_pca = ctk.CTkCheckBox(f_def_row, text="PCA", font=("Roboto", 11), width=45)
@@ -1886,7 +1894,7 @@ def open_edit_popup(app, ticket):
         )
         btns[k].pack(side="left", padx=1)
 
-    live_edit()  # Lần gọi đầu tiên khi mở popup
+    live_edit()  # Láº§n gá»i Ä‘áº§u tiÃªn khi má»Ÿ popup
 
     def save_e():
         try:
@@ -1914,11 +1922,11 @@ def open_edit_popup(app, ticket):
             app.trade_mgr.update_trade_tactic(ticket, final_t)
             top.destroy()
         except Exception as e:
-            messagebox.showerror("Lỗi", str(e), parent=top)
+            messagebox.showerror("Lá»—i", str(e), parent=top)
 
     ctk.CTkButton(
         top,
-        text="CẬP NHẬT LỆNH",
+        text="Cáº¬P NHáº¬T Lá»†NH",
         height=45,
         fg_color="#2e7d32",
         font=FONT_BOLD,
@@ -1928,12 +1936,12 @@ def open_edit_popup(app, ticket):
 
 def show_history_popup(app):
     top = ctk.CTkToplevel(app)
-    top.title("Lịch sử Giao dịch (Nhóm theo Phiên)")
+    top.title("Lá»‹ch sá»­ Giao dá»‹ch (NhÃ³m theo PhiÃªn)")
     top.geometry("900x550")
     top.attributes("-topmost", True)
     top.focus_force()
 
-    # [NEW V5] Mở rộng số cột để hiển thị thêm Entry, SL, TP, Fee
+    # [NEW V5] Má»Ÿ rá»™ng sá»‘ cá»™t Ä‘á»ƒ hiá»ƒn thá»‹ thÃªm Entry, SL, TP, Fee
     history_tabs = ctk.CTkTabview(top)
     history_tabs.pack(fill="both", expand=True)
     tab_all_history = history_tabs.add("ALL")
@@ -1970,7 +1978,7 @@ def show_history_popup(app):
 
     tr.pack(fill="both", expand=True)
 
-    # Cột Tree (chứa Session Name)
+    # Cá»™t Tree (chá»©a Session Name)
     tr.column("#0", width=230, anchor="w")
     tr.heading("#0", text="Session")
 
@@ -2009,7 +2017,7 @@ def show_history_popup(app):
                 records = list(records_by_ticket.values())
                 for row in records:
                     if len(row) < 14:
-                        continue  # Format mới có 14 cột
+                        continue  # Format má»›i cÃ³ 14 cá»™t
                     # row format: [Time, Ticket, Symbol, Type, Vol, Entry, SL, TP, Fee, PnL, Reason, Market Mode, Trigger, Session_ID]
                     session_id = row[13]
 
@@ -2017,13 +2025,13 @@ def show_history_popup(app):
                         sessions[session_id] = []
                     sessions[session_id].append(row)
 
-            # Hiển thị Session mới nhất lên trên
+            # Hiá»ƒn thá»‹ Session má»›i nháº¥t lÃªn trÃªn
             sorted_sessions = sorted(sessions.keys(), reverse=True)
 
             for sid in sorted_sessions:
                 group_rows = sessions[sid]
 
-                # Tính toán Thống kê Session
+                # TÃ­nh toÃ¡n Thá»‘ng kÃª Session
                 wins = 0
                 total_trades = 0
                 buy_count = 0
@@ -2061,10 +2069,10 @@ def show_history_popup(app):
 
                 winrate = (wins / total_trades * 100) if total_trades > 0 else 0
 
-                # Thêm Node Cha (Session)
-                node_text = f"Phiên: {sid}" if sid != "LEGACY" else "Phiên Cũ (Legacy)"
+                # ThÃªm Node Cha (Session)
+                node_text = f"PhiÃªn: {sid}" if sid != "LEGACY" else "PhiÃªn CÅ© (Legacy)"
 
-                # Hiển thị tóm tắt trên node cha
+                # Hiá»ƒn thá»‹ tÃ³m táº¯t trÃªn node cha
                 type_str = f"B:{buy_count} | S:{sell_count}"
                 win_str = f"W: {winrate:.1f}%"
                 def fmt_m(val):
@@ -2097,7 +2105,7 @@ def show_history_popup(app):
                     ),
                 )
 
-                # Sắp xếp các lệnh trong phiên từ mới -> cũ
+                # Sáº¯p xáº¿p cÃ¡c lá»‡nh trong phiÃªn tá»« má»›i -> cÅ©
                 for row in reversed(group_rows):
                     if len(row) >= 14:
                         tr.insert(
@@ -2122,7 +2130,7 @@ def show_history_popup(app):
                             ),
                         )
 
-                # Tự động mở rộng phiên mới nhất
+                # Tá»± Ä‘á»™ng má»Ÿ rá»™ng phiÃªn má»›i nháº¥t
                 if sid == sorted_sessions[0]:
                     tr.item(parent_id, open=True)
 
@@ -2131,7 +2139,7 @@ def show_history_popup(app):
 
     load_data()
 
-    # Thêm Context Menu để xóa Session
+    # ThÃªm Context Menu Ä‘á»ƒ xÃ³a Session
     def on_right_click(event):
         row_id = tr.identify_row(event.y)
         if not row_id:
@@ -2139,41 +2147,41 @@ def show_history_popup(app):
 
         tr.selection_set(row_id)
 
-        # Kiểm tra xem có phải là Node cha (Session) không
+        # Kiá»ƒm tra xem cÃ³ pháº£i lÃ  Node cha (Session) khÃ´ng
         parent_node = tr.parent(row_id)
-        if parent_node == "":  # Đây là node cha
+        if parent_node == "":  # ÄÃ¢y lÃ  node cha
             session_text = tr.item(row_id, "text")
-            session_id = session_text.replace("Phiên: ", "").replace(
-                "Phiên Cũ (Legacy)", "LEGACY"
+            session_id = session_text.replace("PhiÃªn: ", "").replace(
+                "PhiÃªn CÅ© (Legacy)", "LEGACY"
             )
 
             menu = tk.Menu(top, tearoff=0, font=("Roboto", 11))
             menu.add_command(
-                label=f"🗑 Xóa Log Phiên [{session_id}]",
+                label=f"ðŸ—‘ XÃ³a Log PhiÃªn [{session_id}]",
                 command=lambda: delete_session(session_id),
             )
             menu.post(event.x_root, event.y_root)
 
     def delete_session(session_id):
         if messagebox.askyesno(
-            "Cảnh báo",
-            f"Bạn có chắc muốn XÓA VĨNH VIỄN toàn bộ nhật ký của Phiên [{session_id}] không?",
+            "Cáº£nh bÃ¡o",
+            f"Báº¡n cÃ³ cháº¯c muá»‘n XÃ“A VÄ¨NH VIá»„N toÃ n bá»™ nháº­t kÃ½ cá»§a PhiÃªn [{session_id}] khÃ´ng?",
             parent=top
         ):
             from core.storage_manager import delete_session_log
 
             delete_session_log(session_id)
             app.log_message(
-                f"🗑️ Đã dọn dẹp log của phiên {session_id}.", target="manual"
+                f"ðŸ—‘ï¸ ÄÃ£ dá»n dáº¹p log cá»§a phiÃªn {session_id}.", target="manual"
             )
-            load_data()  # Reload lại Treeview
+            load_data()  # Reload láº¡i Treeview
 
     tr.bind("<Button-3>", on_right_click)
 
 
 def open_minibrain_popup(app, title, mb_cfg, on_save_callback):
     """
-    [NEW V5.1] Popup cài đặt Mini-Brain 1-Group độc lập cho DCA/PCA
+    [NEW V5.1] Popup cÃ i Ä‘áº·t Mini-Brain 1-Group Ä‘á»™c láº­p cho DCA/PCA
     """
     from tkinter import messagebox
     import customtkinter as ctk
@@ -2191,7 +2199,7 @@ def open_minibrain_popup(app, title, mb_cfg, on_save_callback):
     f_top.pack(fill="x", padx=10, pady=10)
 
     var_active = ctk.BooleanVar(value=mb_cfg.get("active", False))
-    ctk.CTkCheckBox(f_top, text="Bật Mini-Brain", variable=var_active, font=("Roboto", 13, "bold")).pack(side="left", padx=10)
+    ctk.CTkCheckBox(f_top, text="Báº­t Mini-Brain", variable=var_active, font=("Roboto", 13, "bold")).pack(side="left", padx=10)
 
     ctk.CTkLabel(f_top, text="Timeframe:").pack(side="left", padx=(20, 5))
     cbo_tf = ctk.CTkComboBox(f_top, values=["1m", "5m", "15m", "30m", "1h", "4h"], width=80)
@@ -2201,24 +2209,24 @@ def open_minibrain_popup(app, title, mb_cfg, on_save_callback):
     f_rules = ctk.CTkFrame(top)
     f_rules.pack(fill="x", padx=10, pady=5)
 
-    ctk.CTkLabel(f_rules, text="Max Opposite (Phiếu ngược tối đa):").pack(side="left", padx=10, pady=5)
+    ctk.CTkLabel(f_rules, text="Max Opposite (Phiáº¿u ngÆ°á»£c tá»‘i Ä‘a):").pack(side="left", padx=10, pady=5)
     e_max_opp = ctk.CTkEntry(f_rules, width=60, justify="center")
     e_max_opp.insert(0, str(mb_cfg.get("max_opposite", 0)))
     e_max_opp.pack(side="left", padx=5)
 
-    ctk.CTkLabel(f_rules, text="Max None (Phiếu trắng tối đa):").pack(side="left", padx=20, pady=5)
+    ctk.CTkLabel(f_rules, text="Max None (Phiáº¿u tráº¯ng tá»‘i Ä‘a):").pack(side="left", padx=20, pady=5)
     e_max_none = ctk.CTkEntry(f_rules, width=60, justify="center")
     e_max_none.insert(0, str(mb_cfg.get("max_none", 0)))
     e_max_none.pack(side="left", padx=5)
 
     f_inds = ctk.CTkFrame(top)
     f_inds.pack(fill="both", expand=True, padx=10, pady=10)
-    ctk.CTkLabel(f_inds, text="CHỌN CHỈ BÁO", font=("Roboto", 12, "bold")).pack(pady=5)
+    ctk.CTkLabel(f_inds, text="CHá»ŒN CHá»ˆ BÃO", font=("Roboto", 12, "bold")).pack(pady=5)
 
     inds_cfg = mb_cfg.get("indicators", {})
     vars_dict = {}
 
-    # Dùng SANDBOX_CONFIG["indicators"] làm nguồn danh sách indicator (không dùng INDICATOR_DEFINITIONS không tồn tại)
+    # DÃ¹ng SANDBOX_CONFIG["indicators"] lÃ m nguá»“n danh sÃ¡ch indicator (khÃ´ng dÃ¹ng INDICATOR_DEFINITIONS khÃ´ng tá»“n táº¡i)
     all_indicators = _cfg.SANDBOX_CONFIG.get("indicators", {})
     LABEL_MAP = {
         "adx": "ADX", "ema": "EMA", "swing_point": "Swing Point", "atr": "ATR",
@@ -2255,12 +2263,13 @@ def open_minibrain_popup(app, title, mb_cfg, on_save_callback):
             }
             for k, v in vars_dict.items():
                 if v.get():
-                    # Chỉ lưu trạng thái active, không lưu cứng params để Mini-Brain tự mượn params từ Sandbox
+                    # Chá»‰ lÆ°u tráº¡ng thÃ¡i active, khÃ´ng lÆ°u cá»©ng params Ä‘á»ƒ Mini-Brain tá»± mÆ°á»£n params tá»« Sandbox
                     new_cfg["indicators"][k] = {"active": True}
             on_save_callback(new_cfg)
             top.destroy()
         except ValueError as e:
-            messagebox.showerror("Lỗi", f"Vui lòng nhập số hợp lệ: {e}", parent=top)
+            messagebox.showerror("Lá»—i", f"Vui lÃ²ng nháº­p sá»‘ há»£p lá»‡: {e}", parent=top)
 
-    ctk.CTkButton(top, text="LƯU MINI-BRAIN", fg_color="#FBC02D", text_color="#212121",
+    ctk.CTkButton(top, text="LÆ¯U MINI-BRAIN", fg_color="#FBC02D", text_color="#212121",
                   font=("Roboto", 13, "bold"), command=save_mb).pack(pady=10)
+

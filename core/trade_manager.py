@@ -24,6 +24,7 @@ from core.storage_manager import (
     mark_safeguard_brake,
 )
 from core.market_hours import is_symbol_trade_window_open
+from core.entry_exit_engine import evaluate_entry_exit, format_decision
 
 
 class TradeManager:
@@ -431,6 +432,44 @@ class TradeManager:
         current_price = tick.ask if direction == "BUY" else tick.bid
         risk_tsl = brain.get("risk_tsl", {})
         order_type = mt5.ORDER_TYPE_BUY if direction == "BUY" else mt5.ORDER_TYPE_SELL
+        ee_decision = None
+        ee_sl_override = None
+        ee_tp_override = None
+        entry_exit_cfg = brain.get("entry_exit", {})
+        if signal_class == "ENTRY":
+            pending_key = f"{symbol}|{direction}"
+            pending_map = self.state.setdefault("pending_entry_exit", {})
+            for side in ("BUY", "SELL"):
+                if side != direction:
+                    pending_map.pop(f"{symbol}|{side}", None)
+            pending = pending_map.get(pending_key)
+            if pending:
+                if pending.get("direction") != direction or float(pending.get("expires_at", 0) or 0) < time.time():
+                    pending_map.pop(pending_key, None)
+                    pending = None
+            ee_decision = evaluate_entry_exit(
+                symbol,
+                direction,
+                current_price,
+                context,
+                entry_exit_cfg,
+                pending=pending,
+            )
+            if ee_decision.get("status") != "OFF":
+                self.log(f"[E/E] {format_decision(ee_decision)}", target="bot-log")
+            if entry_exit_cfg.get("enabled") and not entry_exit_cfg.get("preview_only", True):
+                if ee_decision.get("status") == "READY":
+                    pending_map.pop(pending_key, None)
+                    ee_sl_override = ee_decision.get("sl")
+                    ee_tp_override = ee_decision.get("tp")
+                elif ee_decision.get("status") == "WAIT":
+                    pending_map[pending_key] = ee_decision
+                    save_state(self.state)
+                    return f"SAFEGUARD_FAIL|EntryExit_WAIT|{format_decision(ee_decision)}"
+                else:
+                    pending_map.pop(pending_key, None)
+                    save_state(self.state)
+                    return f"SAFEGUARD_FAIL|EntryExit_{ee_decision.get('status')}|{ee_decision.get('reason', 'Entry/Exit blocked')}"
 
         # TÍNH TOÁN SMART SL TỪ CẤU HÌNH BRAIN
         sl_group = risk_tsl.get("base_sl", "G2")
@@ -441,15 +480,7 @@ class TradeManager:
         swing_l_key = f"swing_low_{sl_group}"
         swing_h_key = f"swing_high_{sl_group}"
 
-        # CHỐT CHẶN 1: Bẫy lỗi mất Data
-        if (
-            atr_key not in context
-            or swing_l_key not in context
-            or swing_h_key not in context
-        ):
-            return f"SAFEGUARD_FAIL|No_Data|Mất dữ liệu Swing/ATR của {sl_group}. Từ chối vào lệnh."
-
-        atr_val = context.get(atr_key)
+        atr_val = context.get(atr_key) or context.get("atr_entry") or 0.0
         swing_l = context.get(swing_l_key)
         swing_h = context.get(swing_h_key)
 
@@ -457,11 +488,24 @@ class TradeManager:
         sl_mult = float(
             risk_tsl.get("sl_atr_multiplier", getattr(config, "sl_atr_multiplier", 0.2))
         )
-        buffer_atr = atr_val * sl_mult
+        buffer_atr = float(atr_val or 0.0) * sl_mult
 
-        raw_swing_sl = swing_l if direction == "BUY" else swing_h
-        sl_price = swing_l - buffer_atr if direction == "BUY" else swing_h + buffer_atr
-        sl_distance = abs(current_price - sl_price)
+        if ee_sl_override:
+            sl_price = float(ee_sl_override)
+            raw_swing_sl = sl_price
+            sl_distance = abs(current_price - sl_price)
+        else:
+            # CHỐT CHẶN 1: Bẫy lỗi mất Data
+            if (
+                atr_key not in context
+                or swing_l_key not in context
+                or swing_h_key not in context
+            ):
+                return f"SAFEGUARD_FAIL|No_Data|Mất dữ liệu Swing/ATR của {sl_group}. Từ chối vào lệnh."
+
+            raw_swing_sl = swing_l if direction == "BUY" else swing_h
+            sl_price = swing_l - buffer_atr if direction == "BUY" else swing_h + buffer_atr
+            sl_distance = abs(current_price - sl_price)
 
         # CHỐT CHẶN 2: Bẫy lỗi SL cực hẹp (Nhỏ hơn 0.05% giá trị tài sản)
         min_safe_dist = current_price * 0.0005
@@ -581,7 +625,9 @@ class TradeManager:
             use_swing_tp = safeguard_cfg.get("BOT_USE_SWING_TP", False)
             use_rr_tp = safeguard_cfg.get("BOT_USE_RR_TP", True)
 
-            if use_swing_tp and context and swing_h and swing_l and atr_val:
+            if ee_tp_override:
+                tp_price = float(ee_tp_override)
+            elif use_swing_tp and context and swing_h and swing_l and atr_val:
                 tp_price = (
                     (swing_h - buffer_atr)
                     if direction == "BUY"
@@ -628,6 +674,17 @@ class TradeManager:
                 bot_tactic += "+REV_C"
 
             self.update_trade_tactic(ticket_id, bot_tactic)
+            if (
+                ee_decision
+                and ee_decision.get("status") == "READY"
+                and entry_exit_cfg.get("enabled")
+                and not entry_exit_cfg.get("preview_only", True)
+            ):
+                ee_label = ee_decision.get("entry_tactic") or "OFF"
+                exit_label = ee_decision.get("exit_tactic")
+                if exit_label:
+                    ee_label = f"{ee_label}->{exit_label}"
+                self.update_trade_entry_exit_tactic(ticket_id, ee_label)
             self.state["initial_r_dist"][str(ticket_id)] = sl_distance
             self.state.setdefault("initial_r_usd", {})[str(ticket_id)] = self._calc_risk_usd(
                 symbol, order_type, lot_size, current_price, sl_price
@@ -660,7 +717,7 @@ class TradeManager:
                     ).start()
             else:
                 self.log(
-                    f"🚀 [BOT EXEC] {direction} {symbol} #{ticket_id} | Lot: {lot_size:.2f} | Entry: {current_price:.5f} | SL: {sl_price:.5f} | TP: {tp_price:.5f} | TSL: {bot_tactic}",
+                    f"🚀 [BOT EXEC] {direction} {symbol} #{ticket_id} | Lot: {lot_size:.2f} | Entry: {current_price:.5f} | SL: {sl_price:.5f} | TP: {tp_price:.5f} | TSL: {bot_tactic} | E/E: {self.get_trade_entry_exit_tactic(ticket_id)}",
                     target="bot",
                 )
                 if signal_class == "ENTRY":
@@ -911,6 +968,13 @@ class TradeManager:
 
     def get_trade_tactic(self, ticket):
         return self.state.get("trade_tactics", {}).get(str(ticket), "OFF")
+
+    def update_trade_entry_exit_tactic(self, ticket, tactic_str):
+        self.state.setdefault("entry_exit_tactics", {})[str(ticket)] = tactic_str
+        save_state(self.state)
+
+    def get_trade_entry_exit_tactic(self, ticket):
+        return self.state.get("entry_exit_tactics", {}).get(str(ticket), "OFF")
 
     # ====================================================================================
     # 3. QUẢN LÝ LỆNH CHẠY (TSL ĐỘC LẬP & DỌN RÁC RỔ LỆNH)

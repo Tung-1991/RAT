@@ -87,11 +87,12 @@ def setup_left_panel(app, parent):
     # 2. SETTINGS PANEL (Coin, Mode, Tactic)
     f_set = ctk.CTkFrame(parent, fg_color="transparent")
     f_set.pack(fill="x", padx=5, pady=5)
+    f_set.columnconfigure(0, minsize=74)
     f_set.columnconfigure(1, weight=1)
 
     # --- DÒNG 1: COIN & CẤU HÌNH BOT & SANDBOX ---
-    ctk.CTkLabel(f_set, text="COIN:", font=FONT_SECTION, text_color="gray").grid(
-        row=0, column=0, sticky="w"
+    ctk.CTkLabel(f_set, text="COIN:", font=FONT_SECTION, text_color="#D7DCE2").grid(
+        row=0, column=0, sticky="e", padx=(0, 8)
     )
     f_coin_row = ctk.CTkFrame(f_set, fg_color="transparent")
     f_coin_row.grid(row=0, column=1, sticky="ew", padx=5)
@@ -152,8 +153,8 @@ def setup_left_panel(app, parent):
     app.chk_force.pack(side="right", padx=0)
 
     # --- DÒNG 2: MODE ---
-    ctk.CTkLabel(f_set, text="MODE:", font=FONT_SECTION, text_color="gray").grid(
-        row=1, column=0, sticky="w", pady=5
+    ctk.CTkLabel(f_set, text="MODE:", font=FONT_SECTION, text_color="#D7DCE2").grid(
+        row=1, column=0, sticky="e", padx=(0, 8), pady=5
     )
     f_mode_row = ctk.CTkFrame(f_set, fg_color="transparent")
     f_mode_row.grid(row=1, column=1, sticky="ew", padx=5)
@@ -183,8 +184,8 @@ def setup_left_panel(app, parent):
 
 
     # --- DÒNG 2: TACTIC ---
-    ctk.CTkLabel(f_set, text="TACTIC:", font=FONT_SECTION, text_color="gray").grid(
-        row=2, column=0, sticky="w", pady=2
+    ctk.CTkLabel(f_set, text="TSL:", font=FONT_SECTION, text_color="#D7DCE2").grid(
+        row=2, column=0, sticky="e", padx=(0, 8), pady=2
     )
     f_tsl_row = ctk.CTkFrame(f_set, fg_color="transparent")
     f_tsl_row.grid(row=2, column=1, sticky="ew", padx=5)
@@ -217,11 +218,11 @@ def setup_left_panel(app, parent):
     app.btn_tactic_psar.pack(side="left", padx=1)
 
     # [NEW V4.4] RECOVERY & SAFELOCK Section
-    ctk.CTkLabel(f_set, text="DEF:", font=FONT_SECTION, text_color="gray").grid(
-        row=3, column=0, sticky="w", pady=2
+    ctk.CTkLabel(f_set, text="DEF:", font=FONT_SECTION, text_color="#D7DCE2").grid(
+        row=4, column=0, sticky="e", padx=(0, 8), pady=2
     )
     f_extra = ctk.CTkFrame(f_set, fg_color="transparent")
-    f_extra.grid(row=3, column=1, sticky="ew", padx=5)
+    f_extra.grid(row=4, column=1, sticky="ew", padx=5)
     
     app.btn_tactic_dca = ctk.CTkButton(
         f_extra, text="DCA", width=36, command=lambda: app.toggle_tactic("AUTO_DCA")
@@ -300,6 +301,51 @@ def setup_left_panel(app, parent):
         command=app.open_advanced_tools_popup,
     ).pack(side="left", padx=(0, 1))
 
+    ctk.CTkLabel(f_set, text="E/E:", font=FONT_SECTION, text_color="#D7DCE2").grid(
+        row=3, column=0, sticky="e", padx=(0, 8), pady=2
+    )
+    f_entry = ctk.CTkFrame(f_set, fg_color="transparent")
+    f_entry.grid(row=3, column=1, sticky="ew", padx=5)
+
+    app.btn_entry_r = ctk.CTkButton(
+        f_entry,
+        text="R",
+        width=34,
+        command=lambda: app.toggle_entry_exit_tactic("FALLBACK_R"),
+    )
+    app.btn_entry_r.pack(side="left", padx=1)
+    app.btn_entry_swing = ctk.CTkButton(
+        f_entry,
+        text="SWING",
+        width=48,
+        command=lambda: app.toggle_entry_exit_tactic("SWING_REJECTION"),
+    )
+    app.btn_entry_swing.pack(side="left", padx=1)
+    app.btn_entry_fib = ctk.CTkButton(
+        f_entry,
+        text="FIB",
+        width=34,
+        command=lambda: app.toggle_entry_exit_tactic("FIB_RETRACE"),
+    )
+    app.btn_entry_fib.pack(side="left", padx=1)
+    app.btn_entry_pullback = ctk.CTkButton(
+        f_entry,
+        text="PULL",
+        width=42,
+        command=lambda: app.toggle_entry_exit_tactic("PULLBACK_ZONE"),
+    )
+    app.btn_entry_pullback.pack(side="left", padx=1)
+
+    ctk.CTkButton(
+        f_entry,
+        text="\u2699 E/E",
+        width=54,
+        height=28,
+        fg_color="#424242",
+        hover_color="#616161",
+        command=app.open_entry_exit_popup,
+    ).pack(side="left", padx=(6, 1))
+
     f_btn_settings = ctk.CTkFrame(f_tsl_row, fg_color="transparent")
     f_btn_settings.pack(side="right", padx=(0, 0))
     ctk.CTkButton(
@@ -313,6 +359,7 @@ def setup_left_panel(app, parent):
     ).pack(side="right")
 
     app.update_tactic_buttons_ui()
+    app.update_entry_exit_buttons_ui()
 
     # 3. MANUAL INPUT PANEL
     f_input = ctk.CTkFrame(parent, fg_color="transparent")
@@ -397,23 +444,17 @@ def setup_left_panel(app, parent):
     app.lbl_fee_info.pack(side="right")
     f_price_row = ctk.CTkFrame(f_dashboard, fg_color="transparent")
     f_price_row.pack(fill="x", padx=8, pady=(5, 5))
-    f_price_row.grid_columnconfigure(0, minsize=96)
+    f_price_row.grid_columnconfigure(0, minsize=106)
     f_price_row.grid_columnconfigure(1, weight=1)
-    f_price_row.grid_columnconfigure(2, minsize=96)
-    ctk.CTkFrame(f_price_row, fg_color="transparent", width=96, height=1).grid(
-        row=0, column=0, sticky="ew"
-    )
-    app.lbl_dashboard_price = ctk.CTkLabel(
-        f_price_row, text="----.--", font=FONT_PRICE, text_color="white"
-    )
-    app.lbl_dashboard_price.grid(row=0, column=1, sticky="ew")
+    f_price_row.grid_columnconfigure(2, minsize=106)
+
     app.frame_trade_mode = ctk.CTkFrame(f_price_row, fg_color="#424242", corner_radius=6)
-    app.frame_trade_mode.grid(row=0, column=2, sticky="e", padx=(8, 0))
+    app.frame_trade_mode.grid(row=0, column=0, sticky="w", padx=(0, 8))
     app.btn_mode_normal = ctk.CTkButton(
         app.frame_trade_mode,
         text="NORMAL",
-        width=82,
-        height=22,
+        width=96,
+        height=24,
         font=("Roboto", 10, "bold"),
         fg_color="#00838F",
         hover_color="#006064",
@@ -423,14 +464,44 @@ def setup_left_panel(app, parent):
     app.btn_mode_grid = ctk.CTkButton(
         app.frame_trade_mode,
         text="GRID",
-        width=82,
-        height=22,
+        width=96,
+        height=24,
         font=("Roboto", 10, "bold"),
         fg_color="#424242",
         hover_color="#616161",
         command=lambda: app.on_manual_trade_mode_change("GRID"),
     )
     app.btn_mode_grid.pack(fill="x", padx=4, pady=(1, 4))
+
+    app.lbl_dashboard_price = ctk.CTkLabel(
+        f_price_row, text="----.--", font=FONT_PRICE, text_color="white"
+    )
+    app.lbl_dashboard_price.grid(row=0, column=1, sticky="ew")
+
+    app.frame_direction = ctk.CTkFrame(f_price_row, fg_color="#424242", corner_radius=6)
+    app.frame_direction.grid(row=0, column=2, sticky="e", padx=(8, 0))
+    app.btn_dir_buy = ctk.CTkButton(
+        app.frame_direction,
+        text="BUY",
+        width=96,
+        height=24,
+        font=("Roboto", 10, "bold"),
+        fg_color=COL_GREEN,
+        hover_color="#009624",
+        command=lambda: app.on_direction_change("BUY"),
+    )
+    app.btn_dir_buy.pack(fill="x", padx=4, pady=(4, 1))
+    app.btn_dir_sell = ctk.CTkButton(
+        app.frame_direction,
+        text="SELL",
+        width=96,
+        height=24,
+        font=("Roboto", 10, "bold"),
+        fg_color="#424242",
+        hover_color="#616161",
+        command=lambda: app.on_direction_change("SELL"),
+    )
+    app.btn_dir_sell.pack(fill="x", padx=4, pady=(1, 4))
 
     ctk.CTkFrame(f_dashboard, height=1, fg_color="#444").pack(fill="x", padx=5)
     f_grid_db = ctk.CTkFrame(f_dashboard, fg_color="transparent")
@@ -474,20 +545,12 @@ def setup_left_panel(app, parent):
         f_dashboard, text="TSL: OFF", font=("Roboto", 13), text_color="#2196F3"
     )
     app.lbl_tsl_preview.pack(pady=(5, 5))
+    app.lbl_entry_exit_preview = ctk.CTkLabel(
+        f_dashboard, text="E/E: OFF", font=("Roboto", 12, "bold"), text_color="#00B8D4"
+    )
+    app.lbl_entry_exit_preview.pack(pady=(0, 5))
 
     # 5. EXECUTION CONTROLS
-    app.seg_direction = ctk.CTkSegmentedButton(
-        parent,
-        values=["BUY", "SELL"],
-        font=("Roboto", 14, "bold"),
-        command=app.on_direction_change,
-        height=32,
-        selected_color=COL_GREEN,
-        selected_hover_color="#009624",
-    )
-    app.seg_direction.set("BUY")
-    app.seg_direction.pack(fill="x", padx=10, pady=(5, 5))
-
     app.seg_grid_mode = ctk.CTkSegmentedButton(
         parent,
         values=["NEUTRAL", "LONG", "SHORT"],

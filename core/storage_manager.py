@@ -239,6 +239,8 @@ def apply_state_defaults(state: Dict[str, Any]) -> Dict[str, Any]:
     if "daily_history" not in state: state["daily_history"] = []
     if "tsl_disabled_tickets" not in state: state["tsl_disabled_tickets"] = []
     if "trade_tactics" not in state: state["trade_tactics"] = {}
+    if "entry_exit_tactics" not in state: state["entry_exit_tactics"] = {}
+    if "pending_entry_exit" not in state: state["pending_entry_exit"] = {}
     if "initial_r_dist" not in state: state["initial_r_dist"] = {}
     if "initial_r_usd" not in state: state["initial_r_usd"] = {}
     if "parent_baskets" not in state: state["parent_baskets"] = {}
@@ -539,7 +541,9 @@ def load_state() -> Dict[str, Any]:
         "active_trades": [],
         "tsl_disabled_tickets": [], 
         "daily_history": [],
-        "trade_tactics": {},        
+        "trade_tactics": {},
+        "entry_exit_tactics": {},
+        "pending_entry_exit": {},
         "initial_r_dist": {},
         "initial_r_usd": {},
         "parent_baskets": {},       
@@ -578,7 +582,9 @@ def load_state() -> Dict[str, Any]:
             
             if "daily_history" not in state: state["daily_history"] = []
             if "tsl_disabled_tickets" not in state: state["tsl_disabled_tickets"] = []
-            if "trade_tactics" not in state: state["trade_tactics"] = {} 
+            if "trade_tactics" not in state: state["trade_tactics"] = {}
+            if "entry_exit_tactics" not in state: state["entry_exit_tactics"] = {}
+            if "pending_entry_exit" not in state: state["pending_entry_exit"] = {}
             if "initial_r_dist" not in state: state["initial_r_dist"] = {}       
             if "initial_r_usd" not in state: state["initial_r_usd"] = {}
             if "parent_baskets" not in state: state["parent_baskets"] = {} 
@@ -705,6 +711,44 @@ def update_last_dca_pca_close_time(symbol: str, timestamp: float):
 
 def load_brain_settings() -> Dict[str, Any]:
     sandbox_defaults = getattr(config, "SANDBOX_CONFIG", {})
+    default_entry_exit = {
+        "enabled": False,
+        "preview_only": True,
+        "active_tactics": [],
+        "entry_tactics": ["SWING_REJECTION"],
+        "exit_tactic": "FIB_RETRACE",
+        "fallback_tactic": "FALLBACK_R",
+        "signal_ttl_seconds": 900,
+        "missing_data_policy": "FALLBACK_R",
+        "tp_policy": "FALLBACK_R",
+        "sl_source_group": "BASE_SL",
+        "default_exit": {
+            "use_rr_tp": True,
+            "tp_rr_ratio": 1.5,
+            "use_swing_tp": False,
+        },
+        "sl_distance": {"min_atr": 0.3, "max_atr": 2.0},
+        "fib_retrace": {
+            "swing_source_group": "G2",
+            "entry_levels": "0.5,0.618",
+            "tp_levels": "1.272,1.618",
+            "use_tactic_tp": False,
+        },
+        "breakout_retest": {
+            "source_group": "G2",
+            "max_bars_after_breakout": 6,
+            "retest_atr": 0.5,
+            "use_tactic_tp": False,
+        },
+        "swing_rejection": {
+            "source_group": "G2",
+            "max_atr_from_swing": 0.7,
+            "sl_atr_buffer": 0.2,
+            "require_rejection_candle": True,
+        },
+        "pullback_zone": {"source": "EMA20", "max_atr_from_zone": 0.5},
+        "bb_reclaim": {"band": "MID", "max_atr_from_band": 0.5},
+    }
     default_brain = {
         "MASTER_EVAL_MODE": getattr(config, "MASTER_EVAL_MODE", "VETO"),
         "MIN_MATCHING_VOTES": getattr(config, "MIN_MATCHING_VOTES", 3),
@@ -738,6 +782,7 @@ def load_brain_settings() -> Dict[str, Any]:
         "indicators": copy.deepcopy(sandbox_defaults.get("indicators", {})),
         "dca_config": copy.deepcopy(getattr(config, "DCA_CONFIG", {})),
         "pca_config": copy.deepcopy(getattr(config, "PCA_CONFIG", {})),
+        "entry_exit": copy.deepcopy(default_entry_exit),
         "bot_safeguard": copy.deepcopy(getattr(config, "BOT_SAFEGUARD", {})),
         "TSL_CONFIG": copy.deepcopy(getattr(config, "TSL_CONFIG", {})),
         "TSL_LOGIC_MODE": getattr(config, "TSL_LOGIC_MODE", "STATIC"),
@@ -801,6 +846,7 @@ def load_brain_settings() -> Dict[str, Any]:
 
             for key in [
                 "risk_tsl",
+                "entry_exit",
                 "dca_config",
                 "pca_config",
                 "bot_safeguard",
@@ -987,6 +1033,14 @@ def get_brain_settings_for_symbol(symbol: str = None) -> Dict[str, Any]:
                 base_brain["risk_tsl"].update(sb["risk_tsl"])
                 if base_brain["risk_tsl"].get("tsl_mode"):
                     base_brain["TSL_LOGIC_MODE"] = base_brain["risk_tsl"]["tsl_mode"]
+
+            if "entry_exit" in sb:
+                if "entry_exit" not in base_brain: base_brain["entry_exit"] = {}
+                for k, v in sb["entry_exit"].items():
+                    if isinstance(v, dict) and isinstance(base_brain["entry_exit"].get(k), dict):
+                        base_brain["entry_exit"][k].update(v)
+                    else:
+                        base_brain["entry_exit"][k] = v
                 
             if "indicators" in sb:
                 if "indicators" not in base_brain: base_brain["indicators"] = {}
@@ -1012,6 +1066,15 @@ def get_brain_settings_for_symbol(symbol: str = None) -> Dict[str, Any]:
                 base_brain["TSL_CONFIG"].update(tsl["TSL_CONFIG"])
             if "TSL_LOGIC_MODE" in tsl:
                 base_brain["TSL_LOGIC_MODE"] = tsl["TSL_LOGIC_MODE"]
+
+        if "entry_exit" in sym_override:
+            if "entry_exit" not in base_brain:
+                base_brain["entry_exit"] = {}
+            for k, v in sym_override["entry_exit"].items():
+                if isinstance(v, dict) and isinstance(base_brain["entry_exit"].get(k), dict):
+                    base_brain["entry_exit"][k].update(v)
+                else:
+                    base_brain["entry_exit"][k] = v
 
     _normalize_brain_settings_shape(base_brain)
     _cache_merged[cache_key] = {"data": base_brain, "ts": now}
