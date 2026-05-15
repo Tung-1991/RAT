@@ -368,12 +368,13 @@ class BotUI(ctk.CTk):
         entry_exit = existing_data.setdefault("entry_exit", {})
         active = [k for k, v in self.entry_exit_tactic_states.items() if v]
         entry_exit["enabled"] = bool(active)
-        entry_exit["preview_only"] = entry_exit.get("preview_only", True)
+        entry_exit["preview_only"] = True
         entry_exit["active_tactics"] = active
+        entry_exit["entry_tactics"] = active
 
         try:
             with open(BRAIN_SETTINGS_FILE, "w", encoding="utf-8") as f:
-                json.dump(existing_data, f, indent=4)
+                json.dump(existing_data, f, indent=4, ensure_ascii=False)
         except Exception as e:
             self.log_message(f"Lỗi lưu Entry/Exit live config: {e}", error=True)
 
@@ -643,7 +644,8 @@ class BotUI(ctk.CTk):
                                 self._merge_dict(current_val, v)
                             else:
                                 setattr(config, k, v)
-                    active_entry_tactics = set(bs.get("entry_exit", {}).get("active_tactics", []))
+                    ee_cfg = bs.get("entry_exit", {})
+                    active_entry_tactics = set(ee_cfg.get("entry_tactics", ee_cfg.get("active_tactics", [])))
                     for key in self.entry_exit_tactic_states:
                         self.entry_exit_tactic_states[key] = key in active_entry_tactics
                     if hasattr(self, "btn_entry_swing"):

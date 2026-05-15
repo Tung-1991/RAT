@@ -716,7 +716,7 @@ def load_brain_settings() -> Dict[str, Any]:
         "preview_only": True,
         "active_tactics": [],
         "entry_tactics": ["SWING_REJECTION"],
-        "exit_tactic": "FIB_RETRACE",
+        "exit_tactic": "AUTO",
         "fallback_tactic": "FALLBACK_R",
         "signal_ttl_seconds": 900,
         "missing_data_policy": "FALLBACK_R",
@@ -731,8 +731,9 @@ def load_brain_settings() -> Dict[str, Any]:
         "fib_retrace": {
             "swing_source_group": "G2",
             "entry_levels": "0.5,0.618",
+            "entry_tolerance_atr": 0.15,
             "tp_levels": "1.272,1.618",
-            "use_tactic_tp": False,
+            "use_tactic_tp": True,
         },
         "breakout_retest": {
             "source_group": "G2",
@@ -744,9 +745,14 @@ def load_brain_settings() -> Dict[str, Any]:
             "source_group": "G2",
             "max_atr_from_swing": 0.7,
             "sl_atr_buffer": 0.2,
-            "require_rejection_candle": True,
+            "require_rejection_candle": False,
         },
-        "pullback_zone": {"source": "EMA20", "max_atr_from_zone": 0.5},
+        "pullback_zone": {
+            "source": "EMA20",
+            "max_atr_from_zone": 0.5,
+            "sl_atr_buffer": 0.2,
+            "tp_atr_multiplier": 1.5,
+        },
         "bb_reclaim": {"band": "MID", "max_atr_from_band": 0.5},
     }
     default_brain = {

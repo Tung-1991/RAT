@@ -8,7 +8,7 @@ def default_entry_exit_config():
         "preview_only": True,
         "active_tactics": [],
         "entry_tactics": ["SWING_REJECTION"],
-        "exit_tactic": "FIB_RETRACE",
+        "exit_tactic": "AUTO",
         "fallback_tactic": "FALLBACK_R",
         "signal_ttl_seconds": 900,
         "missing_data_policy": "FALLBACK_R",
@@ -36,6 +36,7 @@ def default_entry_exit_config():
             "source": "EMA20",
             "max_atr_from_zone": 0.5,
             "sl_atr_buffer": 0.2,
+            "tp_atr_multiplier": 1.5,
         },
     }
 
@@ -230,7 +231,9 @@ def _fallback_r_entry(symbol, direction, price, cfg, ttl, now):
 
 def _apply_exit(decision, price, context, cfg):
     sl = decision.get("sl")
-    exit_tactic = cfg.get("exit_tactic") or "FIB_RETRACE"
+    exit_tactic = cfg.get("exit_tactic") or "AUTO"
+    if exit_tactic == "AUTO":
+        exit_tactic = _auto_exit_tactic(decision.get("entry_tactic"))
     decision["exit_tactic"] = exit_tactic
     if exit_tactic == "FIB_RETRACE":
         tp = _fib_tp(decision.get("direction"), context, cfg)
@@ -246,10 +249,23 @@ def _apply_exit(decision, price, context, cfg):
             decision["tp_source"] = "SWING"
         else:
             _apply_r_tp(decision, price, cfg)
+    elif exit_tactic == "PULLBACK_ZONE":
+        tp = _pullback_tp(decision.get("direction"), price, context, cfg)
+        if tp:
+            decision["tp"] = tp
+            decision["tp_source"] = "PULLBACK"
+        else:
+            _apply_r_tp(decision, price, cfg)
     else:
         _apply_r_tp(decision, price, cfg)
     if sl:
         decision["risk_distance"] = abs(float(price) - float(sl))
+
+
+def _auto_exit_tactic(entry_tactic):
+    if entry_tactic in ("SWING_REJECTION", "FIB_RETRACE", "PULLBACK_ZONE"):
+        return entry_tactic
+    return "FALLBACK_R"
 
 
 def _fib_tp(direction, context, cfg):
@@ -273,6 +289,16 @@ def _swing_tp(direction, context, cfg):
         return None
     buffer = float(atr or 0) * float(cfg.get("swing_rejection", {}).get("sl_atr_buffer", 0.2) or 0.2)
     return float(sh) - buffer if direction == "BUY" else float(sl) + buffer
+
+
+def _pullback_tp(direction, price, context, cfg):
+    pull = cfg.get("pullback_zone", {})
+    group = _resolve_group(cfg.get("sl_source_group", "G2"), context)
+    atr = context.get(f"atr_{group}") or context.get("atr_entry")
+    if not _positive(atr):
+        return None
+    mult = float(pull.get("tp_atr_multiplier", 1.5) or 1.5)
+    return float(price) + float(atr) * mult if direction == "BUY" else float(price) - float(atr) * mult
 
 
 def _apply_r_tp(decision, price, cfg):

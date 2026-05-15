@@ -24,13 +24,22 @@ def _get_template_dir():
     except:
         return "data/templates"
 
+EE_EXIT_LABELS = {
+    "AUTO": "AUTO - TP theo Entry",
+    "FALLBACK_R": "R TP",
+    "SWING_REJECTION": "SWING TP",
+    "FIB_RETRACE": "FIB TP",
+    "PULLBACK_ZONE": "PULLBACK TP",
+}
+EE_EXIT_VALUES = {v: k for k, v in EE_EXIT_LABELS.items()}
+
 def _default_entry_exit_config():
     return {
         "enabled": False,
         "preview_only": True,
         "active_tactics": [],
         "entry_tactics": ["SWING_REJECTION"],
-        "exit_tactic": "FIB_RETRACE",
+        "exit_tactic": "AUTO",
         "fallback_tactic": "FALLBACK_R",
         "signal_ttl_seconds": 900,
         "missing_data_policy": "FALLBACK_R",
@@ -48,8 +57,9 @@ def _default_entry_exit_config():
         "fib_retrace": {
             "swing_source_group": "G2",
             "entry_levels": "0.5,0.618",
+            "entry_tolerance_atr": 0.15,
             "tp_levels": "1.272,1.618",
-            "use_tactic_tp": False,
+            "use_tactic_tp": True,
         },
         "breakout_retest": {
             "source_group": "G2",
@@ -61,11 +71,13 @@ def _default_entry_exit_config():
             "source_group": "G2",
             "max_atr_from_swing": 0.7,
             "sl_atr_buffer": 0.2,
-            "require_rejection_candle": True,
+            "require_rejection_candle": False,
         },
         "pullback_zone": {
             "source": "EMA20",
             "max_atr_from_zone": 0.5,
+            "sl_atr_buffer": 0.2,
+            "tp_atr_multiplier": 1.5,
         },
         "bb_reclaim": {
             "band": "MID",
@@ -88,16 +100,16 @@ class BotStrategyUI(ctk.CTkToplevel):
     def __init__(self, master=None, symbol=None):
         super().__init__(master)
         self.override_symbol = symbol
-        title_str = "ðŸ§  V4.4 Bot Strategy Sandbox"
+        title_str = "🧠 V4.4 Bot Strategy Sandbox"
         if symbol:
-            title_str += f" - Cáº¤U HÃŒNH CON: {symbol}"
+            title_str += f" - CẤU HÌNH CON: {symbol}"
         self.title(title_str)
         self.geometry("1400x850")
         self.minsize(1180, 720)
         self.attributes("-topmost", True)
-        self.resizable(True, True)  # KhÃ´i phá»¥c tÃ­nh nÄƒng co giÃ£n/phÃ³ng to
+        self.resizable(True, True)  # Khôi phục tính năng co giãn/phóng to
         if symbol:
-            self.grab_set()         # Modal: KhÃ³a UI máº¹ khi Ä‘ang chá»‰nh UI con
+            self.grab_set()         # Modal: Khóa UI mẹ khi đang chỉnh UI con
         self.focus_force()
 
         os.makedirs(_get_template_dir(), exist_ok=True)
@@ -120,7 +132,7 @@ class BotStrategyUI(ctk.CTkToplevel):
             "MIN_MATCHING_VOTES": getattr(config, "MIN_MATCHING_VOTES", 3),
             "FORCE_ANY_MODE": getattr(
                 config, "FORCE_ANY_MODE", False
-            ),  # [NEW]: Cháº¿ Ä‘á»™ Scalping
+            ),  # [NEW]: Chế độ Scalping
             "G0_TIMEFRAME": getattr(config, "G0_TIMEFRAME", "1d"),
             "G1_TIMEFRAME": getattr(config, "G1_TIMEFRAME", "1h"),
             "G2_TIMEFRAME": getattr(config, "G2_TIMEFRAME", "15m"),
@@ -146,7 +158,7 @@ class BotStrategyUI(ctk.CTkToplevel):
                 },
                 "strict_risk": getattr(
                     config, "STRICT_RISK_CALC", False
-                ),  # [NEW]: Trá»« phÃ­
+                ),  # [NEW]: Trừ phí
             },
             "indicators": getattr(config, "SANDBOX_CONFIG", {}).get("indicators", {}),
             "dca_config": getattr(config, "DCA_CONFIG", {}),
@@ -213,7 +225,7 @@ class BotStrategyUI(ctk.CTkToplevel):
                             if k not in base_data["indicators"]:
                                 base_data["indicators"][k] = {}
                             base_data["indicators"][k].update(v)
-                            # TÆ°Æ¡ng thÃ­ch ngÆ°á»£c: Äá»•i 'group' cÅ© thÃ nh 'groups' máº£ng
+                            # Tương thích ngược: ổi 'group' cũ thành 'groups' mảng
                             if "group" in v and "groups" not in v:
                                 base_data["indicators"][k]["groups"] = [v["group"]]
 
@@ -222,7 +234,7 @@ class BotStrategyUI(ctk.CTkToplevel):
                     if "pca_config" in saved_data:
                         base_data["pca_config"].update(saved_data["pca_config"])
             except Exception as e:
-                print(f"[UI Sandbox] Lá»—i Ä‘á»c JSON: {e}")
+                print(f"[UI Sandbox] Lỗi đc JSON: {e}")
 
         return base_data
 
@@ -230,7 +242,7 @@ class BotStrategyUI(ctk.CTkToplevel):
         self.tabview = ctk.CTkTabview(self)
         self.tabview.pack(fill="both", expand=True, padx=10, pady=5)
 
-        # Báº¯t Ä‘áº§u vÃ²ng láº·p cáº­p nháº­t Preview
+        # Bắt đầu vòng lặp cập nhật Preview
         self.after(1000, self.update_preview)
 
         self.tab_preview_root = self.tabview.add("Preview")
@@ -268,7 +280,7 @@ class BotStrategyUI(ctk.CTkToplevel):
 
         ctk.CTkButton(
             btn_frame,
-            text="ðŸ“‚ LOAD TEMPLATE",
+            text="📂 LOAD TEMPLATE",
             fg_color="#1565C0",
             hover_color="#0D47A1",
             command=self.load_template,
@@ -276,7 +288,7 @@ class BotStrategyUI(ctk.CTkToplevel):
 
         ctk.CTkButton(
             btn_frame,
-            text="ðŸ’¾ SAVE AS TEMPLATE",
+            text="💾 SAVE AS TEMPLATE",
             fg_color="#455A64",
             hover_color="#37474F",
             command=self.save_as_template,
@@ -284,7 +296,7 @@ class BotStrategyUI(ctk.CTkToplevel):
 
         ctk.CTkButton(
             btn_frame,
-            text="ðŸš€ LÆ¯U & ÃP Dá»¤NG (HOT-RELOAD)",
+            text="🚀 LƯU & P DỤNG (HOT-RELOAD)",
             fg_color="#00C853",
             hover_color="#009624",
             font=("Roboto", 13, "bold"),
@@ -295,7 +307,7 @@ class BotStrategyUI(ctk.CTkToplevel):
         if self.override_symbol:
             ctk.CTkButton(
                 btn_frame,
-                text="ðŸ—‘ï¸ RESET (XÃ“A CON, Vá»€ Máº¸)",
+                text="🗑 RESET (XÓA CON, VỀ MẸ)",
                 fg_color="#D50000",
                 hover_color="#B71C1C",
                 font=("Roboto", 13, "bold"),
@@ -381,7 +393,7 @@ class BotStrategyUI(ctk.CTkToplevel):
                 duration = last_duration.get(str(prev_status), last_duration.get(prev_status)) if isinstance(last_duration, dict) else None
                 if duration is not None:
                     prev_parts.append(f"{self._status_text(prev_status)} - {self._format_duration(duration)}")
-            return current_duration, "Truoc: " + " | ".join(prev_parts) if prev_parts else "Truoc: --"
+            return current_duration, "Trước: " + " | ".join(prev_parts) if prev_parts else "Trước: --"
 
         state = self.preview_status_cache.get(key)
         if not state:
@@ -402,7 +414,7 @@ class BotStrategyUI(ctk.CTkToplevel):
             if duration is not None:
                 prev_parts.append(f"{self._status_text(prev_status)} - {self._format_duration(duration)}")
 
-        return current_duration, "Truoc: " + " | ".join(prev_parts) if prev_parts else "Truoc: --"
+        return current_duration, "Trước: " + " | ".join(prev_parts) if prev_parts else "Trước: --"
 
     def _refresh_group_labels(self, *_):
         for widget, template, grp in self.group_label_widgets:
@@ -435,8 +447,8 @@ class BotStrategyUI(ctk.CTkToplevel):
 
         self._add_hint_box(
             f,
-            "- Preview chá»‰ Ä‘á»c context live, khÃ´ng tá»± quyáº¿t Ä‘á»‹nh lá»‡nh.\n"
-            "- B/S/N lÃ  phiáº¿u BUY/SELL/NONE sau khi lá»c theo Mode.\n"
+            "- Preview chỉ đc context live, không tự quyết định lệnh.\n"
+            "- B/S/N là phiếu BUY/SELL/NONE sau khi lc theo Mode.\n"
             "- Master Action = final result after group rules + Master Mode.\n"
             "- FIX = required, PASS = allows WAIT but blocks opposite, IGNORE = skipped.",
             padx=5,
@@ -482,10 +494,10 @@ class BotStrategyUI(ctk.CTkToplevel):
         self.master_action_lbl = ctk.CTkLabel(header_f, text="MASTER ACTION: WAITING", font=("Roboto", 18, "bold"), text_color="#FFF")
         self.master_action_lbl.pack(pady=(10, 5))
         
-        self.market_mode_lbl = ctk.CTkLabel(header_f, text="MODE: --- | XU HÆ¯á»šNG CHÃNH (BASE): ---", font=("Roboto", 14, "bold"), text_color="#29B6F6")
+        self.market_mode_lbl = ctk.CTkLabel(header_f, text="MODE: --- | XU HƯỚNG CHNH (BASE): ---", font=("Roboto", 14, "bold"), text_color="#29B6F6")
         self.market_mode_lbl.pack(pady=5)
         
-        self.master_reason_lbl = ctk.CTkLabel(header_f, text="Tráº¡ng thÃ¡i: Äang chá» tÃ­n hiá»‡u...", font=("Roboto", 12), text_color="#AAA")
+        self.master_reason_lbl = ctk.CTkLabel(header_f, text="Trạng thái: ang ch tín hiệu...", font=("Roboto", 12), text_color="#AAA")
         self.master_reason_lbl.pack(pady=(0, 10))
 
         entry_exit_f = ctk.CTkFrame(f, fg_color="#202020", corner_radius=8, border_width=1, border_color="#3A3A3A")
@@ -524,7 +536,7 @@ class BotStrategyUI(ctk.CTkToplevel):
             lbl_summary = ctk.CTkLabel(col, text="B: 0 | S: 0 | N: 0", font=("Roboto", 12, "bold"), text_color="#FFF")
             lbl_summary.pack(pady=5)
 
-            lbl_prev = ctk.CTkLabel(col, text="Truoc: --", font=("Roboto", 11), text_color="#BDBDBD")
+            lbl_prev = ctk.CTkLabel(col, text="Trước: --", font=("Roboto", 11), text_color="#BDBDBD")
             lbl_prev.pack(pady=(0, 5))
 
             # Details List (Scrollable)
@@ -537,21 +549,21 @@ class BotStrategyUI(ctk.CTkToplevel):
                 "prev": lbl_prev,
                 "scroll_f": scroll_f,
                 "frame": col,
-                "last_data": "" # Äá»ƒ chá»‘ng flicker
+                "last_data": "" # ể chống flicker
             }
 
     def update_preview(self):
-        """Cáº­p nháº­t dá»¯ liá»‡u Live Preview tá»« context cá»§a Master (Main App)"""
+        """Cập nhật dữ liệu Live Preview từ context của Master (Main App)"""
         try:
-            # [FIX] latest_market_context lÃ  dict {symbol: ctx_data}, cáº§n láº¥y Ä‘Ãºng symbol
+            # [FIX] latest_market_context là dict {symbol: ctx_data}, cần lấy đúng symbol
             all_ctx = getattr(self.master, "latest_market_context", {})
 
             if self.override_symbol:
-                # UI con: láº¥y context cá»§a Ä‘Ãºng symbol override
+                # UI con: lấy context của đúng symbol override
                 active_symbol = self.override_symbol
                 context = all_ctx.get(self.override_symbol, {})
             else:
-                # UI máº¹: láº¥y symbol Ä‘ang chá»n trÃªn combobox chÃ­nh
+                # UI mẹ: lấy symbol đang chn trên combobox chính
                 active_symbol = self.preview_symbol_var.get() if self.preview_symbol_var else None
                 if not active_symbol:
                     try:
@@ -570,7 +582,7 @@ class BotStrategyUI(ctk.CTkToplevel):
             group_details = context.get("group_details", {})
 
 
-            # Cáº­p nháº­t 4 cá»™t Grid
+            # Cập nhật 4 cột Grid
             colors = {1: "#2E7D32", -1: "#C62828", 0: "#424242"}
             texts = {1: "BUY", -1: "SELL", 0: "WAIT"}
             
@@ -579,7 +591,7 @@ class BotStrategyUI(ctk.CTkToplevel):
                 card = self.preview_cards[grp]
                 data = group_details.get(grp, {"B": 0, "S": 0, "N": 0, "inds": [], "status": 0})
                 
-                # [NEW] Láº¥y luáº­t Ä‘á»ƒ hiá»ƒn thá»‹ lÃ m Hint
+                # [NEW] Lấy luật để hiển thị làm Hint
                 rules_cfg = self.brain_data.get("voting_rules", {}).get(grp, {})
                 m_rule = rules_cfg.get("master_rule", "FIX")
                 max_o = rules_cfg.get("max_opposite", 0)
@@ -588,7 +600,7 @@ class BotStrategyUI(ctk.CTkToplevel):
                 
                 status_val = data.get("status", 0)
                 if no_context:
-                    current_duration, prev_duration = "0m", "Truoc: --"
+                    current_duration, prev_duration = "0m", "Trước: --"
                 else:
                     current_duration, prev_duration = self._update_preview_status_timer(active_symbol, grp, status_val)
                 title_text = f"{self._group_label(grp)}: {texts.get(status_val, 'WAIT')} - {current_duration}\n{rule_hint}"
@@ -598,20 +610,20 @@ class BotStrategyUI(ctk.CTkToplevel):
                 
                 inds_list = data.get("inds", [])
                 
-                # Chá»‘ng flicker: Chá»‰ váº½ láº¡i khi dá»¯ liá»‡u thay Ä‘á»•i
+                # Chống flicker: Chỉ vẽ lại khi dữ liệu thay đổi
                 current_data_str = json.dumps(inds_list)
                 if card.get("last_data") != current_data_str:
-                    # XÃ³a widgets cÅ©
+                    # Xóa widgets cũ
                     for widget in card["scroll_f"].winfo_children():
                         widget.destroy()
                         
                     if not inds_list:
-                        ctk.CTkLabel(card["scroll_f"], text="-- Chá» dá»¯ liá»‡u --", font=("Roboto", 11), text_color="gray").pack(fill="x", pady=10)
+                        ctk.CTkLabel(card["scroll_f"], text="-- Ch dữ liệu --", font=("Roboto", 11), text_color="gray").pack(fill="x", pady=10)
                     else:
                         for line in inds_list:
-                            t_color = "#999" # Máº·c Ä‘á»‹nh xÃ¡m
-                            if "[BUY]" in line: t_color = "#00C853" # Xanh lÃ¡ vibrance
-                            elif "[SELL]" in line: t_color = "#FF3D00" # Äá» rá»±c
+                            t_color = "#999" # Mặc định xám
+                            if "[BUY]" in line: t_color = "#00C853" # Xanh lá vibrance
+                            elif "[SELL]" in line: t_color = "#FF3D00" # Đỏ rực
                             
                             ctk.CTkLabel(
                                 card["scroll_f"], 
@@ -624,31 +636,31 @@ class BotStrategyUI(ctk.CTkToplevel):
                     
                     card["last_data"] = current_data_str
 
-            # Cáº­p nháº­t Master Action
+            # Cập nhật Master Action
             final_sig = context.get("latest_signal", 0)
             act_color = "#00C853" if final_sig == 1 else "#FF3D00" if final_sig == -1 else "#777"
             act_text = f"MASTER ACTION: {'BUY' if final_sig == 1 else 'SELL' if final_sig == -1 else 'WAIT'}"
             self.master_action_lbl.configure(text=act_text, text_color=act_color)
 
-            # [NEW] Cáº­p nháº­t Market Mode & Macro
+            # [NEW] Cập nhật Market Mode & Macro
             m_mode = context.get("market_mode", "ANY")
             m_src = context.get("mode_source", "---")
             m_dir = context.get("macro_direction", 0)
             dir_text = "UP" if m_dir == 1 else "DOWN" if m_dir == -1 else "NONE"
             
-            # [FIX] Láº¥y Evaluation Mode trá»±c tiáº¿p tá»« biáº¿n UI Ä‘á»ƒ cáº­p nháº­t Realtime
+            # [FIX] Lấy Evaluation Mode trực tiếp từ biến UI để cập nhật Realtime
             eval_mode = self.master_eval_var.get()
             
             mode_color = "#00E676" if m_mode in ["TREND", "BREAKOUT"] else "#FFB300"
             self.market_mode_lbl.configure(
-                text=f"MARKET MODE: {m_mode} (by {m_src}) | XU HÆ¯á»šNG CHÃNH (BASE): {dir_text} | LUáº¬T: {eval_mode}",
+                text=f"MARKET MODE: {m_mode} (by {m_src}) | XU HƯỚNG CHNH (BASE): {dir_text} | LUẬT: {eval_mode}",
                 text_color=mode_color
             )
 
-            # Cáº­p nháº­t Block Reason (Highlight lÃ½ do cháº·n)
+            # Cập nhật Block Reason (Highlight lý do chặn)
             block_reason = context.get("block_reason", "OK / Ready")
             reason_color = "#00C853" if "OK" in block_reason else "#FFAB00"
-            self.master_reason_lbl.configure(text=f"LÃ½ do: {block_reason}", text_color=reason_color)
+            self.master_reason_lbl.configure(text=f"Lý do: {block_reason}", text_color=reason_color)
             if hasattr(self, "entry_exit_preview_lbl"):
                 self.entry_exit_preview_lbl.configure(
                     text=self._entry_exit_preview_text(active_symbol, context)
@@ -657,47 +669,89 @@ class BotStrategyUI(ctk.CTkToplevel):
         except Exception as e:
             pass
 
-        # Láº·p láº¡i sau 1 giÃ¢y
+        # Lặp lại sau 1 giây
         self.after(1000, self.update_preview)
 
     def _build_overwrite_tab(self):
         f = ctk.CTkScrollableFrame(self.tab_overwrite)
         f.pack(fill="both", expand=True, padx=5, pady=5)
-        
-        ctk.CTkLabel(f, text="Cáº¤U HÃŒNH GHI ÄÃˆ (PER-SYMBOL OVERRIDE)", font=("Roboto", 14, "bold")).pack(pady=10)
+
+        ctk.CTkLabel(
+            f,
+            text="OVERRIDE SANDBOX THEO SYMBOL",
+            font=("Roboto", 14, "bold"),
+            text_color="#00B8D4",
+        ).pack(pady=10)
         self._add_hint_box(
             f,
-            "- Symbol cÃ³ override sáº½ dÃ¹ng Sandbox riÃªng thay cho Global.\n"
-            "- Reset override = xÃ³a cáº¥u hÃ¬nh con, quay vá» cáº¥u hÃ¬nh máº¹.\n"
-            "- Override chá»‰ Ã¡p dá»¥ng cho symbol Ä‘Æ°á»£c chá»n.",
+            "- EDIT/SELECT để mở cấu hình riêng cho symbol.\n"
+            "- RESET để xóa cấu hình riêng và quay về Global.\n"
+            "- Bảng này chỉ quản lý Sandbox override, không đụng TSL hoặc E/E override riêng.",
             padx=10,
             pady=(0, 10),
         )
-        
-        grid_frame = ctk.CTkFrame(f, fg_color="transparent")
-        grid_frame.pack(pady=10)
-        
-        # [V5.1] Äá»c tá»« COIN_LIST (Watchlist) thay vÃ¬ BOT_ACTIVE_SYMBOLS trong JSON Ä‘á»ƒ Ä‘á»“ng bá»™ toÃ n há»‡ thá»‘ng
-        symbols = getattr(config, "COIN_LIST", [])
 
-        from core.storage_manager import load_symbol_overrides
-        overrides = load_symbol_overrides()
+        f_overview = ctk.CTkFrame(f, fg_color="#2b2b2b", corner_radius=8)
+        f_overview.pack(fill="x", padx=20, pady=8)
+        f_overview.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(
+            f_overview,
+            text="OVERRIDE OVERVIEW",
+            font=("Roboto", 13, "bold"),
+            text_color="#00B8D4",
+        ).grid(row=0, column=0, columnspan=4, sticky="w", padx=12, pady=(8, 6))
+        ctk.CTkLabel(f_overview, text="Symbol", font=("Roboto", 11, "bold"), text_color="#D7DCE2").grid(row=1, column=0, sticky="w", padx=12, pady=(0, 4))
+        ctk.CTkLabel(f_overview, text="Status", font=("Roboto", 11, "bold"), text_color="#D7DCE2").grid(row=1, column=1, sticky="w", padx=12, pady=(0, 4))
 
-        row, col = 0, 0
-        for sym in symbols:
-            has_override = sym in overrides and "sandbox" in overrides[sym]
-            color = "#00C853" if has_override else "#424242"
-            btn = ctk.CTkButton(
-                grid_frame,
-                text=f"{sym} {'(Cï¿½)' if has_override else ''}",
-                fg_color=color,
-                command=lambda s=sym: self._open_symbol_override_ui(s)
-            )
-            btn.grid(row=row, column=col, padx=5, pady=5)
-            col += 1
-            if col > 4:
-                col = 0
-                row += 1
+        rows = ctk.CTkFrame(f_overview, fg_color="transparent")
+        rows.grid(row=2, column=0, columnspan=4, sticky="ew", padx=8, pady=(0, 8))
+        rows.grid_columnconfigure(0, weight=1)
+
+        def refresh():
+            for child in rows.winfo_children():
+                child.destroy()
+            from core.storage_manager import load_symbol_overrides, save_symbol_overrides
+
+            overrides = load_symbol_overrides()
+            symbols = list(getattr(config, "COIN_LIST", []) or [getattr(config, "DEFAULT_SYMBOL", "ETHUSD")])
+            for row, sym in enumerate(symbols):
+                has_override = bool(overrides.get(sym, {}).get("sandbox"))
+                row_frame = ctk.CTkFrame(rows, fg_color="#2F2A12" if has_override else "#242424", corner_radius=6)
+                row_frame.grid(row=row, column=0, sticky="ew", padx=2, pady=2)
+                row_frame.grid_columnconfigure(1, weight=1)
+                ctk.CTkLabel(row_frame, text=sym, width=110, anchor="w", font=("Roboto", 12, "bold"), text_color="#FFFFFF").grid(row=0, column=0, sticky="w", padx=10, pady=6)
+                ctk.CTkLabel(row_frame, text="OVERRIDE" if has_override else "GLOBAL", anchor="w", font=("Roboto", 11, "bold"), text_color="#FFAB00" if has_override else "#B0BEC5").grid(row=0, column=1, sticky="w", padx=8, pady=6)
+                ctk.CTkButton(
+                    row_frame,
+                    text="EDIT" if has_override else "SELECT",
+                    width=76,
+                    height=24,
+                    fg_color="#1f538d" if has_override else "#424242",
+                    hover_color="#14375e" if has_override else "#616161",
+                    command=lambda s=sym: self._open_symbol_override_ui(s),
+                ).grid(row=0, column=2, sticky="e", padx=(4, 6), pady=5)
+
+                def reset_symbol(symbol=sym):
+                    latest = load_symbol_overrides()
+                    if symbol in latest and "sandbox" in latest[symbol]:
+                        del latest[symbol]["sandbox"]
+                        if not latest[symbol]:
+                            del latest[symbol]
+                        save_symbol_overrides(latest)
+                    refresh()
+
+                ctk.CTkButton(
+                    row_frame,
+                    text="RESET",
+                    width=70,
+                    height=24,
+                    fg_color="#B71C1C" if has_override else "#303030",
+                    hover_color="#7F0000" if has_override else "#303030",
+                    state="normal" if has_override else "disabled",
+                    command=reset_symbol,
+                ).grid(row=0, column=3, sticky="e", padx=(0, 6), pady=5)
+
+        refresh()
 
     def _open_symbol_override_ui(self, symbol):
         override_ui = BotStrategyUI(self, symbol=symbol)
@@ -715,30 +769,30 @@ class BotStrategyUI(ctk.CTkToplevel):
     def _build_indicators_tab(self):
         self._add_hint_box(
             self.tab_inds,
-            "- G0 quyáº¿t Ä‘á»‹nh Market Mode & Macro Direction; khÃ´ng cÃ³ G0 thÃ¬ fallback G1.\n"
-            "- Trend Compass chá»‰ tÃ­nh UP/DOWN/NONE cho preview/context.\n"
-            "- Macro Role má»›i quyáº¿t Ä‘á»‹nh BASE/BREAKOUT/EXHAUSTION; Mode ANY = luÃ´n Ä‘Æ°á»£c xÃ©t.",
+            "- G0 quyết định Market Mode & Macro Direction; không có G0 thì fallback G1.\n"
+            "- Trend Compass chỉ tính UP/DOWN/NONE cho preview/context.\n"
+            "- Macro Role mới quyết định BASE/BREAKOUT/EXHAUSTION; Mode ANY = luôn được xét.",
         )
 
         self._add_hint_box(
             self.tab_inds,
-            "- Trigger Mode ap dung chung cho indicator nay o moi group da tick.",
+            "- Trigger Mode áp dụng chung cho indicator này ở mọi group đã tick.",
             pady=(0, 5),
         )
 
         scroll_frame = ctk.CTkScrollableFrame(self.tab_inds)
         scroll_frame.pack(fill="both", expand=True, padx=5, pady=5)
 
-        # Cáº­p nháº­t Header theo Rule V4.2 má»›i
+        # Cập nhật Header theo Rule V4.2 mới
         headers = [
-            "Chá»‰ bÃ¡o",
+            "Chỉ báo",
             "ON",
-            "NhÃ³m (Äa chá»n)",
+            "Nhóm (a chn)",
             "Trend Compass",
-            "Vai trï¿½ Macro",
-            "Cháº¡y khi (Mode)",
+            "Vai tr� Macro",
+            "Chạy khi (Mode)",
             "Trigger Mode",
-            "ThÃ´ng sá»‘",
+            "Thông số",
         ]
         for col, h in enumerate(headers):
             ctk.CTkLabel(scroll_frame, text=h, font=("Roboto", 12, "bold")).grid(
@@ -749,7 +803,7 @@ class BotStrategyUI(ctk.CTkToplevel):
         inds_data = self.brain_data.get("indicators", {})
 
         for ind_name, cfg in inds_data.items():
-            # [FIX UX]: Biáº¿n TÃªn chá»‰ bÃ¡o thÃ nh NÃºt báº¥m (Row Toggle)
+            # [FIX UX]: Biến Tên chỉ báo thành Nút bấm (Row Toggle)
             btn_name = ctk.CTkButton(
                 scroll_frame,
                 text=ind_name.upper(),
@@ -762,7 +816,7 @@ class BotStrategyUI(ctk.CTkToplevel):
             )
             btn_name.grid(row=row, column=0, padx=5, pady=5, sticky="w")
 
-            # KÃ­ch hoáº¡t
+            # Kích hoạt
             active_var = ctk.BooleanVar(value=cfg.get("active", False))
             ctk.CTkCheckBox(scroll_frame, text="", variable=active_var, width=30).grid(
                 row=row, column=1, padx=5, pady=5, sticky="w"
@@ -783,7 +837,7 @@ class BotStrategyUI(ctk.CTkToplevel):
                 self.group_label_widgets.append((chk_group, "{label}", g))
                 grp_vars[g] = g_var
 
-            # Trend Compass (La bÃ n xu hÆ°á»›ng)
+            # Trend Compass (La bàn xu hướng)
             is_trend_var = ctk.BooleanVar(value=cfg.get("is_trend", False))
             ctk.CTkCheckBox(
                 scroll_frame,
@@ -793,7 +847,7 @@ class BotStrategyUI(ctk.CTkToplevel):
                 text_color="#FFD700",
             ).grid(row=row, column=3, padx=5, pady=5, sticky="w")
 
-            # Gáº¯n lá»‡nh Toggle cho NÃºt TÃªn Chá»‰ BÃ¡o (Báº¯t tráº¡ng thÃ¡i Ä‘á»ƒ láº­t cÃ´ng táº¯c)
+            # Gắn lệnh Toggle cho Nút Tên Chỉ Báo (Bắt trạng thái để lật công tắc)
             def toggle_row_state(a_var=active_var, g_vars=grp_vars, t_var=is_trend_var):
                 target_state = not a_var.get()
                 a_var.set(target_state)
@@ -803,7 +857,7 @@ class BotStrategyUI(ctk.CTkToplevel):
 
             btn_name.configure(command=toggle_row_state)
 
-            # Vai trÃ² Macro
+            # Vai trò Macro
             macro_role_var = ctk.StringVar(value=cfg.get("macro_role", "NONE"))
             ctk.CTkComboBox(
                 scroll_frame,
@@ -812,7 +866,7 @@ class BotStrategyUI(ctk.CTkToplevel):
                 width=110,
             ).grid(row=row, column=4, padx=5, pady=5, sticky="w")
 
-            # Mode hoáº¡t Ä‘á»™ng
+            # Mode hoạt động
             modes_list = cfg.get("active_modes", ["ANY"])
             mode_var = ctk.StringVar(value=modes_list[0] if modes_list else "ANY")
             ctk.CTkComboBox(
@@ -833,10 +887,10 @@ class BotStrategyUI(ctk.CTkToplevel):
                 width=120,
             ).grid(row=row, column=6, padx=5, pady=5, sticky="w")
 
-            # NÃºt CÃ i Ä‘áº·t ThÃ´ng sá»‘
+            # Nút Cài đặt Thông số
             btn_cfg = ctk.CTkButton(
                 scroll_frame,
-                text="âš™ï¸ CÃ i Ä‘áº·t",
+                text="⚙ Cài đặt",
                 width=70,
                 fg_color="#424242",
                 hover_color="#616161",
@@ -935,7 +989,7 @@ class BotStrategyUI(ctk.CTkToplevel):
         top_frame.pack(fill="x", padx=10, pady=5)
 
         ctk.CTkLabel(
-            top_frame, text="Cháº¿ Ä‘á»™ phÃ¢n xá»­ (Master Mode):", font=("Roboto", 12, "bold")
+            top_frame, text="Chế độ phân xử (Master Mode):", font=("Roboto", 12, "bold")
         ).grid(row=0, column=0, padx=5, pady=5, sticky="w")
         self.master_eval_var = ctk.StringVar(
             value=self.brain_data.get("MASTER_EVAL_MODE", "VETO")
@@ -948,7 +1002,7 @@ class BotStrategyUI(ctk.CTkToplevel):
         ).grid(row=0, column=1, padx=5, pady=5)
 
         ctk.CTkLabel(
-            top_frame, text="Min Votes (DÃ¹ng cho VOTING):", font=("Roboto", 12, "bold")
+            top_frame, text="Min Votes (Dùng cho VOTING):", font=("Roboto", 12, "bold")
         ).grid(row=0, column=2, padx=20, pady=5, sticky="w")
         self.min_votes_var = ctk.StringVar(
             value=str(self.brain_data.get("MIN_MATCHING_VOTES", 3))
@@ -962,7 +1016,7 @@ class BotStrategyUI(ctk.CTkToplevel):
             "- VETO: FIX must have a signal; PASS may WAIT/NONE.\n"
             "- PASS with opposite direction blocks the final action; IGNORE skips group.\n"
             "- VOTING needs enough Min Votes.\n"
-            "- Timeframe G0-G3 quyáº¿t Ä‘á»‹nh data dÃ¹ng cho tá»«ng group.\n"
+            "- Timeframe G0-G3 quyết định data dùng cho từng group.\n"
             "- Vote Rules decide signal/bias/confirm only; they do not choose entry price, SL, or TP.",
             pady=(5, 10),
         )
@@ -972,7 +1026,7 @@ class BotStrategyUI(ctk.CTkToplevel):
 
         ctk.CTkLabel(
             tf_frame,
-            text="â± Cáº¤U HÃŒNH KHUNG THá»œI GIAN (TIMEFRAMES):",
+            text=" CẤU HÌNH KHUNG THỜI GIAN (TIMEFRAMES):",
             font=("Roboto", 13, "bold"),
             text_color="#29B6F6",
         ).grid(row=0, column=0, columnspan=8, pady=5, sticky="w", padx=10)
@@ -995,10 +1049,10 @@ class BotStrategyUI(ctk.CTkToplevel):
 
         rules = self.brain_data.get("voting_rules", {})
         titles = {
-            "G0": "G0: LA BÃ€N VÄ¨ MÃ” (MACRO)",
-            "G1": "G1: Bá»˜ Lá»ŒC XU HÆ¯á»šNG",
-            "G2": "G2: ÄIá»‚M Ná»” (TRIGGER)",
-            "G3": "G3: QUYá»€N PHá»¦ QUYáº¾T (VETO)",
+            "G0": "G0: LA BÀN VĨ MÔ (MACRO)",
+            "G1": "G1: BỘ LỌC XU HƯỚNG",
+            "G2": "G2: IỂM NỔ (TRIGGER)",
+            "G3": "G3: QUYỀN PHỦ QUYẾT (VETO)",
         }
         colors = {"G0": "#AB47BC", "G1": "#00E676", "G2": "#00B0FF", "G3": "#FF3D00"}
 
@@ -1024,7 +1078,7 @@ class BotStrategyUI(ctk.CTkToplevel):
             lbl_rule_title.grid(row=0, column=0, columnspan=4, pady=5, sticky="w", padx=10)
             self.group_label_widgets.append((lbl_rule_title, "{label}: " + titles[grp].split(":", 1)[1].strip(), grp))
 
-            ctk.CTkLabel(frame, text="Max Opposite (Nghá»‹ch):").grid(
+            ctk.CTkLabel(frame, text="Max Opposite (Nghịch):").grid(
                 row=1, column=0, padx=10, pady=5, sticky="w"
             )
             max_opp_var = ctk.StringVar(value=str(grp_data.get("max_opposite", 0)))
@@ -1032,7 +1086,7 @@ class BotStrategyUI(ctk.CTkToplevel):
                 frame, textvariable=max_opp_var, width=60, justify="center"
             ).grid(row=1, column=1, padx=10, pady=5)
 
-            ctk.CTkLabel(frame, text="Max None (Tráº¯ng):").grid(
+            ctk.CTkLabel(frame, text="Max None (Trắng):").grid(
                 row=1, column=2, padx=10, pady=5, sticky="w"
             )
             max_none_var = ctk.StringVar(value=str(grp_data.get("max_none", 1)))
@@ -1073,9 +1127,16 @@ class BotStrategyUI(ctk.CTkToplevel):
     def _collect_entry_exit_config(self):
         cfg = self._entry_exit_cfg()
         if hasattr(self, "bot_entry_exit_tactic_vars"):
-            active = [k for k, v in self.bot_entry_exit_tactic_vars.items() if v.get()]
+            selected_entry = [k for k, v in self.bot_entry_exit_tactic_vars.items() if v.get()]
+            active = list(selected_entry)
+            exit_tactic = getattr(self, "bot_entry_exit_var", None)
+            exit_tactic = exit_tactic.get() if exit_tactic else cfg.get("exit_tactic")
+            exit_tactic = EE_EXIT_VALUES.get(exit_tactic, exit_tactic)
             cfg["active_tactics"] = active
+            cfg["entry_tactics"] = selected_entry or ["SWING_REJECTION"]
+            cfg["exit_tactic"] = exit_tactic or "AUTO"
             cfg["enabled"] = bool(active)
+            cfg["preview_only"] = not bool(active)
         return cfg
 
     def _build_risk_tab(self):
@@ -1084,17 +1145,17 @@ class BotStrategyUI(ctk.CTkToplevel):
 
         self._add_hint_box(
             self.tab_risk,
-            "- Force ANY Mode: bá» qua macro/mode, phÃ¹ há»£p scalping khi muá»‘n indicator luÃ´n cháº¡y.\n"
-            "- Base Risk: risk gá»‘c cá»§a bot; Market Mode multiplier sáº½ nhÃ¢n thÃªm Ä‘á»ƒ ra risk thá»±c táº¿.\n"
-            "- Nguá»“n SL G0-G3: chá»n group dÃ¹ng Swing/ATR Ä‘á»ƒ cáº¯m SL; DYNAMIC-G1/G2 dÃ¹ng G1 khi TREND/BREAKOUT, cÃ²n láº¡i dÃ¹ng G2.\n"
-            "- SWING TSL Logic Mode náº±m trong popup TSL; chá»‰ áº£nh hÆ°á»Ÿng TSL SWING sau khi lá»‡nh Ä‘Ã£ má»Ÿ, khÃ´ng pháº£i SL ban Ä‘áº§u Swing + ATR buffer.\n"
-            "- REV_C/Close on Reverse: cáº¯t lá»‡nh bot khi tÃ­n hiá»‡u Ä‘áº£o chiá»u; cÃ³ thá»ƒ yÃªu cáº§u giá»¯ lá»‡nh tá»‘i thiá»ƒu, min profit hoáº·c max loss.\n"
-            "- Watermark/Basket náº±m á»Ÿ Bot Safeguard: báº£o vá»‡ lá»£i nhuáº­n toÃ n bot/rá»• DCA-PCA, khÃ´ng dÃ¹ng cho lá»‡nh manual.",
+            "- Force ANY Mode: b qua macro/mode, phù hợp scalping khi muốn indicator luôn chạy.\n"
+            "- Base Risk: risk gốc của bot; Market Mode multiplier sẽ nhân thêm để ra risk thực tế.\n"
+            "- Nguồn SL G0-G3: chn group dùng Swing/ATR để cắm SL; DYNAMIC-G1/G2 dùng G1 khi TREND/BREAKOUT, còn lại dùng G2.\n"
+            "- SWING TSL Logic Mode nằm trong popup TSL; chỉ ảnh hưởng TSL SWING sau khi lệnh đã mở, không phải SL ban đầu Swing + ATR buffer.\n"
+            "- REV_C/Close on Reverse: cắt lệnh bot khi tín hiệu đảo chiu; có thể yêu cầu giữ lệnh tối thiểu, min profit hoặc max loss.\n"
+            "- Watermark/Basket nằm ở Bot Safeguard: bảo vệ lợi nhuận toàn bot/rổ DCA-PCA, không dùng cho lệnh manual.",
             padx=20,
             pady=(10, 5),
         )
 
-        # --- [NEW] Cá»¤M OPTIONS NÃ‚NG CAO (SCALPING & STRICT RISK) ---
+        # --- [NEW] CỤM OPTIONS NÂNG CAO (SCALPING & STRICT RISK) ---
         f_adv = ctk.CTkFrame(self.tab_risk, fg_color="#2b2b2b", corner_radius=8)
         f_adv.pack(fill="x", padx=20, pady=(10, 10))
         f_adv.grid_columnconfigure(0, weight=0)
@@ -1114,13 +1175,13 @@ class BotStrategyUI(ctk.CTkToplevel):
         self.var_strict_risk = ctk.BooleanVar(value=risk_data.get("strict_risk", False))
         ctk.CTkCheckBox(
             f_adv,
-            text="Strict Risk (Trá»« PhÃ­)",
+            text="Strict Risk (Trừ Phí)",
             variable=self.var_strict_risk,
             font=("Roboto", 13, "bold"),
             text_color="#F44336",
         ).grid(row=0, column=1, padx=15, pady=10, sticky="w")
 
-        # [FIX V4.4] TÃCH Há»¢P TÃNH NÄ‚NG CLOSE ON REVERSE VÃ€O SANDBOX
+        # [FIX V4.4] TCH HỢP TNH NĂNG CLOSE ON REVERSE VÀO SANDBOX
         import os, json
 
         safe_cfg = {}
@@ -1141,7 +1202,7 @@ class BotStrategyUI(ctk.CTkToplevel):
         )
         ctk.CTkCheckBox(
             f_adv,
-            text="Close on Reverse (Äáº£o chiá»u cáº¯t lá»‡nh)",
+            text="Close on Reverse (ảo chiu cắt lệnh)",
             variable=self.var_close_rev,
             font=("Roboto", 13, "bold"),
             text_color="#00E676",
@@ -1172,7 +1233,7 @@ class BotStrategyUI(ctk.CTkToplevel):
         )
         ctk.CTkCheckBox(
             f_rev_time,
-            text="NONE cÅ©ng cáº¯t",
+            text="NONE cũng cắt",
             variable=self.var_rev_none,
             font=("Roboto", 12),
         ).grid(row=0, column=3, padx=(0, 10), pady=3, sticky="w")
@@ -1224,8 +1285,8 @@ class BotStrategyUI(ctk.CTkToplevel):
         ctk.CTkLabel(
             f_rev_time,
             text=(
-                "REV_C: khi signal Ä‘áº£o chiá»u, lá»‡nh lá»i chá»‰ cáº¯t náº¿u PnL >= Min Profit; "
-                "lá»‡nh Ã¢m chá»‰ cáº¯t náº¿u PnL <= Max Loss. GiÃ¡ trá»‹ 0 = bá» qua Ä‘iá»u kiá»‡n phÃ­a Ä‘Ã³."
+                "REV_C: khi signal đảo chiu, lệnh li chỉ cắt nếu PnL >= Min Profit; "
+                "lệnh âm chỉ cắt nếu PnL <= Max Loss. Giá trị 0 = b qua điu kiện phía đó."
             ),
             font=("Arial", 11, "italic"),
             text_color="#B0BEC5",
@@ -1239,7 +1300,7 @@ class BotStrategyUI(ctk.CTkToplevel):
         f_base.pack(fill="x", padx=20, pady=(5, 5))
         ctk.CTkLabel(
             f_base,
-            text="BOT BASE RISK (% Cáº¯t lá»—/Lá»‡nh):",
+            text="BOT BASE RISK (% Cắt lỗ/Lệnh):",
             font=("Roboto", 13, "bold"),
             text_color="#E040FB",
         ).pack(side="left")
@@ -1252,7 +1313,7 @@ class BotStrategyUI(ctk.CTkToplevel):
         f_base_sl.pack(fill="x", padx=20, pady=5)
         ctk.CTkLabel(
             f_base_sl,
-            text="NGUá»’N Cáº®M SL:",
+            text="NGUỒN CẮM SL:",
             font=("Roboto", 13, "bold"),
             text_color="#FF3D00",
         ).pack(side="left")
@@ -1261,7 +1322,7 @@ class BotStrategyUI(ctk.CTkToplevel):
         if cur_sl == "entry":
             cur_sl = "G2"
         self.var_base_sl = ctk.StringVar(value=cur_sl)
-        # [NEW] ThÃªm Option DYNAMIC vÃ o Base SL
+        # [NEW] Thêm Option DYNAMIC vào Base SL
         ctk.CTkComboBox(
             f_base_sl,
             values=["G0", "G1", "G2", "G3", "DYNAMIC-G1/G2"],
@@ -1295,7 +1356,7 @@ class BotStrategyUI(ctk.CTkToplevel):
         self.bot_tactic_vars = {}
         current_tactic_str = risk_data.get("bot_tsl", "BE+STEP_R+SWING")
 
-        # [NEW V4.4] Bá»• sung thÃªm BE_CASH vÃ  PSAR_TRAIL vÃ o danh sÃ¡ch chiáº¿n thuáº­t Bot
+        # [NEW V4.4] Bổ sung thêm BE_CASH và PSAR_TRAIL vào danh sách chiến thuật Bot
         for t in ["BE", "PNL", "STEP_R", "SWING", "BE_CASH", "PSAR_TRAIL", "ANTI_CASH"]:
             is_active = t in current_tactic_str
             var = ctk.BooleanVar(value=is_active)
@@ -1310,44 +1371,73 @@ class BotStrategyUI(ctk.CTkToplevel):
 
         ctk.CTkLabel(
             self.tab_risk,
-            text="BOT ENTRY/EXIT TACTICS:",
+            text="BOT ENTRY / EXIT:",
             font=("Roboto", 13, "bold"),
             text_color="#00B8D4",
         ).pack(anchor="w", padx=20, pady=(10, 0))
-        f_entry_btns = ctk.CTkFrame(self.tab_risk, fg_color="transparent")
+        f_entry_btns = ctk.CTkFrame(self.tab_risk, fg_color="#202020", corner_radius=8)
         f_entry_btns.pack(fill="x", padx=20, pady=5)
+        ctk.CTkLabel(
+            f_entry_btns,
+            text="Entry gate cho bot:",
+            font=("Roboto", 12, "bold"),
+            text_color="#D7DCE2",
+        ).pack(anchor="w", padx=12, pady=(8, 2))
         self.bot_entry_exit_tactic_vars = {}
         entry_exit_data = self._entry_exit_cfg()
-        current_entry_tactics = set(entry_exit_data.get("active_tactics", []))
+        current_entry_tactics = (
+            set(entry_exit_data.get("entry_tactics", []))
+            if entry_exit_data.get("enabled") and entry_exit_data.get("active_tactics")
+            else set()
+        )
         entry_tactic_labels = {
             "FALLBACK_R": "R",
             "SWING_REJECTION": "SWING",
             "FIB_RETRACE": "FIB",
             "PULLBACK_ZONE": "PULLBACK",
         }
+        f_entry_checks = ctk.CTkFrame(f_entry_btns, fg_color="transparent")
+        f_entry_checks.pack(fill="x", padx=4, pady=(0, 8))
         for key, label in entry_tactic_labels.items():
             var = ctk.BooleanVar(value=key in current_entry_tactics)
             ctk.CTkCheckBox(
-                f_entry_btns,
+                f_entry_checks,
                 text=label,
                 variable=var,
                 font=("Roboto", 12, "bold"),
                 width=100,
             ).pack(side="left", padx=10)
             self.bot_entry_exit_tactic_vars[key] = var
+        f_exit_pick = ctk.CTkFrame(f_entry_btns, fg_color="transparent")
+        f_exit_pick.pack(fill="x", padx=12, pady=(0, 8))
         ctk.CTkLabel(
-            self.tab_risk,
-            text="E/E dùng cho ENTRY bot. Preview Only bật = chỉ log/preview; tắt Preview Only = READY mới cho bot vào lệnh.",
+            f_exit_pick,
+            text="Exit / TP cho bot:",
+            font=("Roboto", 12, "bold"),
+            text_color="#D7DCE2",
+        ).pack(side="left", padx=(0, 8))
+        self.bot_entry_exit_var = ctk.StringVar(
+            value=EE_EXIT_LABELS.get(entry_exit_data.get("exit_tactic", "AUTO"), "AUTO - TP theo Entry")
+        )
+        ctk.CTkOptionMenu(
+            f_exit_pick,
+            values=list(EE_EXIT_VALUES.keys()),
+            variable=self.bot_entry_exit_var,
+            width=170,
+        ).pack(side="left", padx=(0, 12))
+        ctk.CTkLabel(
+            f_exit_pick,
+            text="AUTO: R->R TP, Swing->Swing TP, FIB->FIB TP, Pullback->Pullback TP.",
             font=("Roboto", 11, "italic"),
             text_color="#B0BEC5",
-        ).pack(anchor="w", padx=20, pady=(0, 4))
+        ).pack(side="left")
 
         ctk.CTkFrame(self.tab_risk, height=2, fg_color="#333").pack(
             fill="x", padx=20, pady=15
         )
         ctk.CTkLabel(
             self.tab_risk,
-            text="DYNAMIC RISK MULTIPLIERS (Há»‡ sá»‘ rá»§i ro theo Market Mode)",
+            text="DYNAMIC RISK MULTIPLIERS (Hệ số rủi ro theo Market Mode)",
             font=("Roboto", 13, "bold"),
             text_color="#FFB300",
         ).pack(anchor="w", padx=20, pady=5)
@@ -1376,9 +1466,9 @@ class BotStrategyUI(ctk.CTkToplevel):
         self._add_hint_box(
             self.tab_dca_pca,
             "- SL lenh con co the bam SL me hoac lay SwingPoint theo Nguon cam SL; SwingPoint khong cong ATR buffer.\n"
-            "- DCA nhá»“i khi giÃ¡ Ä‘i ngÆ°á»£c lá»‡nh máº¹ theo khoáº£ng ATR.\n"
-            "- PCA nhá»“i thuáº­n khi lá»‡nh máº¹ Ä‘ang Ä‘Ãºng hÆ°á»›ng/trend.\n"
-            "- Mini-Brain náº¿u báº­t sáº½ xÃ¡c nháº­n riÃªng trÆ°á»›c khi nhá»“i.",
+            "- DCA nhồi khi giá đi ngược lệnh mẹ theo khoảng ATR.\n"
+            "- PCA nhồi thuận khi lệnh mẹ đang đúng hướng/trend.\n"
+            "- Mini-Brain nếu bật sẽ xác nhận riêng trước khi nhồi.",
             pady=(10, 5),
         )
 
@@ -1389,17 +1479,17 @@ class BotStrategyUI(ctk.CTkToplevel):
         self.dca_active = ctk.BooleanVar(value=dca_cfg.get("ENABLED", False))
         ctk.CTkCheckBox(
             dca_frame,
-            text="KÃ­ch hoáº¡t AUTO DCA (Gá»“ng lá»—/Báº¯t Ä‘Ã¡y thuáº­n náº¿n)",
+            text="Kích hoạt AUTO DCA (Gồng lỗ/Bắt đáy thuận nến)",
             variable=self.dca_active,
             font=("Roboto", 13, "bold"),
             text_color="#FFAB00",
         ).grid(row=0, column=0, columnspan=6, padx=10, pady=10, sticky="w")
 
-        # [NEW V5.1] NÃºt cÃ i Ä‘áº·t Mini-Brain cho DCA
+        # [NEW V5.1] Nút cài đặt Mini-Brain cho DCA
         self.dca_mb_cfg = dca_cfg.get("MINI_BRAIN", {})
         ctk.CTkButton(
             dca_frame, 
-            text="âš™ï¸ CÃ i Ä‘áº·t Mini-Brain", 
+            text="⚙ Cài đặt Mini-Brain", 
             width=120, 
             fg_color="#F57C00", 
             command=lambda: self._open_mb_popup("DCA")
@@ -1446,17 +1536,17 @@ class BotStrategyUI(ctk.CTkToplevel):
         self.pca_active = ctk.BooleanVar(value=pca_cfg.get("ENABLED", False))
         ctk.CTkCheckBox(
             pca_frame,
-            text="KÃ­ch hoáº¡t AUTO PCA (Nhá»“i thuáº­n Trend máº¡nh)",
+            text="Kích hoạt AUTO PCA (Nhồi thuận Trend mạnh)",
             variable=self.pca_active,
             font=("Roboto", 13, "bold"),
             text_color="#00C853",
         ).grid(row=0, column=0, columnspan=6, padx=10, pady=10, sticky="w")
 
-        # [NEW V5.1] NÃºt cÃ i Ä‘áº·t Mini-Brain cho PCA
+        # [NEW V5.1] Nút cài đặt Mini-Brain cho PCA
         self.pca_mb_cfg = pca_cfg.get("MINI_BRAIN", {})
         ctk.CTkButton(
             pca_frame, 
-            text="âš™ï¸ CÃ i Ä‘áº·t Mini-Brain", 
+            text="⚙ Cài đặt Mini-Brain", 
             width=120, 
             fg_color="#00C853", 
             command=lambda: self._open_mb_popup("PCA")
@@ -1502,7 +1592,7 @@ class BotStrategyUI(ctk.CTkToplevel):
 
         ctk.CTkLabel(
             cd_frame,
-            text="DCA/PCA Cooldown (giï¿½y):",
+            text="DCA/PCA Cooldown (gi�y):",
             font=("Roboto", 12, "bold"),
             text_color="#29B6F6",
         ).grid(row=0, column=0, padx=10, pady=10, sticky="w")
@@ -1515,7 +1605,7 @@ class BotStrategyUI(ctk.CTkToplevel):
         new_inds = {}
         for ind_name, widgets in self.ind_widgets.items():
             mode_val = widgets["mode_var"].get()
-            # TrÃ­ch xuáº¥t máº£ng cÃ¡c Group Ä‘Æ°á»£c chá»n
+            # Trích xuất mảng các Group được chn
             selected_groups = [g for g, var in widgets["grp_vars"].items() if var.get()]
             params = dict(widgets["params"])
             if ind_name == "simple_breakout":
@@ -1558,13 +1648,13 @@ class BotStrategyUI(ctk.CTkToplevel):
             "strict_risk": self.var_strict_risk.get(),  # [NEW]
         }
 
-        # [FIX V4.4] TrÃ­ch xuáº¥t config Close on Reverse
+        # [FIX V4.4] Trích xuất config Close on Reverse
         self.temp_close_rev = self.var_close_rev.get()
         self.temp_rev_time = float(self.var_rev_time.get() or 180)
         self.temp_rev_confirm_seconds = float(self.var_rev_confirm_seconds.get() or 0)
         self.temp_rev_confirm_scans = int(self.var_rev_confirm_scans.get() or 0)
 
-        # [NEW] ThÃªm Distance ATR R
+        # [NEW] Thêm Distance ATR R
         new_dca = {
             "ENABLED": self.dca_active.get(),
             "MAX_STEPS": int(self.dca_steps.get() or 3),
@@ -1606,11 +1696,11 @@ class BotStrategyUI(ctk.CTkToplevel):
         if mode == "DCA":
             def save_cb(new_cfg):
                 self.dca_mb_cfg = new_cfg
-            open_minibrain_popup(self, "CÃ i Ä‘áº·t Mini-Brain (DCA)", getattr(self, "dca_mb_cfg", {}), save_cb)
+            open_minibrain_popup(self, "Cài đặt Mini-Brain (DCA)", getattr(self, "dca_mb_cfg", {}), save_cb)
         else:
             def save_cb(new_cfg):
                 self.pca_mb_cfg = new_cfg
-            open_minibrain_popup(self, "CÃ i Ä‘áº·t Mini-Brain (PCA)", getattr(self, "pca_mb_cfg", {}), save_cb)
+            open_minibrain_popup(self, "Cài đặt Mini-Brain (PCA)", getattr(self, "pca_mb_cfg", {}), save_cb)
 
     def save_strategy(self):
         try:
@@ -1652,10 +1742,10 @@ class BotStrategyUI(ctk.CTkToplevel):
                 except Exception:
                     pass
 
-            # [FIX]: Cáº­p nháº­t gia tÄƒng thay vÃ¬ ghi Ä‘Ã¨ thÃ´ báº¡o
+            # [FIX]: Cập nhật gia tăng thay vì ghi đè thô bạo
             existing_data.update(output_data)
 
-            # [FIX V4.4] Cáº­p nháº­t Close on Reverse vÃ o bot_safeguard khi Sandbox báº¥m lÆ°u
+            # [FIX V4.4] Cập nhật Close on Reverse vào bot_safeguard khi Sandbox bấm lưu
             if "bot_safeguard" not in existing_data:
                 existing_data["bot_safeguard"] = {}
             existing_data["bot_safeguard"]["CLOSE_ON_REVERSE"] = self.temp_close_rev
@@ -1681,11 +1771,11 @@ class BotStrategyUI(ctk.CTkToplevel):
             from core.storage_manager import invalidate_settings_cache
             invalidate_settings_cache()
 
-            # [HOT-FIX]: Äá»“ng bá»™ ngay vÃ o config Runtime cá»§a UI Main
+            # [HOT-FIX]: ồng bộ ngay vào config Runtime của UI Main
             if hasattr(self.master, "reload_config_from_json"):
                 self.master.reload_config_from_json()
             else:
-                # Fallback náº¿u gá»i tá»« nÆ¡i khÃ¡c
+                # Fallback nếu gi từ nơi khác
                 config.MASTER_EVAL_MODE = output_data["MASTER_EVAL_MODE"]
                 config.MIN_MATCHING_VOTES = output_data["MIN_MATCHING_VOTES"]
                 config.BOT_RISK_PERCENT = output_data["risk_tsl"]["base_risk"]
@@ -1695,15 +1785,15 @@ class BotStrategyUI(ctk.CTkToplevel):
                 config.DCA_CONFIG = output_data["dca_config"]
                 config.PCA_CONFIG = output_data["pca_config"]
 
-            # Tá»± Ä‘á»™ng Ä‘Ã³ng cá»­a sá»• mÆ°á»£t mÃ 
+            # Tự động đóng cửa sổ mượt mà
             self.destroy()
         except Exception as e:
-            messagebox.showerror("Lá»—i há»‡ thá»‘ng", f"Lá»—i ghi file cáº¥u hÃ¬nh:\n{e}", parent=self)
+            messagebox.showerror("Lỗi hệ thống", f"Lỗi ghi file cấu hình:\n{e}", parent=self)
 
     def load_template(self):
         file_path = filedialog.askopenfilename(
             initialdir=_get_template_dir(),
-            title="Chá»n Template",
+            title="Chn Template",
             filetypes=[("JSON files", "*.json")],
             parent=self
         )
@@ -1712,7 +1802,7 @@ class BotStrategyUI(ctk.CTkToplevel):
                 with open(file_path, "r", encoding="utf-8") as f:
                     self.brain_data = json.load(f)
 
-                # [FIX]: Reset tracking dictionaries trÆ°á»›c khi build láº¡i UI
+                # [FIX]: Reset tracking dictionaries trước khi build lại UI
                 self.ind_widgets = {}
                 self.vote_widgets = {}
                 self.risk_widgets = {}
@@ -1725,19 +1815,19 @@ class BotStrategyUI(ctk.CTkToplevel):
                     widget.destroy()
                 self._build_ui()
                 messagebox.showinfo(
-                    "Thï¿½nh cï¿½ng",
-                    "ÄÃ£ náº¡p Template thÃ nh cÃ´ng. HÃ£y báº¥m LÆ¯U & ÃP Dá»¤NG Ä‘á»ƒ kÃ­ch hoáº¡t!",
+                    "Th�nh c�ng",
+                    "ã nạp Template thành công. Hãy bấm LƯU & P DỤNG để kích hoạt!",
                     parent=self
                 )
             except Exception as e:
-                messagebox.showerror("Lá»—i", f"KhÃ´ng thá»ƒ Ä‘á»c Template:\n{e}", parent=self)
+                messagebox.showerror("Lỗi", f"Không thể đc Template:\n{e}", parent=self)
 
     def save_as_template(self):
         try:
             output_data = self._pack_data()
             file_path = filedialog.asksaveasfilename(
                 initialdir=_get_template_dir(),
-                title="LÆ°u Template",
+                title="Lưu Template",
                 defaultextension=".json",
                 filetypes=[("JSON files", "*.json")],
                 parent=self
@@ -1745,7 +1835,9 @@ class BotStrategyUI(ctk.CTkToplevel):
             if file_path:
                 with open(file_path, "w", encoding="utf-8") as f:
                     json.dump(output_data, f, indent=4)
-                messagebox.showinfo("Thï¿½nh cï¿½ng", f"ÄÃ£ lÆ°u Template táº¡i:\n{file_path}", parent=self)
+                messagebox.showinfo("Th�nh c�ng", f"ã lưu Template tại:\n{file_path}", parent=self)
         except Exception as e:
-            messagebox.showerror("Lá»—i", f"Lá»—i lÆ°u Template:\n{e}", parent=self)
+            messagebox.showerror("Lỗi", f"Lỗi lưu Template:\n{e}", parent=self)
+
+
 

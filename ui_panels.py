@@ -13,8 +13,8 @@ FONT_BOLD = ("Roboto", 13, "bold")
 FONT_EQUITY = ("Roboto", 36, "bold")
 FONT_PNL = ("Roboto", 18, "bold")
 FONT_SECTION = ("Roboto", 12, "bold")
-FONT_BIG_VAL = ("Consolas", 20, "bold")
-FONT_PRICE = ("Roboto", 32, "bold")
+FONT_BIG_VAL = ("Consolas", 18, "bold")
+FONT_PRICE = ("Roboto", 28, "bold")
 FONT_FEE = ("Roboto", 13, "bold")
 
 COL_GREEN = "#00C853"
@@ -426,11 +426,22 @@ def setup_left_panel(app, parent):
     )
     app.lbl_market_context.pack(side="left", fill="x", expand=True, padx=5)
 
+    app.btn_action = ctk.CTkButton(
+        parent,
+        text="EXECUTE BUY",
+        font=("Roboto", 15, "bold"),
+        height=40,
+        fg_color=COL_GREEN,
+        hover_color="#009624",
+        command=app.on_click_trade,
+    )
+    app.btn_action.pack(fill="x", padx=10, pady=(3, 6))
+
     # 4. LIVE DASHBOARD
     f_dashboard = ctk.CTkFrame(
         parent, fg_color="#252526", corner_radius=8, border_width=1, border_color="#333"
     )
-    f_dashboard.pack(fill="x", padx=5, pady=(5, 10))
+    f_dashboard.pack(fill="x", padx=5, pady=(2, 8))
 
     f_head_db = ctk.CTkFrame(f_dashboard, fg_color="transparent")
     f_head_db.pack(fill="x", padx=10, pady=(5, 0))
@@ -443,7 +454,7 @@ def setup_left_panel(app, parent):
     )
     app.lbl_fee_info.pack(side="right")
     f_price_row = ctk.CTkFrame(f_dashboard, fg_color="transparent")
-    f_price_row.pack(fill="x", padx=8, pady=(5, 5))
+    f_price_row.pack(fill="x", padx=8, pady=(3, 3))
     f_price_row.grid_columnconfigure(0, minsize=106)
     f_price_row.grid_columnconfigure(1, weight=1)
     f_price_row.grid_columnconfigure(2, minsize=106)
@@ -505,7 +516,7 @@ def setup_left_panel(app, parent):
 
     ctk.CTkFrame(f_dashboard, height=1, fg_color="#444").pack(fill="x", padx=5)
     f_grid_db = ctk.CTkFrame(f_dashboard, fg_color="transparent")
-    f_grid_db.pack(fill="x", padx=5, pady=5)
+    f_grid_db.pack(fill="x", padx=5, pady=3)
     f_grid_db.columnconfigure((0, 1), weight=1)
 
     f_rew = ctk.CTkFrame(f_grid_db, fg_color="transparent")
@@ -538,17 +549,55 @@ def setup_left_panel(app, parent):
     )
     app.lbl_prev_risk.pack()
 
-    ctk.CTkFrame(f_dashboard, height=1, fg_color="#444").pack(
-        fill="x", padx=10, pady=(5, 0)
+    ctk.CTkFrame(f_dashboard, height=1, fg_color="#444").pack(fill="x", padx=10, pady=(2, 0))
+    f_preview_tabs = ctk.CTkFrame(f_dashboard, fg_color="transparent")
+    f_preview_tabs.pack(fill="x", padx=8, pady=(2, 0))
+    f_preview_body = ctk.CTkFrame(f_dashboard, fg_color="transparent", height=28)
+    f_preview_body.pack(fill="x", padx=8, pady=(0, 4))
+    f_preview_body.pack_propagate(False)
+
+    def show_preview_tab(tab_name):
+        if hasattr(app, "lbl_tsl_preview"):
+            app.lbl_tsl_preview.pack_forget()
+        if hasattr(app, "lbl_entry_exit_preview"):
+            app.lbl_entry_exit_preview.pack_forget()
+
+        if tab_name == "E/E":
+            app.lbl_entry_exit_preview.pack(fill="x", padx=2, pady=(2, 0))
+        else:
+            app.lbl_tsl_preview.pack(fill="x", padx=2, pady=(2, 0))
+
+    app.seg_preview_mode = ctk.CTkSegmentedButton(
+        f_preview_tabs,
+        values=["TSL", "E/E"],
+        font=("Roboto", 10, "bold"),
+        height=24,
+        command=show_preview_tab,
+        selected_color="#1f538d",
+        selected_hover_color="#14375e",
     )
+    app.seg_preview_mode.pack(anchor="center")
+
     app.lbl_tsl_preview = ctk.CTkLabel(
-        f_dashboard, text="TSL: OFF", font=("Roboto", 13), text_color="#2196F3"
+        f_preview_body,
+        text="TSL: OFF",
+        font=("Roboto", 11),
+        text_color="#2196F3",
+        anchor="w",
+        justify="left",
+        wraplength=720,
     )
-    app.lbl_tsl_preview.pack(pady=(5, 5))
     app.lbl_entry_exit_preview = ctk.CTkLabel(
-        f_dashboard, text="E/E: OFF", font=("Roboto", 12, "bold"), text_color="#00B8D4"
+        f_preview_body,
+        text="E/E: OFF",
+        font=("Roboto", 11, "bold"),
+        text_color="#00B8D4",
+        anchor="w",
+        justify="left",
+        wraplength=720,
     )
-    app.lbl_entry_exit_preview.pack(pady=(0, 5))
+    app.seg_preview_mode.set("TSL")
+    show_preview_tab("TSL")
 
     # 5. EXECUTION CONTROLS
     app.seg_grid_mode = ctk.CTkSegmentedButton(
@@ -572,16 +621,6 @@ def setup_left_panel(app, parent):
         checkbox_height=18,
     )
 
-    app.btn_action = ctk.CTkButton(
-        parent,
-        text="EXECUTE BUY",
-        font=("Roboto", 16, "bold"),
-        height=45,
-        fg_color=COL_GREEN,
-        hover_color="#009624",
-        command=app.on_click_trade,
-    )
-    app.btn_action.pack(fill="x", padx=10, pady=(0, 10))
     app.on_manual_trade_mode_change(app.var_manual_trade_mode.get())
 
     # 6. SYSTEM HEALTH

@@ -452,7 +452,7 @@ class StandaloneBotDaemon:
 
 if __name__ == "__main__":
     # [FIX V5] Đổi tên tiến trình thành "daemon" để không đụng file log của UI (WinError 32)
-    setup_logging(debug_mode=getattr(config, "ENABLE_DEBUG_LOGGING", False), process_name="daemon")
+    logger = setup_logging(debug_mode=getattr(config, "ENABLE_DEBUG_LOGGING", False), process_name="daemon")
 
     daemon = StandaloneBotDaemon()
     try:

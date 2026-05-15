@@ -4,9 +4,25 @@
 
 import logging
 import os
+import json
+from datetime import datetime
 from logging.handlers import TimedRotatingFileHandler 
 
-def setup_logging(debug_mode=False, process_name="ui"):
+class JsonLineFormatter(logging.Formatter):
+    def format(self, record):
+        payload = {
+            "ts": datetime.fromtimestamp(record.created).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3],
+            "level": record.levelname,
+            "logger": record.name,
+            "process": getattr(record, "processName", None),
+            "message": record.getMessage(),
+        }
+        if record.exc_info:
+            payload["exception"] = self.formatException(record.exc_info)
+        return json.dumps(payload, ensure_ascii=False)
+
+
+def setup_logging(debug_mode=False, process_name="ui", json_mode=True):
     """
     Hệ thống quản trị Log 3 Lớp:
     1. CRITICAL: Khớp lệnh, DCA/PCA, SL/TP, Lỗi API.
@@ -58,6 +74,17 @@ def setup_logging(debug_mode=False, process_name="ui"):
     debug_handler.addFilter(DebugFilter())
     debug_handler.setFormatter(file_formatter)
 
+    json_formatter = JsonLineFormatter()
+    json_handler = TimedRotatingFileHandler(
+        os.path.join(LOG_DIR, f"{process_name}_events.jsonl"),
+        when='D',
+        interval=1,
+        backupCount=7,
+        encoding='utf-8',
+    )
+    json_handler.setLevel(logging.DEBUG if debug_mode else logging.INFO)
+    json_handler.setFormatter(json_formatter)
+
     # --- LỚP MÀN HÌNH UI (CONSOLE) ---
     console_handler = logging.StreamHandler()
     console_handler.setLevel(logging.INFO) 
@@ -68,6 +95,8 @@ def setup_logging(debug_mode=False, process_name="ui"):
     logger.addHandler(info_handler)
     if debug_mode:
         logger.addHandler(debug_handler)
+    if json_mode:
+        logger.addHandler(json_handler)
     logger.addHandler(console_handler)
     
     logger.propagate = False
