@@ -1313,7 +1313,7 @@ class BotStrategyUI(ctk.CTkToplevel):
         f_base_sl.pack(fill="x", padx=20, pady=5)
         ctk.CTkLabel(
             f_base_sl,
-            text="NGUỒN CẮM SL:",
+            text="BASE SWING SL GROUP:",
             font=("Roboto", 13, "bold"),
             text_color="#FF3D00",
         ).pack(side="left")
@@ -1335,7 +1335,7 @@ class BotStrategyUI(ctk.CTkToplevel):
         f_sl_mult.pack(fill="x", padx=20, pady=5)
         ctk.CTkLabel(
             f_sl_mult,
-            text="SL ATR MULTIPLIER:",
+            text="BASE SL BUFFER ATR:",
             font=("Roboto", 13, "bold"),
             text_color="#29B6F6",
         ).pack(side="left")
@@ -1427,7 +1427,7 @@ class BotStrategyUI(ctk.CTkToplevel):
         ).pack(side="left", padx=(0, 12))
         ctk.CTkLabel(
             f_exit_pick,
-            text="AUTO: R->R TP, Swing->Swing TP, FIB->FIB TP, Pullback->Pullback TP.",
+            text="AUTO: Entry nào thì dùng SL/TP theo tactic đó. Chọn FIB TP nếu muốn Swing entry chốt theo FIB.",
             font=("Roboto", 11, "italic"),
             text_color="#B0BEC5",
         ).pack(side="left")

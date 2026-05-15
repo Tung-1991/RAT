@@ -51,6 +51,7 @@ def merge_config(cfg):
 def format_decision(decision):
     status = decision.get("status", "OFF")
     entry = _short_mode(decision.get("entry_tactic", "OFF"))
+    exit_tactic = _short_mode(decision.get("exit_tactic"))
     zone = decision.get("entry_zone")
     sl = decision.get("sl")
     tp = decision.get("tp")
@@ -59,11 +60,11 @@ def format_decision(decision):
         return "E/E: OFF"
     parts = [f"E/E: {status} {entry}"]
     if zone:
-        parts.append(f"{decision.get('direction', '')} {zone[0]:.2f}-{zone[1]:.2f}")
+        parts.append(f"Entry {decision.get('direction', '')} {zone[0]:.2f}-{zone[1]:.2f}")
     if sl:
-        parts.append(f"SL {sl:.2f}")
+        parts.append(f"SL theo {entry} {sl:.2f}")
     if tp:
-        parts.append(f"TP {tp:.2f}")
+        parts.append(f"TP theo {exit_tactic} {tp:.2f}" if exit_tactic else f"TP {tp:.2f}")
     if reason:
         parts.append(reason)
     return " | ".join(parts)
@@ -134,6 +135,16 @@ def _swing_entry(symbol, direction, price, context, cfg, ttl, now):
         zone = (float(sh) - float(atr) * max_atr, float(sh))
         status = "READY" if zone[0] <= price <= zone[1] else "WAIT"
         stop = float(sh) + float(atr) * sl_buffer
+    reason = "Giá đã vào vùng Swing" if status == "READY" else "Chờ hồi về vùng Swing"
+    if status == "READY" and sw.get("require_rejection_candle", False):
+        rejection = _has_rejection_candle(direction, context, group)
+        if rejection is None:
+            return _missing(symbol, direction, price, "SWING_REJECTION", f"Missing rejection candle {group}", cfg, ttl, now)
+        if not rejection:
+            status = "WAIT"
+            reason = "Chờ nến từ chối vùng Swing"
+        else:
+            reason = "Giá đã vào vùng Swing + có nến từ chối"
     return _decision(
         status,
         symbol,
@@ -143,7 +154,7 @@ def _swing_entry(symbol, direction, price, context, cfg, ttl, now):
         entry_zone=zone,
         sl=stop,
         sl_source=f"SWING_{group}",
-        reason="Price in swing zone" if status == "READY" else "Waiting for swing pullback",
+        reason=reason,
         expires_at=now + ttl,
     )
 
@@ -176,7 +187,7 @@ def _fib_entry(symbol, direction, price, context, cfg, ttl, now):
         entry_zone=zone,
         sl=stop,
         sl_source=f"FIB_{group}",
-        reason="Price in fib zone" if status == "READY" else "Waiting for fib retrace",
+        reason="Giá đã vào vùng FIB" if status == "READY" else "Chờ hồi về vùng FIB",
         expires_at=now + ttl,
     )
 
@@ -212,7 +223,7 @@ def _pull_entry(symbol, direction, price, context, cfg, ttl, now):
         entry_zone=zone,
         sl=stop,
         sl_source=f"PULL_{source}",
-        reason="Price in pullback zone" if status == "READY" else "Waiting for pullback zone",
+        reason="Giá đã vào vùng Pullback" if status == "READY" else "Chờ hồi về vùng Pullback",
         expires_at=now + ttl,
     )
 
@@ -319,6 +330,27 @@ def _missing(symbol, direction, price, tactic, reason, cfg, ttl, now):
 
 def _allow_missing_fallback(cfg):
     return str(cfg.get("missing_data_policy", "FALLBACK_R")).upper() == "FALLBACK_R"
+
+
+def _has_rejection_candle(direction, context, group):
+    try:
+        o = float(context.get(f"open_{group}"))
+        h = float(context.get(f"high_{group}"))
+        l = float(context.get(f"low_{group}"))
+        c = float(context.get(f"close_{group}"))
+    except Exception:
+        return None
+    body = abs(c - o)
+    full_range = h - l
+    if full_range <= 0:
+        return False
+    body = max(body, full_range * 0.05)
+    upper_wick = h - max(o, c)
+    lower_wick = min(o, c) - l
+    close_pos = (c - l) / full_range
+    if direction == "BUY":
+        return lower_wick >= body * 1.5 and close_pos >= 0.55
+    return upper_wick >= body * 1.5 and close_pos <= 0.45
 
 
 def _swing_values(context, group):

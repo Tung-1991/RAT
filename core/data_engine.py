@@ -248,6 +248,14 @@ class DataEngine:
             context[f"swing_high_{grp}"] = float(sh)
             context[f"swing_low_{grp}"] = float(sl)
             context[f"atr_{grp}"] = float(atr)
+            try:
+                candle = df_grp.iloc[-1]
+                context[f"open_{grp}"] = float(candle["open"])
+                context[f"high_{grp}"] = float(candle["high"])
+                context[f"low_{grp}"] = float(candle["low"])
+                context[f"close_{grp}"] = float(candle["close"])
+            except Exception:
+                pass
 
         context["atr_entry"] = context["atr_G2"]
         context["atr_trend"] = context["atr_G1"]

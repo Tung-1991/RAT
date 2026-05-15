@@ -223,7 +223,6 @@ def open_entry_exit_popup(app, override_symbol=None):
     var_fib_entry = tk.StringVar()
     var_fib_tolerance = tk.StringVar()
     var_fib_tp = tk.StringVar()
-    var_fib_use_tp = tk.BooleanVar()
     var_pull_source = tk.StringVar()
     var_pull_max_atr = tk.StringVar()
     var_pull_sl_buffer = tk.StringVar()
@@ -253,7 +252,6 @@ def open_entry_exit_popup(app, override_symbol=None):
         var_fib_entry.set(fib.get("entry_levels", "0.5,0.618"))
         var_fib_tolerance.set(str(fib.get("entry_tolerance_atr", 0.15)))
         var_fib_tp.set(fib.get("tp_levels", "1.272,1.618"))
-        var_fib_use_tp.set(bool(fib.get("use_tactic_tp", True)))
 
         pull = next_cfg.get("pullback_zone", {})
         var_pull_source.set(pull.get("source", "EMA20"))
@@ -304,7 +302,7 @@ def open_entry_exit_popup(app, override_symbol=None):
                 "entry_levels": var_fib_entry.get() or "0.5,0.618",
                 "entry_tolerance_atr": fib_tolerance,
                 "tp_levels": var_fib_tp.get() or "1.272,1.618",
-                "use_tactic_tp": bool(var_fib_use_tp.get()),
+                "use_tactic_tp": True,
             },
             "pullback_zone": {
                 "source": var_pull_source.get() or "EMA20",
@@ -338,9 +336,10 @@ def open_entry_exit_popup(app, override_symbol=None):
     _field(f_swing, 1, "Group swing:", var_swing_group, ["G0", "G1", "G2", "G3"], width=120)
     _field(f_swing, 1, "Vùng hồi:", var_swing_max_atr, width=90, col=2)
     ctk.CTkLabel(f_swing, text="ATR", text_color="#B0BEC5").grid(row=1, column=4, sticky="w", padx=0, pady=5)
-    _field(f_swing, 2, "Đệm bảo vệ:", var_swing_sl_buffer, width=90)
-    ctk.CTkLabel(f_swing, text="ATR, dùng để đặt SL/TP an toàn quanh swing", text_color="#B0BEC5").grid(row=2, column=2, columnspan=2, sticky="w", padx=0, pady=5)
-    ctk.CTkCheckBox(f_swing, text="Yêu cầu nến từ chối sau này", variable=var_swing_reject).grid(row=3, column=0, columnspan=3, sticky="w", padx=12, pady=(4, 10))
+    _field(f_swing, 2, "SL buffer:", var_swing_sl_buffer, width=90)
+    ctk.CTkLabel(f_swing, text="ATR, đặt SL quanh swing khi Entry dùng SWING", text_color="#B0BEC5").grid(row=2, column=2, columnspan=2, sticky="w", padx=0, pady=5)
+    ctk.CTkCheckBox(f_swing, text="Yêu cầu nến từ chối", variable=var_swing_reject).grid(row=3, column=0, columnspan=3, sticky="w", padx=12, pady=(4, 10))
+    ctk.CTkLabel(f_swing, text="BUY cần râu dưới; SELL cần râu trên tại vùng Swing.", text_color="#B0BEC5").grid(row=4, column=0, columnspan=4, sticky="w", padx=12, pady=(0, 10))
 
     _hint(tab_advanced, "FIB và Pullback là tactic nâng cao. Chỉ chỉnh khi Ngài muốn đổi vùng vào/TP hoặc độ rộng vùng hồi.")
     f_fib = _section(tab_advanced, "3. FIB ENTRY / FIB TP", "#AB47BC")
@@ -349,14 +348,14 @@ def open_entry_exit_popup(app, override_symbol=None):
     _field(f_fib, 2, "Vùng TP:", var_fib_tp, width=130, col=2)
     _field(f_fib, 3, "Dung sai:", var_fib_tolerance, width=90)
     ctk.CTkLabel(f_fib, text="ATR", text_color="#B0BEC5").grid(row=3, column=2, sticky="w", padx=0, pady=5)
-    ctk.CTkCheckBox(f_fib, text="Cho phép dùng FIB làm TP", variable=var_fib_use_tp).grid(row=4, column=0, columnspan=3, sticky="w", padx=12, pady=(4, 10))
+    ctk.CTkLabel(f_fib, text="Muốn dùng FIB làm TP thì chọn FIB TP ở Sandbox.", text_color="#B0BEC5").grid(row=4, column=0, columnspan=4, sticky="w", padx=12, pady=(4, 10))
 
     f_pull = _section(tab_advanced, "4. PULLBACK ENTRY", "#00B8D4")
     _field(f_pull, 1, "Nguồn vùng hồi:", var_pull_source, ["EMA20", "BB_MID", "SWING"], width=140)
     _field(f_pull, 1, "Độ rộng vùng:", var_pull_max_atr, width=90, col=2)
     ctk.CTkLabel(f_pull, text="ATR", text_color="#B0BEC5").grid(row=1, column=4, sticky="w", padx=0, pady=5)
-    _field(f_pull, 2, "Đệm bảo vệ:", var_pull_sl_buffer, width=90)
-    ctk.CTkLabel(f_pull, text="ATR, dùng để đặt SL an toàn quanh vùng hồi", text_color="#B0BEC5").grid(row=2, column=2, columnspan=2, sticky="w", padx=0, pady=5)
+    _field(f_pull, 2, "SL buffer:", var_pull_sl_buffer, width=90)
+    ctk.CTkLabel(f_pull, text="ATR, đặt SL quanh vùng hồi khi Entry dùng PULLBACK", text_color="#B0BEC5").grid(row=2, column=2, columnspan=2, sticky="w", padx=0, pady=5)
     _field(f_pull, 3, "TP Pullback:", var_pull_tp_atr, width=90)
     ctk.CTkLabel(f_pull, text="ATR tính từ giá vào lệnh", text_color="#B0BEC5").grid(row=3, column=2, columnspan=2, sticky="w", padx=0, pady=5)
 
