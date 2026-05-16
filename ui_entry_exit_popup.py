@@ -19,16 +19,10 @@ COL_ACCENT = "#00838F"
 
 ENTRY_EXIT_TACTICS = {
     "FALLBACK_R": "R",
-    "SWING_REJECTION": "SWING",
+    "SWING_REJECTION": "SWING RETEST",
+    "SWING_STRUCTURE": "SWING STRUCT",
     "FIB_RETRACE": "FIB",
     "PULLBACK_ZONE": "PULL",
-}
-
-EXIT_DISPLAY = {
-    "AUTO": "AUTO - TP theo Entry",
-    "FIB_RETRACE": "FIB - chốt theo Fibonacci",
-    "SWING_REJECTION": "SWING - chốt theo swing",
-    "FALLBACK_R": "R - chốt theo tỷ lệ R",
 }
 
 MISSING_DISPLAY = {
@@ -69,6 +63,7 @@ def default_entry_exit_config():
         "active_tactics": [],
         "entry_tactics": ["SWING_REJECTION"],
         "exit_tactic": "AUTO",
+        "sl_mode": "SANDBOX",
         "fallback_tactic": "FALLBACK_R",
         "signal_ttl_seconds": 900,
         "missing_data_policy": "FALLBACK_R",
@@ -84,6 +79,15 @@ def default_entry_exit_config():
             "max_atr_from_swing": 0.7,
             "sl_atr_buffer": 0.2,
             "require_rejection_candle": False,
+            "allow_breakout_entry": False,
+            "max_breakout_atr": 0.5,
+        },
+        "swing_structure": {
+            "source_group": "G2",
+            "entry_atr": 0.7,
+            "sl_atr_buffer": 0.2,
+            "allow_breakout_entry": True,
+            "max_breakout_atr": 0.5,
         },
         "fib_retrace": {
             "swing_source_group": "G2",
@@ -207,11 +211,7 @@ def open_entry_exit_popup(app, override_symbol=None):
         tab_overwrite = ctk.CTkScrollableFrame(tabview.add("Overwrite"), fg_color="transparent")
         tab_overwrite.pack(fill="both", expand=True, padx=4, pady=4)
 
-    var_preview_only = tk.BooleanVar(value=bool(cfg.get("preview_only", True)))
-    entry_tactic_vars = {key: tk.BooleanVar() for key in ENTRY_EXIT_TACTICS}
-    var_exit_tactic = tk.StringVar()
     var_signal_ttl = tk.StringVar()
-    var_missing_policy = tk.StringVar()
     var_tp_policy = tk.StringVar()
     var_sl_source = tk.StringVar()
     var_tp_rr = tk.StringVar()
@@ -219,6 +219,13 @@ def open_entry_exit_popup(app, override_symbol=None):
     var_swing_max_atr = tk.StringVar()
     var_swing_sl_buffer = tk.StringVar()
     var_swing_reject = tk.BooleanVar()
+    var_swing_breakout = tk.BooleanVar()
+    var_swing_breakout_atr = tk.StringVar()
+    var_struct_group = tk.StringVar()
+    var_struct_entry_atr = tk.StringVar()
+    var_struct_sl_buffer = tk.StringVar()
+    var_struct_breakout = tk.BooleanVar()
+    var_struct_breakout_atr = tk.StringVar()
     var_fib_group = tk.StringVar()
     var_fib_entry = tk.StringVar()
     var_fib_tolerance = tk.StringVar()
@@ -230,13 +237,7 @@ def open_entry_exit_popup(app, override_symbol=None):
 
     def load_into_form(next_cfg):
         next_cfg = merge_cfg(default_entry_exit_config(), next_cfg)
-        entry_active = set(next_cfg.get("entry_tactics", ["SWING_REJECTION"]))
-        for key, var in entry_tactic_vars.items():
-            var.set(key in entry_active)
-        var_preview_only.set(bool(next_cfg.get("preview_only", True)))
-        var_exit_tactic.set(_display(EXIT_DISPLAY, next_cfg.get("exit_tactic", "AUTO"), "AUTO"))
         var_signal_ttl.set(str(next_cfg.get("signal_ttl_seconds", 900)))
-        var_missing_policy.set(_display(MISSING_DISPLAY, next_cfg.get("missing_data_policy", "FALLBACK_R"), "FALLBACK_R"))
         var_tp_policy.set(_display(TP_POLICY_DISPLAY, next_cfg.get("tp_policy", "FALLBACK_R"), "FALLBACK_R"))
         var_sl_source.set(_display(SL_SOURCE_DISPLAY, next_cfg.get("sl_source_group", "BASE_SL"), "BASE_SL"))
         var_tp_rr.set(str(next_cfg.get("default_exit", {}).get("tp_rr_ratio", 1.5)))
@@ -246,6 +247,15 @@ def open_entry_exit_popup(app, override_symbol=None):
         var_swing_max_atr.set(str(swing.get("max_atr_from_swing", 0.7)))
         var_swing_sl_buffer.set(str(swing.get("sl_atr_buffer", 0.2)))
         var_swing_reject.set(bool(swing.get("require_rejection_candle", False)))
+        var_swing_breakout.set(bool(swing.get("allow_breakout_entry", False)))
+        var_swing_breakout_atr.set(str(swing.get("max_breakout_atr", 0.5)))
+
+        struct = next_cfg.get("swing_structure", {})
+        var_struct_group.set(struct.get("source_group", "G2"))
+        var_struct_entry_atr.set(str(struct.get("entry_atr", 0.7)))
+        var_struct_sl_buffer.set(str(struct.get("sl_atr_buffer", 0.2)))
+        var_struct_breakout.set(bool(struct.get("allow_breakout_entry", True)))
+        var_struct_breakout_atr.set(str(struct.get("max_breakout_atr", 0.5)))
 
         fib = next_cfg.get("fib_retrace", {})
         var_fib_group.set(fib.get("swing_source_group", "G2"))
@@ -264,6 +274,10 @@ def open_entry_exit_popup(app, override_symbol=None):
             tp_rr = float(var_tp_rr.get() or 1.5)
             swing_max_atr = float(var_swing_max_atr.get() or 0.7)
             swing_sl_buffer = float(var_swing_sl_buffer.get() or 0.2)
+            swing_breakout_atr = float(var_swing_breakout_atr.get() or 0.5)
+            struct_entry_atr = float(var_struct_entry_atr.get() or 0.7)
+            struct_sl_buffer = float(var_struct_sl_buffer.get() or 0.2)
+            struct_breakout_atr = float(var_struct_breakout_atr.get() or 0.5)
             fib_tolerance = float(var_fib_tolerance.get() or 0.15)
             pull_max_atr = float(var_pull_max_atr.get() or 0.5)
             pull_sl_buffer = float(var_pull_sl_buffer.get() or 0.2)
@@ -273,29 +287,40 @@ def open_entry_exit_popup(app, override_symbol=None):
             raise ValueError("Có ô số đang nhập sai định dạng.") from exc
 
         entry_active = list(cfg.get("entry_tactics", []))
-        exit_tactic = _value(EXIT_DISPLAY, var_exit_tactic.get(), "AUTO")
         active = list(cfg.get("active_tactics", []))
+        exit_tactic = cfg.get("exit_tactic", "AUTO")
+        sl_mode = cfg.get("sl_mode", "SANDBOX")
         return {
             "enabled": bool(cfg.get("enabled", False)),
             "preview_only": bool(cfg.get("preview_only", True)),
             "active_tactics": active,
             "entry_tactics": entry_active or ["SWING_REJECTION"],
             "exit_tactic": exit_tactic,
+            "sl_mode": sl_mode,
             "fallback_tactic": "FALLBACK_R",
             "signal_ttl_seconds": signal_ttl,
-            "missing_data_policy": _value(MISSING_DISPLAY, var_missing_policy.get(), "FALLBACK_R"),
+            "missing_data_policy": cfg.get("missing_data_policy", "FALLBACK_R"),
             "tp_policy": _value(TP_POLICY_DISPLAY, var_tp_policy.get(), "FALLBACK_R"),
             "sl_source_group": _value(SL_SOURCE_DISPLAY, var_sl_source.get(), "BASE_SL"),
             "default_exit": {
                 "use_rr_tp": True,
                 "tp_rr_ratio": tp_rr,
-                "use_swing_tp": exit_tactic == "SWING_REJECTION",
+                "use_swing_tp": exit_tactic in ("SWING_REJECTION", "SWING_STRUCTURE"),
             },
             "swing_rejection": {
                 "source_group": var_swing_group.get() or "G2",
                 "max_atr_from_swing": swing_max_atr,
                 "sl_atr_buffer": swing_sl_buffer,
                 "require_rejection_candle": bool(var_swing_reject.get()),
+                "allow_breakout_entry": bool(var_swing_breakout.get()),
+                "max_breakout_atr": swing_breakout_atr,
+            },
+            "swing_structure": {
+                "source_group": var_struct_group.get() or "G2",
+                "entry_atr": struct_entry_atr,
+                "sl_atr_buffer": struct_sl_buffer,
+                "allow_breakout_entry": bool(var_struct_breakout.get()),
+                "max_breakout_atr": struct_breakout_atr,
             },
             "fib_retrace": {
                 "swing_source_group": var_fib_group.get() or "G2",
@@ -328,21 +353,40 @@ def open_entry_exit_popup(app, override_symbol=None):
     f_r = _section(tab_basic, "1. R / FALLBACK TP", "#FFD600")
     _field(f_r, 1, "Tín hiệu có hiệu lực:", var_signal_ttl, width=90)
     ctk.CTkLabel(f_r, text="giây", text_color="#B0BEC5").grid(row=1, column=2, sticky="w", padx=0, pady=5)
-    _field(f_r, 2, "Nếu thiếu dữ liệu:", var_missing_policy, list(MISSING_DISPLAY.values()), width=230)
-    _field(f_r, 3, "TP theo R:", var_tp_rr, width=80)
-    ctk.CTkLabel(f_r, text="1.5 = lời 1.5R khi dùng R TP hoặc khi tactic TP thiếu dữ liệu", text_color="#B0BEC5").grid(row=3, column=2, columnspan=2, sticky="w", padx=8, pady=5)
+    _field(f_r, 2, "TP theo R:", var_tp_rr, width=80)
+    ctk.CTkLabel(f_r, text="1.5 = lời 1.5R khi dùng R TP hoặc khi tactic TP thiếu dữ liệu", text_color="#B0BEC5").grid(row=2, column=2, columnspan=3, sticky="w", padx=8, pady=5)
+    ctk.CTkLabel(
+        f_r,
+        text="Popup này chỉ chỉnh tham số tactic. Chọn Entry Mode, Missing Data policy, SL Mode và TP Mode ở Sandbox.",
+        text_color="#B0BEC5",
+        wraplength=820,
+        justify="left",
+    ).grid(row=3, column=0, columnspan=5, sticky="w", padx=12, pady=(0, 8))
 
-    f_swing = _section(tab_basic, "2. SWING ENTRY / SWING TP", "#00B8D4")
+    f_swing = _section(tab_basic, "2. SWING RETEST / RANGE", "#00B8D4")
     _field(f_swing, 1, "Group swing:", var_swing_group, ["G0", "G1", "G2", "G3"], width=120)
     _field(f_swing, 1, "Vùng hồi:", var_swing_max_atr, width=90, col=2)
     ctk.CTkLabel(f_swing, text="ATR", text_color="#B0BEC5").grid(row=1, column=4, sticky="w", padx=0, pady=5)
     _field(f_swing, 2, "SL buffer:", var_swing_sl_buffer, width=90)
     ctk.CTkLabel(f_swing, text="ATR, đặt SL quanh swing khi Entry dùng SWING", text_color="#B0BEC5").grid(row=2, column=2, columnspan=2, sticky="w", padx=0, pady=5)
     ctk.CTkCheckBox(f_swing, text="Yêu cầu nến từ chối", variable=var_swing_reject).grid(row=3, column=0, columnspan=3, sticky="w", padx=12, pady=(4, 10))
-    ctk.CTkLabel(f_swing, text="BUY cần râu dưới; SELL cần râu trên tại vùng Swing.", text_color="#B0BEC5").grid(row=4, column=0, columnspan=4, sticky="w", padx=12, pady=(0, 10))
+    ctk.CTkCheckBox(f_swing, text="Vào nếu giá đã phá khỏi vùng Swing", variable=var_swing_breakout).grid(row=4, column=0, columnspan=2, sticky="w", padx=12, pady=(0, 8))
+    _field(f_swing, 4, "Đuổi tối đa:", var_swing_breakout_atr, width=80, col=2)
+    ctk.CTkLabel(f_swing, text="ATR", text_color="#B0BEC5").grid(row=4, column=4, sticky="w", padx=0, pady=5)
+    ctk.CTkLabel(f_swing, text="BUY cần râu dưới; SELL cần râu trên tại vùng Swing. Bật phá vùng nếu muốn vào thuận chiều khi giá đã chạy qua vùng hồi.", text_color="#B0BEC5").grid(row=5, column=0, columnspan=5, sticky="w", padx=12, pady=(0, 10))
+
+    f_struct = _section(tab_basic, "3. SWING STRUCTURE (HH/HL/LH/LL)", "#26A69A")
+    _field(f_struct, 1, "Group structure:", var_struct_group, ["G0", "G1", "G2", "G3", "DYNAMIC-G1/G2"], width=150)
+    _field(f_struct, 1, "Vùng entry:", var_struct_entry_atr, width=90, col=2)
+    ctk.CTkLabel(f_struct, text="ATR quanh HL/LH", text_color="#B0BEC5").grid(row=1, column=4, sticky="w", padx=0, pady=5)
+    _field(f_struct, 2, "SL buffer:", var_struct_sl_buffer, width=90)
+    ctk.CTkCheckBox(f_struct, text="Cho entry breakout khi phá HH/LL", variable=var_struct_breakout).grid(row=3, column=0, columnspan=2, sticky="w", padx=12, pady=(4, 8))
+    _field(f_struct, 3, "Breakout tối đa:", var_struct_breakout_atr, width=80, col=2)
+    ctk.CTkLabel(f_struct, text="ATR", text_color="#B0BEC5").grid(row=3, column=4, sticky="w", padx=0, pady=5)
+    ctk.CTkLabel(f_struct, text="UP: BUY quanh HL hoặc phá HH. DOWN: SELL quanh LH hoặc phá LL.", text_color="#B0BEC5").grid(row=4, column=0, columnspan=5, sticky="w", padx=12, pady=(0, 10))
 
     _hint(tab_advanced, "FIB và Pullback là tactic nâng cao. Chỉ chỉnh khi Ngài muốn đổi vùng vào/TP hoặc độ rộng vùng hồi.")
-    f_fib = _section(tab_advanced, "3. FIB ENTRY / FIB TP", "#AB47BC")
+    f_fib = _section(tab_advanced, "4. FIB ENTRY / FIB TP", "#AB47BC")
     _field(f_fib, 1, "Group swing:", var_fib_group, ["G0", "G1", "G2", "G3", "DYNAMIC-G1/G2"], width=150)
     _field(f_fib, 2, "Vùng vào:", var_fib_entry, width=130)
     _field(f_fib, 2, "Vùng TP:", var_fib_tp, width=130, col=2)
@@ -350,7 +394,7 @@ def open_entry_exit_popup(app, override_symbol=None):
     ctk.CTkLabel(f_fib, text="ATR", text_color="#B0BEC5").grid(row=3, column=2, sticky="w", padx=0, pady=5)
     ctk.CTkLabel(f_fib, text="Muốn dùng FIB làm TP thì chọn FIB TP ở Sandbox.", text_color="#B0BEC5").grid(row=4, column=0, columnspan=4, sticky="w", padx=12, pady=(4, 10))
 
-    f_pull = _section(tab_advanced, "4. PULLBACK ENTRY", "#00B8D4")
+    f_pull = _section(tab_advanced, "5. PULLBACK ENTRY", "#00B8D4")
     _field(f_pull, 1, "Nguồn vùng hồi:", var_pull_source, ["EMA20", "BB_MID", "SWING"], width=140)
     _field(f_pull, 1, "Độ rộng vùng:", var_pull_max_atr, width=90, col=2)
     ctk.CTkLabel(f_pull, text="ATR", text_color="#B0BEC5").grid(row=1, column=4, sticky="w", padx=0, pady=5)

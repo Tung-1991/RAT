@@ -11,6 +11,7 @@ import logging
 import config
 import pandas_ta as ta 
 from core.storage_manager import get_brain_settings_for_symbol
+from core.market_structure import analyze_market_structure, write_structure_context
 
 logger = logging.getLogger("DataEngine")
 
@@ -238,6 +239,7 @@ class DataEngine:
 
         # [FIX V4.4] Đồng bộ thông số Lookback/Period với cấu hình Indicator thay vì hardcode
         swing_lookback = int(inds_config.get("swing_point", {}).get("params", {}).get("lookback", 50))
+        swing_strength = int(inds_config.get("swing_point", {}).get("params", {}).get("strength", 2))
         atr_period = int(inds_config.get("atr", {}).get("params", {}).get("period", 14))
 
         for grp in ["G0", "G1", "G2", "G3"]:
@@ -248,6 +250,11 @@ class DataEngine:
             context[f"swing_high_{grp}"] = float(sh)
             context[f"swing_low_{grp}"] = float(sl)
             context[f"atr_{grp}"] = float(atr)
+            write_structure_context(
+                context,
+                grp,
+                analyze_market_structure(df_grp, lookback=swing_lookback, strength=swing_strength),
+            )
             try:
                 candle = df_grp.iloc[-1]
                 context[f"open_{grp}"] = float(candle["open"])

@@ -1,6 +1,11 @@
 # -*- coding: utf-8 -*-
 import time
 
+from core.market_structure import structure_from_context
+
+
+ENTRY_ORDER = ["SWING_REJECTION", "SWING_STRUCTURE", "FIB_RETRACE", "PULLBACK_ZONE", "FALLBACK_R"]
+
 
 def default_entry_exit_config():
     return {
@@ -9,6 +14,7 @@ def default_entry_exit_config():
         "active_tactics": [],
         "entry_tactics": ["SWING_REJECTION"],
         "exit_tactic": "AUTO",
+        "sl_mode": "SANDBOX",
         "fallback_tactic": "FALLBACK_R",
         "signal_ttl_seconds": 900,
         "missing_data_policy": "FALLBACK_R",
@@ -24,6 +30,15 @@ def default_entry_exit_config():
             "max_atr_from_swing": 0.7,
             "sl_atr_buffer": 0.2,
             "require_rejection_candle": False,
+            "allow_breakout_entry": False,
+            "max_breakout_atr": 0.5,
+        },
+        "swing_structure": {
+            "source_group": "G2",
+            "entry_atr": 0.7,
+            "sl_atr_buffer": 0.2,
+            "allow_breakout_entry": True,
+            "max_breakout_atr": 0.5,
         },
         "fib_retrace": {
             "swing_source_group": "G2",
@@ -52,6 +67,7 @@ def format_decision(decision):
     status = decision.get("status", "OFF")
     entry = _short_mode(decision.get("entry_tactic", "OFF"))
     exit_tactic = _short_mode(decision.get("exit_tactic"))
+    sl_source = _short_mode(decision.get("sl_source"))
     zone = decision.get("entry_zone")
     sl = decision.get("sl")
     tp = decision.get("tp")
@@ -62,7 +78,9 @@ def format_decision(decision):
     if zone:
         parts.append(f"Entry {decision.get('direction', '')} {zone[0]:.2f}-{zone[1]:.2f}")
     if sl:
-        parts.append(f"SL theo {entry} {sl:.2f}")
+        parts.append(f"SL theo {sl_source or entry} {sl:.2f}")
+    elif decision.get("sl_source") == "SANDBOX":
+        parts.append("SL theo SANDBOX")
     if tp:
         parts.append(f"TP theo {exit_tactic} {tp:.2f}" if exit_tactic else f"TP {tp:.2f}")
     if reason:
@@ -80,32 +98,35 @@ def evaluate_entry_exit(symbol, direction, price, context, cfg, pending=None):
         return _decision("OFF", symbol, direction, price, reason="Entry/Exit disabled")
 
     context = context or {}
-    entry_tactics = cfg.get("entry_tactics") or cfg.get("active_tactics") or ["SWING_REJECTION"]
-    entry_tactics = [t for t in entry_tactics if t in cfg.get("active_tactics", []) or t == "FALLBACK_R"]
+    entry_tactics = _ordered_entry_tactics(cfg)
     if not entry_tactics:
-        entry_tactics = cfg.get("active_tactics") or ["FALLBACK_R"]
+        return _decision("OFF", symbol, direction, price, reason="No Entry mode enabled")
 
+    waits = []
     errors = []
     for tactic in entry_tactics:
-        if tactic == "FALLBACK_R":
-            entry_decision = _fallback_r_entry(symbol, direction, price, cfg, ttl, now)
-        elif tactic == "SWING_REJECTION":
-            entry_decision = _swing_entry(symbol, direction, price, context, cfg, ttl, now)
-        elif tactic == "FIB_RETRACE":
-            entry_decision = _fib_entry(symbol, direction, price, context, cfg, ttl, now)
-        elif tactic == "PULLBACK_ZONE":
-            entry_decision = _pull_entry(symbol, direction, price, context, cfg, ttl, now)
-        else:
+        entry_decision = _evaluate_entry_tactic(tactic, symbol, direction, price, context, cfg, ttl, now)
+        if not entry_decision:
             continue
 
-        if entry_decision["status"] in ("READY", "WAIT"):
+        if entry_decision["status"] == "READY":
+            _apply_sl(entry_decision, price, context, cfg)
             _apply_exit(entry_decision, price, context, cfg)
             return entry_decision
+        if entry_decision["status"] == "WAIT":
+            _apply_sl(entry_decision, price, context, cfg)
+            _apply_exit(entry_decision, price, context, cfg)
+            waits.append(entry_decision)
+            continue
         errors.append(entry_decision.get("reason", tactic))
+
+    if waits:
+        return _combine_waits(symbol, direction, price, waits, ttl, now)
 
     if _allow_missing_fallback(cfg):
         decision = _fallback_r_entry(symbol, direction, price, cfg, ttl, now)
         decision["reason"] = "Missing E/E data, fallback R"
+        _apply_sl(decision, price, context, cfg)
         _apply_exit(decision, price, context, cfg)
         return decision
 
@@ -119,7 +140,34 @@ def evaluate_entry_exit(symbol, direction, price, context, cfg, pending=None):
     )
 
 
-def _swing_entry(symbol, direction, price, context, cfg, ttl, now):
+def _ordered_entry_tactics(cfg):
+    active = set(cfg.get("active_tactics") or [])
+    selected = list(cfg.get("entry_tactics") or cfg.get("active_tactics") or [])
+    selected = [t for t in selected if t in active or t == "FALLBACK_R"]
+    if not selected:
+        selected = list(active)
+    selected = [t for t in selected if t in ENTRY_ORDER]
+    non_r = [t for t in selected if t != "FALLBACK_R"]
+    if "FALLBACK_R" in selected:
+        non_r.append("FALLBACK_R")
+    return non_r
+
+
+def _evaluate_entry_tactic(tactic, symbol, direction, price, context, cfg, ttl, now):
+    if tactic == "FALLBACK_R":
+        return _fallback_r_entry(symbol, direction, price, cfg, ttl, now)
+    if tactic == "SWING_REJECTION":
+        return _swing_retest_entry(symbol, direction, price, context, cfg, ttl, now)
+    if tactic == "SWING_STRUCTURE":
+        return _swing_structure_entry(symbol, direction, price, context, cfg, ttl, now)
+    if tactic == "FIB_RETRACE":
+        return _fib_entry(symbol, direction, price, context, cfg, ttl, now)
+    if tactic == "PULLBACK_ZONE":
+        return _pull_entry(symbol, direction, price, context, cfg, ttl, now)
+    return None
+
+
+def _swing_retest_entry(symbol, direction, price, context, cfg, ttl, now):
     sw = cfg.get("swing_rejection", {})
     group = _resolve_group(sw.get("source_group", "G2"), context)
     sh, sl, atr = _swing_values(context, group)
@@ -135,16 +183,22 @@ def _swing_entry(symbol, direction, price, context, cfg, ttl, now):
         zone = (float(sh) - float(atr) * max_atr, float(sh))
         status = "READY" if zone[0] <= price <= zone[1] else "WAIT"
         stop = float(sh) + float(atr) * sl_buffer
-    reason = "Giá đã vào vùng Swing" if status == "READY" else "Chờ hồi về vùng Swing"
+    reason = "Giá đã vào vùng Swing Retest" if status == "READY" else _wait_zone_reason(direction, price, zone, atr, "Swing Retest")
+    if status == "WAIT" and sw.get("allow_breakout_entry", False):
+        max_breakout = float(sw.get("max_breakout_atr", 0.5) or 0.5)
+        breakout_dist = _breakout_distance(direction, price, zone, atr)
+        if breakout_dist is not None and breakout_dist <= max_breakout:
+            status = "READY"
+            reason = f"Giá đã phá khỏi vùng Swing Retest theo hướng {direction} ({breakout_dist:.2f} ATR)"
     if status == "READY" and sw.get("require_rejection_candle", False):
         rejection = _has_rejection_candle(direction, context, group)
         if rejection is None:
             return _missing(symbol, direction, price, "SWING_REJECTION", f"Missing rejection candle {group}", cfg, ttl, now)
         if not rejection:
             status = "WAIT"
-            reason = "Chờ nến từ chối vùng Swing"
+            reason = "Chờ nến từ chối vùng Swing Retest"
         else:
-            reason = "Giá đã vào vùng Swing + có nến từ chối"
+            reason = "Giá đã vào vùng Swing Retest + có nến từ chối"
     return _decision(
         status,
         symbol,
@@ -152,8 +206,64 @@ def _swing_entry(symbol, direction, price, context, cfg, ttl, now):
         price,
         entry_tactic="SWING_REJECTION",
         entry_zone=zone,
-        sl=stop,
-        sl_source=f"SWING_{group}",
+        natural_sl=stop,
+        natural_sl_source=f"SWING_RETEST_{group}",
+        reason=reason,
+        expires_at=now + ttl,
+    )
+
+
+def _swing_structure_entry(symbol, direction, price, context, cfg, ttl, now):
+    sw = cfg.get("swing_structure", {})
+    group = _resolve_group(sw.get("source_group", "G2"), context)
+    atr = context.get(f"atr_{group}") or context.get("atr_entry")
+    if not _positive(atr):
+        return _missing(symbol, direction, price, "SWING_STRUCTURE", f"Missing structure ATR {group}", cfg, ttl, now)
+    ms = structure_from_context(context, group)
+    bias = ms.get("bias")
+    entry_atr = float(sw.get("entry_atr", 0.7) or 0.7)
+    sl_buffer = float(sw.get("sl_atr_buffer", 0.2) or 0.2)
+    atr = float(atr)
+
+    if direction == "BUY":
+        anchor = ms.get("hl")
+        breakout = ms.get("hh")
+        needed = "UP"
+        if bias != needed or not _positive(anchor):
+            return _missing(symbol, direction, price, "SWING_STRUCTURE", f"No UP structure HL/HH {group}", cfg, ttl, now)
+        zone = (float(anchor), float(anchor) + atr * entry_atr)
+        stop = float(anchor) - atr * sl_buffer
+    else:
+        anchor = ms.get("lh")
+        breakout = ms.get("ll")
+        needed = "DOWN"
+        if bias != needed or not _positive(anchor):
+            return _missing(symbol, direction, price, "SWING_STRUCTURE", f"No DOWN structure LH/LL {group}", cfg, ttl, now)
+        zone = (float(anchor) - atr * entry_atr, float(anchor))
+        stop = float(anchor) + atr * sl_buffer
+
+    status = "READY" if zone[0] <= price <= zone[1] else "WAIT"
+    reason = f"Giá đã vào vùng Swing Structure {needed}" if status == "READY" else _wait_zone_reason(direction, price, zone, atr, "Swing Structure")
+    if status == "WAIT" and sw.get("allow_breakout_entry", True) and _positive(breakout):
+        max_breakout = float(sw.get("max_breakout_atr", 0.5) or 0.5)
+        breakout_dist = None
+        if direction == "BUY" and price > float(breakout):
+            breakout_dist = (float(price) - float(breakout)) / atr
+        elif direction == "SELL" and price < float(breakout):
+            breakout_dist = (float(breakout) - float(price)) / atr
+        if breakout_dist is not None and breakout_dist <= max_breakout:
+            status = "READY"
+            reason = f"Giá phá cấu trúc {direction} ({breakout_dist:.2f} ATR)"
+
+    return _decision(
+        status,
+        symbol,
+        direction,
+        price,
+        entry_tactic="SWING_STRUCTURE",
+        entry_zone=zone,
+        natural_sl=stop,
+        natural_sl_source=f"SWING_STRUCTURE_{group}",
         reason=reason,
         expires_at=now + ttl,
     )
@@ -185,9 +295,9 @@ def _fib_entry(symbol, direction, price, context, cfg, ttl, now):
         price,
         entry_tactic="FIB_RETRACE",
         entry_zone=zone,
-        sl=stop,
-        sl_source=f"FIB_{group}",
-        reason="Giá đã vào vùng FIB" if status == "READY" else "Chờ hồi về vùng FIB",
+        natural_sl=stop,
+        natural_sl_source=f"FIB_{group}",
+        reason="Giá đã vào vùng FIB" if status == "READY" else _wait_zone_reason(direction, price, zone, atr, "FIB"),
         expires_at=now + ttl,
     )
 
@@ -221,9 +331,9 @@ def _pull_entry(symbol, direction, price, context, cfg, ttl, now):
         price,
         entry_tactic="PULLBACK_ZONE",
         entry_zone=zone,
-        sl=stop,
-        sl_source=f"PULL_{source}",
-        reason="Giá đã vào vùng Pullback" if status == "READY" else "Chờ hồi về vùng Pullback",
+        natural_sl=stop,
+        natural_sl_source=f"PULL_{source}",
+        reason="Giá đã vào vùng Pullback" if status == "READY" else _wait_zone_reason(direction, price, zone, atr, "Pullback"),
         expires_at=now + ttl,
     )
 
@@ -240,8 +350,39 @@ def _fallback_r_entry(symbol, direction, price, cfg, ttl, now):
     )
 
 
+def _apply_sl(decision, price, context, cfg):
+    mode = str(cfg.get("sl_mode", "SANDBOX") or "SANDBOX").upper()
+    if mode == "AUTO":
+        mode = _auto_sl_tactic(decision.get("entry_tactic"))
+    mode = {"SWING_RETEST": "SWING_REJECTION"}.get(mode, mode)
+
+    if mode == "SANDBOX":
+        decision["sl"] = None
+        decision["sl_source"] = "SANDBOX"
+    elif mode == decision.get("entry_tactic") and decision.get("natural_sl"):
+        decision["sl"] = decision.get("natural_sl")
+        decision["sl_source"] = decision.get("natural_sl_source")
+    elif mode == "SWING_REJECTION":
+        decision["sl"], decision["sl_source"] = _swing_retest_sl(decision.get("direction"), context, cfg)
+    elif mode == "SWING_STRUCTURE":
+        decision["sl"], decision["sl_source"] = _swing_structure_sl(decision.get("direction"), context, cfg)
+    elif mode == "FIB_RETRACE":
+        decision["sl"], decision["sl_source"] = _fib_sl(decision.get("direction"), context, cfg)
+    elif mode == "PULLBACK_ZONE":
+        if decision.get("entry_tactic") == "PULLBACK_ZONE" and decision.get("natural_sl"):
+            decision["sl"] = decision.get("natural_sl")
+            decision["sl_source"] = decision.get("natural_sl_source")
+        else:
+            decision["sl"], decision["sl_source"] = _pullback_sl(decision.get("direction"), context, cfg)
+    else:
+        decision["sl"] = None
+        decision["sl_source"] = "SANDBOX"
+
+    if decision.get("sl"):
+        decision["risk_distance"] = abs(float(price) - float(decision["sl"]))
+
+
 def _apply_exit(decision, price, context, cfg):
-    sl = decision.get("sl")
     exit_tactic = cfg.get("exit_tactic") or "AUTO"
     if exit_tactic == "AUTO":
         exit_tactic = _auto_exit_tactic(decision.get("entry_tactic"))
@@ -253,7 +394,7 @@ def _apply_exit(decision, price, context, cfg):
             decision["tp_source"] = "FIB"
         else:
             _apply_r_tp(decision, price, cfg)
-    elif exit_tactic == "SWING_REJECTION":
+    elif exit_tactic in ("SWING_REJECTION", "SWING_STRUCTURE"):
         tp = _swing_tp(decision.get("direction"), context, cfg)
         if tp:
             decision["tp"] = tp
@@ -269,14 +410,90 @@ def _apply_exit(decision, price, context, cfg):
             _apply_r_tp(decision, price, cfg)
     else:
         _apply_r_tp(decision, price, cfg)
-    if sl:
-        decision["risk_distance"] = abs(float(price) - float(sl))
+
+
+def _combine_waits(symbol, direction, price, waits, ttl, now):
+    reasons = [f"{_short_mode(w.get('entry_tactic'))}: {w.get('reason', 'WAIT')}" for w in waits]
+    return _decision(
+        "WAIT",
+        symbol,
+        direction,
+        price,
+        entry_tactic="MULTI_WAIT",
+        reason="; ".join(reasons),
+        wait_decisions=waits,
+        expires_at=now + ttl,
+    )
+
+
+def _auto_sl_tactic(entry_tactic):
+    if entry_tactic in ("SWING_REJECTION", "SWING_STRUCTURE", "FIB_RETRACE", "PULLBACK_ZONE"):
+        return entry_tactic
+    return "SANDBOX"
 
 
 def _auto_exit_tactic(entry_tactic):
-    if entry_tactic in ("SWING_REJECTION", "FIB_RETRACE", "PULLBACK_ZONE"):
+    if entry_tactic in ("SWING_REJECTION", "SWING_STRUCTURE", "FIB_RETRACE", "PULLBACK_ZONE"):
         return entry_tactic
     return "FALLBACK_R"
+
+
+def _swing_retest_sl(direction, context, cfg):
+    sw = cfg.get("swing_rejection", {})
+    group = _resolve_group(sw.get("source_group", "G2"), context)
+    sh, sl, atr = _swing_values(context, group)
+    if not _positive(sh) or not _positive(sl) or not _positive(atr):
+        return None, f"SWING_RETEST_{group}"
+    buffer = float(atr) * float(sw.get("sl_atr_buffer", 0.2) or 0.2)
+    return (float(sl) - buffer, f"SWING_RETEST_{group}") if direction == "BUY" else (float(sh) + buffer, f"SWING_RETEST_{group}")
+
+
+def _swing_structure_sl(direction, context, cfg):
+    sw = cfg.get("swing_structure", {})
+    group = _resolve_group(sw.get("source_group", "G2"), context)
+    atr = context.get(f"atr_{group}") or context.get("atr_entry")
+    if not _positive(atr):
+        return None, f"SWING_STRUCTURE_{group}"
+    ms = structure_from_context(context, group)
+    buffer = float(atr) * float(sw.get("sl_atr_buffer", 0.2) or 0.2)
+    if direction == "BUY" and _positive(ms.get("hl")):
+        return float(ms["hl"]) - buffer, f"SWING_STRUCTURE_{group}"
+    if direction == "SELL" and _positive(ms.get("lh")):
+        return float(ms["lh"]) + buffer, f"SWING_STRUCTURE_{group}"
+    return None, f"SWING_STRUCTURE_{group}"
+
+
+def _fib_sl(direction, context, cfg):
+    fib = cfg.get("fib_retrace", {})
+    group = _resolve_group(fib.get("swing_source_group", "G2"), context)
+    sh, sl, atr = _swing_values(context, group)
+    if not _positive(sh) or not _positive(sl) or not _positive(atr):
+        return None, f"FIB_{group}"
+    tol = float(atr) * float(fib.get("entry_tolerance_atr", 0.15) or 0.15)
+    return (float(sl) - tol, f"FIB_{group}") if direction == "BUY" else (float(sh) + tol, f"FIB_{group}")
+
+
+def _pullback_sl(direction, context, cfg):
+    pull = cfg.get("pullback_zone", {})
+    group = _resolve_group(cfg.get("sl_source_group", "G2"), context)
+    atr = context.get(f"atr_{group}") or context.get("atr_entry")
+    if not _positive(atr):
+        return None, "PULLBACK"
+    source = str(pull.get("source", "EMA20")).upper()
+    zone_mid = None
+    if source == "SWING":
+        sh, sl, _ = _swing_values(context, group)
+        zone_mid = sl if direction == "BUY" else sh
+    elif source == "BB_MID":
+        zone_mid = context.get(f"bb_mid_{group}") or context.get("bb_mid")
+    else:
+        zone_mid = context.get(f"ema20_{group}") or context.get("ema20") or context.get(f"EMA_20_{group}")
+    if not _positive(zone_mid):
+        return None, f"PULL_{source}"
+    dist = float(atr) * float(pull.get("max_atr_from_zone", 0.5) or 0.5)
+    zone = (float(zone_mid) - dist, float(zone_mid) + dist)
+    buffer = float(atr) * float(pull.get("sl_atr_buffer", 0.2) or 0.2)
+    return (zone[0] - buffer, f"PULL_{source}") if direction == "BUY" else (zone[1] + buffer, f"PULL_{source}")
 
 
 def _fib_tp(direction, context, cfg):
@@ -323,8 +540,6 @@ def _apply_r_tp(decision, price, cfg):
 
 
 def _missing(symbol, direction, price, tactic, reason, cfg, ttl, now):
-    if _allow_missing_fallback(cfg):
-        return _fallback_r_entry(symbol, direction, price, cfg, ttl, now)
     return _decision("ERROR", symbol, direction, price, entry_tactic=tactic, reason=reason, expires_at=now + ttl)
 
 
@@ -351,6 +566,30 @@ def _has_rejection_candle(direction, context, group):
     if direction == "BUY":
         return lower_wick >= body * 1.5 and close_pos >= 0.55
     return upper_wick >= body * 1.5 and close_pos <= 0.45
+
+
+def _wait_zone_reason(direction, price, zone, atr, label):
+    if not zone or not _positive(atr):
+        return f"Chờ hồi về vùng {label}"
+    price = float(price)
+    atr = float(atr)
+    if price < zone[0]:
+        dist = (zone[0] - price) / atr
+        side = "dưới"
+    elif price > zone[1]:
+        dist = (price - zone[1]) / atr
+        side = "trên"
+    else:
+        return f"Chờ hồi về vùng {label}"
+    return f"Chờ hồi về vùng {label} | Giá đang {side} vùng {dist:.2f} ATR"
+
+
+def _breakout_distance(direction, price, zone, atr):
+    if direction == "BUY" and price > zone[1]:
+        return (float(price) - zone[1]) / float(atr)
+    if direction == "SELL" and price < zone[0]:
+        return (zone[0] - float(price)) / float(atr)
+    return None
 
 
 def _swing_values(context, group):
@@ -412,9 +651,13 @@ def _decision(status, symbol, direction, price, **kwargs):
 def _short_mode(mode):
     return {
         "FALLBACK_R": "R",
-        "SWING_REJECTION": "SWING",
+        "SWING_REJECTION": "SWING RETEST",
+        "SWING_RETEST": "SWING RETEST",
+        "SWING_STRUCTURE": "SWING STRUCT",
         "FIB_RETRACE": "FIB",
         "PULLBACK_ZONE": "PULL",
+        "MULTI_WAIT": "MULTI",
+        "SANDBOX": "SANDBOX",
     }.get(mode, mode or "OFF")
 
 

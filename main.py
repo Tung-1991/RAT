@@ -129,6 +129,7 @@ class BotUI(ctk.CTk):
         self.entry_exit_tactic_states = {
             "FALLBACK_R": False,
             "SWING_REJECTION": False,
+            "SWING_STRUCTURE": False,
             "FIB_RETRACE": False,
             "PULLBACK_ZONE": False,
         }
@@ -424,6 +425,8 @@ class BotUI(ctk.CTk):
             set_btn(self.btn_entry_r, self.entry_exit_tactic_states["FALLBACK_R"])
         if hasattr(self, "btn_entry_swing"):
             set_btn(self.btn_entry_swing, self.entry_exit_tactic_states["SWING_REJECTION"])
+        if hasattr(self, "btn_entry_struct"):
+            set_btn(self.btn_entry_struct, self.entry_exit_tactic_states["SWING_STRUCTURE"])
         if hasattr(self, "btn_entry_fib"):
             set_btn(self.btn_entry_fib, self.entry_exit_tactic_states["FIB_RETRACE"])
         if hasattr(self, "btn_entry_pullback"):
@@ -1285,7 +1288,8 @@ class BotUI(ctk.CTk):
                 if ee_tactic and ee_tactic != "OFF":
                     ee_labels = {
                         "FALLBACK_R": "R",
-                        "SWING_REJECTION": "SWING",
+                        "SWING_REJECTION": "RETEST",
+                        "SWING_STRUCTURE": "STRUCT",
                         "FIB_RETRACE": "FIB",
                         "PULLBACK_ZONE": "PULL",
                     }
@@ -1689,7 +1693,8 @@ class BotUI(ctk.CTk):
                 ee_options = [
                     ("OFF", "OFF"),
                     ("R", "FALLBACK_R"),
-                    ("SWING", "SWING_REJECTION"),
+                    ("RETEST", "SWING_REJECTION"),
+                    ("STRUCT", "SWING_STRUCTURE"),
                     ("FIB", "FIB_RETRACE"),
                     ("PULL", "PULLBACK_ZONE"),
                 ]

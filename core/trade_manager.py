@@ -59,12 +59,46 @@ class TradeManager:
             self.state["be_sl_arms"] = {}
         if "rev_confirmations" not in self.state:
             self.state["rev_confirmations"] = {}
+        if "last_entry_exit_logs" not in self.state:
+            self.state["last_entry_exit_logs"] = {}
 
         # [NEW V4.4] Tracking chuyên sâu cho Cooldown và Log
         if "exit_reasons" not in self.state:
             self.state["exit_reasons"] = {}
         if "last_close_times" not in self.state:
             self.state["last_close_times"] = {}
+
+    def _should_log_entry_exit_decision(self, symbol, direction, decision, safeguard_cfg):
+        status = decision.get("status")
+        if status in ("READY", "ERROR"):
+            return True
+
+        try:
+            cooldown_sec = float(safeguard_cfg.get("LOG_COOLDOWN_MINUTES", 60.0)) * 60.0
+        except Exception:
+            cooldown_sec = 3600.0
+
+        zone = decision.get("entry_zone") or ()
+        current_price = float(decision.get("current_price", 0) or 0)
+        wait_side = "IN"
+        if zone and current_price < float(zone[0]):
+            wait_side = "BELOW"
+        elif zone and current_price > float(zone[1]):
+            wait_side = "ABOVE"
+        signature = {
+            "status": status,
+            "wait_side": wait_side,
+            "entry_tactic": decision.get("entry_tactic", ""),
+            "exit_tactic": decision.get("exit_tactic", ""),
+        }
+        key = f"{symbol}|{direction}|{decision.get('entry_tactic', '')}"
+        now = time.time()
+        logs = self.state.setdefault("last_entry_exit_logs", {})
+        last = logs.get(key, {})
+        if last.get("signature") != signature or now - float(last.get("time", 0) or 0) >= max(0.0, cooldown_sec):
+            logs[key] = {"time": now, "signature": signature}
+            return True
+        return False
 
     def _position_profit_usd(self, pos):
         return pos.profit + pos.swap + getattr(pos, "commission", 0.0)
@@ -455,7 +489,7 @@ class TradeManager:
                 entry_exit_cfg,
                 pending=pending,
             )
-            if ee_decision.get("status") != "OFF":
+            if ee_decision.get("status") != "OFF" and self._should_log_entry_exit_decision(symbol, direction, ee_decision, safeguard_cfg):
                 self.log(f"[E/E] {format_decision(ee_decision)}", target="bot-log")
             if entry_exit_cfg.get("enabled") and not entry_exit_cfg.get("preview_only", True):
                 if ee_decision.get("status") == "READY":

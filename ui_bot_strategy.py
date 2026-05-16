@@ -27,11 +27,29 @@ def _get_template_dir():
 EE_EXIT_LABELS = {
     "AUTO": "AUTO - TP theo Entry",
     "FALLBACK_R": "R TP",
-    "SWING_REJECTION": "SWING TP",
+    "SWING_REJECTION": "SWING RETEST TP",
+    "SWING_STRUCTURE": "SWING STRUCT TP",
     "FIB_RETRACE": "FIB TP",
     "PULLBACK_ZONE": "PULLBACK TP",
 }
 EE_EXIT_VALUES = {v: k for k, v in EE_EXIT_LABELS.items()}
+
+EE_SL_LABELS = {
+    "SANDBOX": "SANDBOX - Base SL Group",
+    "AUTO": "AUTO - SL theo Entry",
+    "SWING_REJECTION": "SWING RETEST - E/E SL",
+    "SWING_STRUCTURE": "SWING STRUCT SL",
+    "FIB_RETRACE": "FIB SL",
+    "PULLBACK_ZONE": "PULLBACK SL",
+    "FALLBACK_R": "R / không override",
+}
+EE_SL_VALUES = {v: k for k, v in EE_SL_LABELS.items()}
+
+EE_MISSING_LABELS = {
+    "FALLBACK_R": "Thiếu dữ liệu -> dùng R",
+    "BLOCK": "Thiếu dữ liệu -> chặn lệnh",
+}
+EE_MISSING_VALUES = {v: k for k, v in EE_MISSING_LABELS.items()}
 
 def _default_entry_exit_config():
     return {
@@ -40,6 +58,7 @@ def _default_entry_exit_config():
         "active_tactics": [],
         "entry_tactics": ["SWING_REJECTION"],
         "exit_tactic": "AUTO",
+        "sl_mode": "SANDBOX",
         "fallback_tactic": "FALLBACK_R",
         "signal_ttl_seconds": 900,
         "missing_data_policy": "FALLBACK_R",
@@ -72,6 +91,15 @@ def _default_entry_exit_config():
             "max_atr_from_swing": 0.7,
             "sl_atr_buffer": 0.2,
             "require_rejection_candle": False,
+            "allow_breakout_entry": False,
+            "max_breakout_atr": 0.5,
+        },
+        "swing_structure": {
+            "source_group": "G2",
+            "entry_atr": 0.7,
+            "sl_atr_buffer": 0.2,
+            "allow_breakout_entry": True,
+            "max_breakout_atr": 0.5,
         },
         "pullback_zone": {
             "source": "EMA20",
@@ -1128,13 +1156,24 @@ class BotStrategyUI(ctk.CTkToplevel):
         cfg = self._entry_exit_cfg()
         if hasattr(self, "bot_entry_exit_tactic_vars"):
             selected_entry = [k for k, v in self.bot_entry_exit_tactic_vars.items() if v.get()]
+            use_fallback_r = bool(getattr(self, "bot_entry_exit_fallback_r_var", None) and self.bot_entry_exit_fallback_r_var.get())
             active = list(selected_entry)
+            if use_fallback_r:
+                active.append("FALLBACK_R")
             exit_tactic = getattr(self, "bot_entry_exit_var", None)
             exit_tactic = exit_tactic.get() if exit_tactic else cfg.get("exit_tactic")
             exit_tactic = EE_EXIT_VALUES.get(exit_tactic, exit_tactic)
+            sl_mode = getattr(self, "bot_entry_exit_sl_var", None)
+            sl_mode = sl_mode.get() if sl_mode else cfg.get("sl_mode", "SANDBOX")
+            sl_mode = EE_SL_VALUES.get(sl_mode, sl_mode)
+            missing_policy = getattr(self, "bot_entry_exit_missing_var", None)
+            missing_policy = missing_policy.get() if missing_policy else cfg.get("missing_data_policy", "FALLBACK_R")
+            missing_policy = EE_MISSING_VALUES.get(missing_policy, missing_policy)
             cfg["active_tactics"] = active
-            cfg["entry_tactics"] = selected_entry or ["SWING_REJECTION"]
+            cfg["entry_tactics"] = active or ["SWING_REJECTION"]
             cfg["exit_tactic"] = exit_tactic or "AUTO"
+            cfg["sl_mode"] = sl_mode or "SANDBOX"
+            cfg["missing_data_policy"] = missing_policy or "FALLBACK_R"
             cfg["enabled"] = bool(active)
             cfg["preview_only"] = not bool(active)
         return cfg
@@ -1391,8 +1430,8 @@ class BotStrategyUI(ctk.CTkToplevel):
             else set()
         )
         entry_tactic_labels = {
-            "FALLBACK_R": "R",
-            "SWING_REJECTION": "SWING",
+            "SWING_REJECTION": "SWING RETEST",
+            "SWING_STRUCTURE": "SWING STRUCT",
             "FIB_RETRACE": "FIB",
             "PULLBACK_ZONE": "PULLBACK",
         }
@@ -1408,11 +1447,71 @@ class BotStrategyUI(ctk.CTkToplevel):
                 width=100,
             ).pack(side="left", padx=10)
             self.bot_entry_exit_tactic_vars[key] = var
+        self.bot_entry_exit_fallback_r_var = ctk.BooleanVar(value="FALLBACK_R" in current_entry_tactics)
+        ctk.CTkCheckBox(
+            f_entry_checks,
+            text="Fallback R",
+            variable=self.bot_entry_exit_fallback_r_var,
+            font=("Roboto", 12, "bold"),
+            width=110,
+        ).pack(side="left", padx=(18, 10))
+        ctk.CTkLabel(
+            f_entry_btns,
+            text="Fallback R chỉ chạy sau cùng nếu các Entry mode khác chưa READY hoặc thiếu dữ liệu theo policy.",
+            font=("Roboto", 11, "italic"),
+            text_color="#B0BEC5",
+        ).pack(anchor="w", padx=12, pady=(0, 6))
+        f_policy_pick = ctk.CTkFrame(f_entry_btns, fg_color="transparent")
+        f_policy_pick.pack(fill="x", padx=12, pady=(0, 6))
+        ctk.CTkLabel(
+            f_policy_pick,
+            text="Missing Data:",
+            font=("Roboto", 12, "bold"),
+            text_color="#D7DCE2",
+        ).pack(side="left", padx=(0, 8))
+        self.bot_entry_exit_missing_var = ctk.StringVar(
+            value=EE_MISSING_LABELS.get(entry_exit_data.get("missing_data_policy", "FALLBACK_R"), "Thiếu dữ liệu -> dùng R")
+        )
+        ctk.CTkOptionMenu(
+            f_policy_pick,
+            values=list(EE_MISSING_VALUES.keys()),
+            variable=self.bot_entry_exit_missing_var,
+            width=190,
+        ).pack(side="left", padx=(0, 12))
+        ctk.CTkLabel(
+            f_policy_pick,
+            text="Policy này thuộc Sandbox vì nó quyết định fallback/chặn toàn bộ E/E.",
+            font=("Roboto", 11, "italic"),
+            text_color="#B0BEC5",
+        ).pack(side="left")
+        f_sl_pick = ctk.CTkFrame(f_entry_btns, fg_color="transparent")
+        f_sl_pick.pack(fill="x", padx=12, pady=(0, 6))
+        ctk.CTkLabel(
+            f_sl_pick,
+            text="SL Mode:",
+            font=("Roboto", 12, "bold"),
+            text_color="#D7DCE2",
+        ).pack(side="left", padx=(0, 8))
+        self.bot_entry_exit_sl_var = ctk.StringVar(
+            value=EE_SL_LABELS.get(entry_exit_data.get("sl_mode", "SANDBOX"), "SANDBOX - Base SL Group")
+        )
+        ctk.CTkOptionMenu(
+            f_sl_pick,
+            values=list(EE_SL_VALUES.keys()),
+            variable=self.bot_entry_exit_sl_var,
+            width=190,
+        ).pack(side="left", padx=(0, 12))
+        ctk.CTkLabel(
+            f_sl_pick,
+            text="SANDBOX dùng Base SL Group/Buffer ở Risk & TSL; Swing Retest SL dùng group/buffer trong E/E.",
+            font=("Roboto", 11, "italic"),
+            text_color="#B0BEC5",
+        ).pack(side="left")
         f_exit_pick = ctk.CTkFrame(f_entry_btns, fg_color="transparent")
         f_exit_pick.pack(fill="x", padx=12, pady=(0, 8))
         ctk.CTkLabel(
             f_exit_pick,
-            text="Exit / TP cho bot:",
+            text="TP Mode:",
             font=("Roboto", 12, "bold"),
             text_color="#D7DCE2",
         ).pack(side="left", padx=(0, 8))
@@ -1427,7 +1526,7 @@ class BotStrategyUI(ctk.CTkToplevel):
         ).pack(side="left", padx=(0, 12))
         ctk.CTkLabel(
             f_exit_pick,
-            text="AUTO: Entry nào thì dùng SL/TP theo tactic đó. Chọn FIB TP nếu muốn Swing entry chốt theo FIB.",
+            text="AUTO: TP theo Entry vừa khớp. Entry quyết định vùng vào, SL/TP chọn nơi thoát.",
             font=("Roboto", 11, "italic"),
             text_color="#B0BEC5",
         ).pack(side="left")

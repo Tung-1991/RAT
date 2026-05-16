@@ -717,6 +717,7 @@ def load_brain_settings() -> Dict[str, Any]:
         "active_tactics": [],
         "entry_tactics": ["SWING_REJECTION"],
         "exit_tactic": "AUTO",
+        "sl_mode": "SANDBOX",
         "fallback_tactic": "FALLBACK_R",
         "signal_ttl_seconds": 900,
         "missing_data_policy": "FALLBACK_R",
@@ -746,6 +747,15 @@ def load_brain_settings() -> Dict[str, Any]:
             "max_atr_from_swing": 0.7,
             "sl_atr_buffer": 0.2,
             "require_rejection_candle": False,
+            "allow_breakout_entry": False,
+            "max_breakout_atr": 0.5,
+        },
+        "swing_structure": {
+            "source_group": "G2",
+            "entry_atr": 0.7,
+            "sl_atr_buffer": 0.2,
+            "allow_breakout_entry": True,
+            "max_breakout_atr": 0.5,
         },
         "pullback_zone": {
             "source": "EMA20",

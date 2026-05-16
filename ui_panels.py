@@ -316,11 +316,18 @@ def setup_left_panel(app, parent):
     app.btn_entry_r.pack(side="left", padx=1)
     app.btn_entry_swing = ctk.CTkButton(
         f_entry,
-        text="SWING",
-        width=48,
+        text="RETEST",
+        width=54,
         command=lambda: app.toggle_entry_exit_tactic("SWING_REJECTION"),
     )
     app.btn_entry_swing.pack(side="left", padx=1)
+    app.btn_entry_struct = ctk.CTkButton(
+        f_entry,
+        text="STRUCT",
+        width=54,
+        command=lambda: app.toggle_entry_exit_tactic("SWING_STRUCTURE"),
+    )
+    app.btn_entry_struct.pack(side="left", padx=1)
     app.btn_entry_fib = ctk.CTkButton(
         f_entry,
         text="FIB",
