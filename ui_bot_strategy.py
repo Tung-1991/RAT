@@ -1407,10 +1407,11 @@ class BotStrategyUI(ctk.CTkToplevel):
 
         self.bot_tactic_vars = {}
         current_tactic_str = risk_data.get("bot_tsl", "BE+STEP_R+SWING")
+        current_tactics = {x.strip() for x in str(current_tactic_str).split("+") if x.strip()}
 
         # [NEW V4.4] Bổ sung thêm BE_CASH và PSAR_TRAIL vào danh sách chiến thuật Bot
         for t in ["BE", "PNL", "STEP_R", "SWING", "BE_CASH", "PSAR_TRAIL", "ANTI_CASH"]:
-            is_active = t in current_tactic_str
+            is_active = t in current_tactics
             var = ctk.BooleanVar(value=is_active)
             ctk.CTkCheckBox(
                 f_tactic_btns,
