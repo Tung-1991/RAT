@@ -26,6 +26,7 @@ def _get_template_dir():
 
 EE_EXIT_LABELS = {
     "AUTO": "AUTO - TP theo Entry",
+    "NO_TP": "OFF - không đặt TP",
     "FALLBACK_R": "R TP",
     "SWING_REJECTION": "SWING RETEST TP",
     "SWING_STRUCTURE": "SWING STRUCT TP",
@@ -35,7 +36,7 @@ EE_EXIT_LABELS = {
 EE_EXIT_VALUES = {v: k for k, v in EE_EXIT_LABELS.items()}
 
 EE_SL_LABELS = {
-    "SANDBOX": "SANDBOX - Base SL Group",
+    "SANDBOX": "SANDBOX - dùng Bot Base SL",
     "AUTO": "AUTO - SL theo Entry",
     "SWING_REJECTION": "SWING RETEST - E/E SL",
     "SWING_STRUCTURE": "SWING STRUCT SL",
@@ -1352,7 +1353,7 @@ class BotStrategyUI(ctk.CTkToplevel):
         f_base_sl.pack(fill="x", padx=20, pady=5)
         ctk.CTkLabel(
             f_base_sl,
-            text="BASE SWING SL GROUP:",
+            text="BOT BASE SL GROUP:",
             font=("Roboto", 13, "bold"),
             text_color="#FF3D00",
         ).pack(side="left")
@@ -1368,13 +1369,19 @@ class BotStrategyUI(ctk.CTkToplevel):
             variable=self.var_base_sl,
             width=140,
         ).pack(side="left", padx=15)
+        ctk.CTkLabel(
+            f_base_sl,
+            text="SL gốc của bot: BUY dùng swing low group này, SELL dùng swing high group này.",
+            font=("Roboto", 11, "italic"),
+            text_color="#B0BEC5",
+        ).pack(side="left", padx=(0, 10))
 
         # [NEW] ATR Multiplier cho Bot SL
         f_sl_mult = ctk.CTkFrame(self.tab_risk, fg_color="transparent")
         f_sl_mult.pack(fill="x", padx=20, pady=5)
         ctk.CTkLabel(
             f_sl_mult,
-            text="BASE SL BUFFER ATR:",
+            text="BOT BASE SL BUFFER ATR:",
             font=("Roboto", 13, "bold"),
             text_color="#29B6F6",
         ).pack(side="left")
@@ -1382,6 +1389,12 @@ class BotStrategyUI(ctk.CTkToplevel):
         ctk.CTkEntry(
             f_sl_mult, textvariable=self.var_sl_mult, width=80, justify="center"
         ).pack(side="left", padx=15)
+        ctk.CTkLabel(
+            f_sl_mult,
+            text="Buffer cộng thêm quanh swing của Bot Base SL.",
+            font=("Roboto", 11, "italic"),
+            text_color="#B0BEC5",
+        ).pack(side="left", padx=(0, 10))
 
         ctk.CTkLabel(
             self.tab_risk,
@@ -1418,7 +1431,7 @@ class BotStrategyUI(ctk.CTkToplevel):
         f_entry_btns.pack(fill="x", padx=20, pady=5)
         ctk.CTkLabel(
             f_entry_btns,
-            text="Entry gate cho bot:",
+            text="1. ENTRY MODE - chọn nhiều, mode READY đầu tiên sẽ vào lệnh:",
             font=("Roboto", 12, "bold"),
             text_color="#D7DCE2",
         ).pack(anchor="w", padx=12, pady=(8, 2))
@@ -1457,17 +1470,21 @@ class BotStrategyUI(ctk.CTkToplevel):
         ).pack(side="left", padx=(18, 10))
         ctk.CTkLabel(
             f_entry_btns,
-            text="Fallback R chỉ chạy sau cùng nếu các Entry mode khác chưa READY hoặc thiếu dữ liệu theo policy.",
+            text="Fallback R là entry dự phòng cuối cùng. Nếu bật, nó chỉ chạy sau Swing/FIB/Pullback hoặc khi thiếu dữ liệu theo policy.",
             font=("Roboto", 11, "italic"),
             text_color="#B0BEC5",
+            wraplength=900,
+            justify="left",
         ).pack(anchor="w", padx=12, pady=(0, 6))
         f_policy_pick = ctk.CTkFrame(f_entry_btns, fg_color="transparent")
         f_policy_pick.pack(fill="x", padx=12, pady=(0, 6))
         ctk.CTkLabel(
             f_policy_pick,
-            text="Missing Data:",
+            text="2. DATA POLICY:",
             font=("Roboto", 12, "bold"),
             text_color="#D7DCE2",
+            width=120,
+            anchor="w",
         ).pack(side="left", padx=(0, 8))
         self.bot_entry_exit_missing_var = ctk.StringVar(
             value=EE_MISSING_LABELS.get(entry_exit_data.get("missing_data_policy", "FALLBACK_R"), "Thiếu dữ liệu -> dùng R")
@@ -1480,20 +1497,24 @@ class BotStrategyUI(ctk.CTkToplevel):
         ).pack(side="left", padx=(0, 12))
         ctk.CTkLabel(
             f_policy_pick,
-            text="Policy này thuộc Sandbox vì nó quyết định fallback/chặn toàn bộ E/E.",
+            text="Thiếu dữ liệu thì chặn lệnh hoặc cho R dự phòng xử lý.",
             font=("Roboto", 11, "italic"),
             text_color="#B0BEC5",
+            wraplength=820,
+            justify="left",
         ).pack(side="left")
         f_sl_pick = ctk.CTkFrame(f_entry_btns, fg_color="transparent")
         f_sl_pick.pack(fill="x", padx=12, pady=(0, 6))
         ctk.CTkLabel(
             f_sl_pick,
-            text="SL Mode:",
+            text="3. SL MODE:",
             font=("Roboto", 12, "bold"),
             text_color="#D7DCE2",
+            width=120,
+            anchor="w",
         ).pack(side="left", padx=(0, 8))
         self.bot_entry_exit_sl_var = ctk.StringVar(
-            value=EE_SL_LABELS.get(entry_exit_data.get("sl_mode", "SANDBOX"), "SANDBOX - Base SL Group")
+            value=EE_SL_LABELS.get(entry_exit_data.get("sl_mode", "SANDBOX"), "SANDBOX - dùng Bot Base SL")
         )
         ctk.CTkOptionMenu(
             f_sl_pick,
@@ -1503,17 +1524,21 @@ class BotStrategyUI(ctk.CTkToplevel):
         ).pack(side="left", padx=(0, 12))
         ctk.CTkLabel(
             f_sl_pick,
-            text="SANDBOX dùng Base SL Group/Buffer ở Risk & TSL; Swing Retest SL dùng group/buffer trong E/E.",
+            text="SANDBOX = SL gốc phía trên. AUTO = đi theo entry vừa khớp. SWING/FIB/PULLBACK = ép SL theo tactic đó.",
             font=("Roboto", 11, "italic"),
             text_color="#B0BEC5",
+            wraplength=820,
+            justify="left",
         ).pack(side="left")
         f_exit_pick = ctk.CTkFrame(f_entry_btns, fg_color="transparent")
         f_exit_pick.pack(fill="x", padx=12, pady=(0, 8))
         ctk.CTkLabel(
             f_exit_pick,
-            text="TP Mode:",
+            text="4. TP MODE:",
             font=("Roboto", 12, "bold"),
             text_color="#D7DCE2",
+            width=120,
+            anchor="w",
         ).pack(side="left", padx=(0, 8))
         self.bot_entry_exit_var = ctk.StringVar(
             value=EE_EXIT_LABELS.get(entry_exit_data.get("exit_tactic", "AUTO"), "AUTO - TP theo Entry")
@@ -1526,9 +1551,11 @@ class BotStrategyUI(ctk.CTkToplevel):
         ).pack(side="left", padx=(0, 12))
         ctk.CTkLabel(
             f_exit_pick,
-            text="AUTO: TP theo Entry vừa khớp. Entry quyết định vùng vào, SL/TP chọn nơi thoát.",
+            text="AUTO = TP theo entry vừa khớp. OFF = không đặt TP, chỉ còn SL/TSL/manual quản lý thoát.",
             font=("Roboto", 11, "italic"),
             text_color="#B0BEC5",
+            wraplength=820,
+            justify="left",
         ).pack(side="left")
 
         ctk.CTkFrame(self.tab_risk, height=2, fg_color="#333").pack(

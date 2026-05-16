@@ -659,7 +659,9 @@ class TradeManager:
             use_swing_tp = safeguard_cfg.get("BOT_USE_SWING_TP", False)
             use_rr_tp = safeguard_cfg.get("BOT_USE_RR_TP", True)
 
-            if ee_tp_override:
+            if ee_decision and ee_decision.get("tp_disabled"):
+                tp_price = 0.0
+            elif ee_tp_override is not None:
                 tp_price = float(ee_tp_override)
             elif use_swing_tp and context and swing_h and swing_l and atr_val:
                 tp_price = (

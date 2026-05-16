@@ -81,7 +81,9 @@ def format_decision(decision):
         parts.append(f"SL theo {sl_source or entry} {sl:.2f}")
     elif decision.get("sl_source") == "SANDBOX":
         parts.append("SL theo SANDBOX")
-    if tp:
+    if decision.get("tp_disabled") or decision.get("tp_source") == "OFF":
+        parts.append("TP OFF")
+    elif tp:
         parts.append(f"TP theo {exit_tactic} {tp:.2f}" if exit_tactic else f"TP {tp:.2f}")
     if reason:
         parts.append(reason)
@@ -230,7 +232,15 @@ def _swing_structure_entry(symbol, direction, price, context, cfg, ttl, now):
         breakout = ms.get("hh")
         needed = "UP"
         if bias != needed or not _positive(anchor):
-            return _missing(symbol, direction, price, "SWING_STRUCTURE", f"No UP structure HL/HH {group}", cfg, ttl, now)
+            return _decision(
+                "WAIT",
+                symbol,
+                direction,
+                price,
+                entry_tactic="SWING_STRUCTURE",
+                reason=f"Chờ UP structure HH/HL {group}",
+                expires_at=now + ttl,
+            )
         zone = (float(anchor), float(anchor) + atr * entry_atr)
         stop = float(anchor) - atr * sl_buffer
     else:
@@ -238,7 +248,15 @@ def _swing_structure_entry(symbol, direction, price, context, cfg, ttl, now):
         breakout = ms.get("ll")
         needed = "DOWN"
         if bias != needed or not _positive(anchor):
-            return _missing(symbol, direction, price, "SWING_STRUCTURE", f"No DOWN structure LH/LL {group}", cfg, ttl, now)
+            return _decision(
+                "WAIT",
+                symbol,
+                direction,
+                price,
+                entry_tactic="SWING_STRUCTURE",
+                reason=f"Chờ DOWN structure LH/LL {group}",
+                expires_at=now + ttl,
+            )
         zone = (float(anchor) - atr * entry_atr, float(anchor))
         stop = float(anchor) + atr * sl_buffer
 
@@ -384,6 +402,12 @@ def _apply_sl(decision, price, context, cfg):
 
 def _apply_exit(decision, price, context, cfg):
     exit_tactic = cfg.get("exit_tactic") or "AUTO"
+    if str(exit_tactic).upper() in ("NO_TP", "OFF"):
+        decision["exit_tactic"] = "NO_TP"
+        decision["tp"] = 0.0
+        decision["tp_source"] = "OFF"
+        decision["tp_disabled"] = True
+        return
     if exit_tactic == "AUTO":
         exit_tactic = _auto_exit_tactic(decision.get("entry_tactic"))
     decision["exit_tactic"] = exit_tactic
@@ -641,6 +665,7 @@ def _decision(status, symbol, direction, price, **kwargs):
         "tp": kwargs.pop("tp", None),
         "sl_source": kwargs.pop("sl_source", None),
         "tp_source": kwargs.pop("tp_source", None),
+        "tp_disabled": kwargs.pop("tp_disabled", False),
         "reason": kwargs.pop("reason", ""),
         "expires_at": kwargs.pop("expires_at", None),
     }
@@ -651,6 +676,8 @@ def _decision(status, symbol, direction, price, **kwargs):
 def _short_mode(mode):
     return {
         "FALLBACK_R": "R",
+        "NO_TP": "NO TP",
+        "OFF": "OFF",
         "SWING_REJECTION": "SWING RETEST",
         "SWING_RETEST": "SWING RETEST",
         "SWING_STRUCTURE": "SWING STRUCT",

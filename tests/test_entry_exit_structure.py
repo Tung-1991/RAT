@@ -3,7 +3,7 @@ import unittest
 
 import pandas as pd
 
-from core.entry_exit_engine import evaluate_entry_exit
+from core.entry_exit_engine import evaluate_entry_exit, format_decision
 from core.market_structure import analyze_market_structure
 
 
@@ -116,6 +116,38 @@ class EntryExitStructureTests(unittest.TestCase):
         self.assertEqual(decision["status"], "READY")
         self.assertEqual(decision["entry_tactic"], "SWING_STRUCTURE")
         self.assertAlmostEqual(decision["sl"], 88.0)
+
+    def test_swing_structure_missing_structure_is_wait_not_error(self):
+        cfg = {
+            "enabled": True,
+            "active_tactics": ["SWING_STRUCTURE"],
+            "entry_tactics": ["SWING_STRUCTURE"],
+            "missing_data_policy": "BLOCK",
+            "sl_mode": "SANDBOX",
+            "exit_tactic": "AUTO",
+            "swing_structure": {"source_group": "G2", "entry_atr": 0.7, "sl_atr_buffer": 0.2},
+        }
+        ctx = {"atr_G2": 10.0, "ms_G2_bias": "RANGE"}
+        decision = evaluate_entry_exit("TEST", "SELL", 95.0, ctx, cfg)
+        self.assertEqual(decision["status"], "WAIT")
+        self.assertIn("Chờ DOWN structure", decision["reason"])
+
+    def test_no_tp_exit_mode_disables_tp_override(self):
+        cfg = {
+            "enabled": True,
+            "active_tactics": ["FALLBACK_R"],
+            "entry_tactics": ["FALLBACK_R"],
+            "missing_data_policy": "BLOCK",
+            "sl_mode": "AUTO",
+            "exit_tactic": "NO_TP",
+        }
+        decision = evaluate_entry_exit("TEST", "BUY", 100.0, {}, cfg)
+        self.assertEqual(decision["status"], "READY")
+        self.assertEqual(decision["exit_tactic"], "NO_TP")
+        self.assertTrue(decision["tp_disabled"])
+        self.assertEqual(decision["tp"], 0.0)
+        self.assertEqual(decision["tp_source"], "OFF")
+        self.assertIn("TP OFF", format_decision(decision))
 
 
 if __name__ == "__main__":
