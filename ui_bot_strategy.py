@@ -1470,7 +1470,7 @@ class BotStrategyUI(ctk.CTkToplevel):
         ).pack(side="left", padx=(18, 10))
         ctk.CTkLabel(
             f_entry_btns,
-            text="Fallback R là entry dự phòng cuối cùng. Nếu bật, nó chỉ chạy sau Swing/FIB/Pullback hoặc khi thiếu dữ liệu theo policy.",
+            text="Fallback R tick ở đây = R chạy sau cùng nếu các Entry mode khác chưa READY. Data Policy dùng R là đường riêng khi tactic thiếu dữ liệu.",
             font=("Roboto", 11, "italic"),
             text_color="#B0BEC5",
             wraplength=900,
