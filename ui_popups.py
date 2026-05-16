@@ -3727,7 +3727,8 @@ def show_history_popup(app):
 
     top.title("Lịch sử Giao dịch (Nhóm theo Phiên)")
 
-    top.geometry("900x550")
+    top.geometry("1400x650")
+    top.minsize(1100, 550)
 
     top.attributes("-topmost", True)
 
@@ -3793,37 +3794,38 @@ def show_history_popup(app):
 
     )
 
-    tr = ttk.Treeview(tab_all_history, columns=cols, show="tree headings")
+    history_frame = ctk.CTkFrame(tab_all_history, fg_color="transparent")
+    history_frame.pack(fill="both", expand=True, padx=6, pady=6)
 
+    tr = ttk.Treeview(history_frame, columns=cols, show="tree headings")
 
+    yscrollbar = ttk.Scrollbar(history_frame, orient="vertical", command=tr.yview)
+    xscrollbar = ttk.Scrollbar(history_frame, orient="horizontal", command=tr.xview)
+    tr.configure(yscrollcommand=yscrollbar.set, xscrollcommand=xscrollbar.set)
 
-    xscrollbar = ttk.Scrollbar(tab_all_history, orient="horizontal", command=tr.xview)
-
-    xscrollbar.pack(side="bottom", fill="x")
-
-    tr.configure(xscrollcommand=xscrollbar.set)
-
-
-
-    tr.pack(fill="both", expand=True)
+    tr.grid(row=0, column=0, sticky="nsew")
+    yscrollbar.grid(row=0, column=1, sticky="ns")
+    xscrollbar.grid(row=1, column=0, sticky="ew")
+    history_frame.grid_rowconfigure(0, weight=1)
+    history_frame.grid_columnconfigure(0, weight=1)
 
 
 
     # Cột Tree (chứa Session Name)
 
-    tr.column("#0", width=230, anchor="w")
+    tr.column("#0", width=260, minwidth=260, anchor="w", stretch=False)
 
     tr.heading("#0", text="Session")
 
 
 
-    widths = [140, 90, 80, 80, 60, 80, 80, 80, 60, 80, 80, 80, 170, 120]
+    widths = [150, 100, 95, 85, 70, 110, 110, 110, 80, 95, 95, 95, 220, 240]
 
     for c, w in zip(cols, widths):
 
         tr.heading(c, text=c)
 
-        tr.column(c, width=w, anchor="center")
+        tr.column(c, width=w, minwidth=w, anchor="center", stretch=False)
 
 
 

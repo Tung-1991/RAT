@@ -2163,9 +2163,11 @@ class TradeManager:
                     steps = math.floor(extra_profit / step_usd) if step_usd > 0 else 0
 
                     cash_strat = tsl_cfg.get("BE_CASH_STRAT", "TRAILING (Gap)")
+                    cash_lock_label = f"CASH Step {steps}"
                     if steps >= 1:
                         if cash_strat == "LOCK (Tight)":
                             locked_profit_usd = trigger_usd + (steps * step_usd)
+                            cash_lock_label = f"CASH Lock ${locked_profit_usd:.2f}"
                         elif cash_strat == "SOFT LOCK (Buffer)":
                             target_profit_usd = trigger_usd + (steps * step_usd)
                             buffer_type = tsl_cfg.get("BE_CASH_SOFT_BUFFER_TYPE", "USD")
@@ -2201,10 +2203,16 @@ class TradeManager:
                                 if raw_lock_usd > 0
                                 else 0.0
                             )
+                            cash_lock_label = (
+                                f"CASH SoftLock ${locked_profit_usd:.2f}"
+                                f" (Target ${target_profit_usd:.2f} - Buffer ${buffer_usd:.2f})"
+                            )
                         else:
                             locked_profit_usd = trigger_usd + ((steps - 1) * step_usd)
+                            cash_lock_label = f"CASH Trail ${locked_profit_usd:.2f}"
                     elif cash_strat == "LOCK (Tight)":
                         locked_profit_usd = trigger_usd
+                        cash_lock_label = f"CASH Lock ${locked_profit_usd:.2f}"
                     elif cash_strat == "SOFT LOCK (Buffer)":
                         buffer_type = tsl_cfg.get("BE_CASH_SOFT_BUFFER_TYPE", "USD")
                         buffer_val = float(tsl_cfg.get("BE_CASH_SOFT_BUFFER", 3.0))
@@ -2239,6 +2247,10 @@ class TradeManager:
                             if raw_lock_usd > 0
                             else 0.0
                         )
+                        cash_lock_label = (
+                            f"CASH SoftLock ${locked_profit_usd:.2f}"
+                            f" (Trig ${trigger_usd:.2f} - Buffer ${buffer_usd:.2f})"
+                        )
 
                     # Quy đổi lợi nhuận USD muốn khóa ra khoảng cách giá (Price Distance)
                     lock_dist_price = locked_profit_usd / (
@@ -2257,7 +2269,7 @@ class TradeManager:
                         base_be_price = pos.price_open - breakeven_dist
                         lock_price = base_be_price - lock_dist_price
 
-                    candidates.append((lock_price, f"CASH Step {steps}"))
+                    candidates.append((lock_price, cash_lock_label))
 
                 # Tính Milestone hiển thị lên UI
                 if profit_usd < trigger_usd:
@@ -2271,10 +2283,46 @@ class TradeManager:
                     extra_profit = profit_usd - trigger_usd
                     steps = math.floor(extra_profit / step_usd) if step_usd > 0 else 0
                     next_target_usd = trigger_usd + (steps + 1) * step_usd
+                    milestone_label = f"CASH Đợi Step {steps + 1} (${next_target_usd:.2f})"
+                    if tsl_cfg.get("BE_CASH_STRAT", "TRAILING (Gap)") == "SOFT LOCK (Buffer)":
+                        buffer_type = tsl_cfg.get("BE_CASH_SOFT_BUFFER_TYPE", "USD")
+                        buffer_val = float(tsl_cfg.get("BE_CASH_SOFT_BUFFER", 3.0))
+                        if buffer_type == "PERCENT":
+                            buffer_usd = bal * (buffer_val / 100.0)
+                        elif buffer_type == "POINT":
+                            buffer_usd = (
+                                buffer_val
+                                * point
+                                * pos.volume
+                                * sym_info.trade_contract_size
+                            )
+                        elif buffer_type == "ATR":
+                            atr_group = tsl_cfg.get("SWING_GROUP", "G2")
+                            if "DYNAMIC" in atr_group:
+                                market_mode = context.get("market_mode", "ANY")
+                                atr_group = "G1" if market_mode in ["TREND", "BREAKOUT"] else "G2"
+                            atr_val = float(context.get(f"atr_{atr_group}", 0.0) or 0.0)
+                            buffer_usd = (
+                                buffer_val
+                                * atr_val
+                                * pos.volume
+                                * sym_info.trade_contract_size
+                            )
+                        else:
+                            buffer_usd = buffer_val
+                        target_usd = trigger_usd + (steps * step_usd)
+                        min_lock_usd = float(tsl_cfg.get("BE_CASH_MIN_LOCK", 0.0))
+                        locked_usd = max(target_usd - buffer_usd, min_lock_usd)
+                        if target_usd - buffer_usd <= 0:
+                            locked_usd = 0.0
+                        milestone_label = (
+                            f"CASH SoftLock ${locked_usd:.2f}; "
+                            f"đợi Step {steps + 1} (${next_target_usd:.2f})"
+                        )
                     milestones.append(
                         (
                             next_target_usd - profit_usd,
-                            f"CASH Đợi Step {steps + 1} (${next_target_usd:.2f})",
+                            milestone_label,
                         )
                     )
 
