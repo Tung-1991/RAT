@@ -3830,13 +3830,13 @@ def show_history_popup(app):
 
     # Cột Tree (chứa Session Name)
 
-    tr.column("#0", width=280, minwidth=280, anchor="w", stretch=False)
+    tr.column("#0", width=380, minwidth=380, anchor="w", stretch=False)
 
     tr.heading("#0", text="Session")
 
 
 
-    widths = [230, 150, 130, 95, 85, 145, 145, 135, 105, 120, 120, 120, 340, 280]
+    widths = [340, 240, 220, 160, 120, 190, 190, 190, 150, 180, 180, 180, 460, 760]
 
     for c, w in zip(cols, widths):
 
