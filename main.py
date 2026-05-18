@@ -1617,7 +1617,7 @@ class BotUI(ctk.CTk):
             row_id = self.tree.identify_row(event.y)
             if row_id and col == "#9":
                 if self.var_confirm_close.get() and not messagebox.askyesno(
-                    "Xác nhận", f"Đóng lệnh #{row_id}?", parent=self
+                    "Đóng lệnh", f"Dóng lệnh #{row_id}?", parent=self
                 ):
                     return
                 p = next(
@@ -1649,7 +1649,6 @@ class BotUI(ctk.CTk):
                 self.tree.selection_set(row_id)
                 ticket = int(row_id)
 
-                # [FIX V4.4] Thêm Toggle Close on Reverse vào Menu chuột phải (Sử dụng tag REV_C)
                 current_tactic = self.trade_mgr.get_trade_tactic(ticket)
                 rev_status = "ON" if "REV_C" in current_tactic else "OFF"
 
@@ -1670,47 +1669,10 @@ class BotUI(ctk.CTk):
                     label=f"📝 Sửa lệnh #{ticket}",
                     command=lambda: self.open_edit_popup(ticket),
                 )
-                
-                def clear_tp():
-                    try:
-                        pos = next((p for p in self.connector.get_all_open_positions() if p.ticket == ticket), None)
-                        if pos:
-                            self.connector.modify_position(ticket, sl=pos.sl, tp=0.0)
-                            self.log_message(f"✂️ Đã gỡ bỏ TP (thả rông) cho lệnh #{ticket}")
-                    except Exception as e:
-                        self.log_message(f"Lỗi xóa TP: {e}")
-
-                menu.add_command(
-                    label=f"✂️ Xóa bỏ TP (Thả rông)",
-                    command=clear_tp,
-                )
-                
                 menu.add_command(
                     label=f"🔄 Đảo Chiều Tự Cắt: {rev_status}",
                     command=toggle_rev,
                 )
-                ee_menu = Menu(menu, tearoff=0, font=("Arial", 13))
-                ee_options = [
-                    ("OFF", "OFF"),
-                    ("R", "FALLBACK_R"),
-                    ("RETEST", "SWING_REJECTION"),
-                    ("STRUCT", "SWING_STRUCTURE"),
-                    ("FIB", "FIB_RETRACE"),
-                    ("PULL", "PULLBACK_ZONE"),
-                ]
-                current_ee = self.trade_mgr.get_trade_entry_exit_tactic(ticket)
-
-                def set_entry_exit_tactic(new_tactic):
-                    self.trade_mgr.update_trade_entry_exit_tactic(ticket, new_tactic)
-                    self.log_message(f"Update Entry/Exit #{ticket}: {new_tactic}", target="manual")
-
-                for label, value in ee_options:
-                    marker = "✓ " if current_ee == value else ""
-                    ee_menu.add_command(
-                        label=f"{marker}{label}",
-                        command=lambda v=value: set_entry_exit_tactic(v),
-                    )
-                menu.add_cascade(label="Entry/Exit Mode", menu=ee_menu)
                 menu.add_separator()
                 menu.add_command(
                     label="❌ Đóng Lệnh Này",
