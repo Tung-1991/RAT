@@ -108,23 +108,62 @@ class TradeManager:
             return 0.0
         side = "LONG" if order_type == mt5.ORDER_TYPE_BUY else "SHORT"
         risk = self.connector.calculate_profit(symbol, side, volume, entry_price, sl_price)
-        return abs(float(risk or 0.0))
+        mt5_risk = abs(float(risk or 0.0))
+        formula_risk = 0.0
+        try:
+            sym_info = mt5.symbol_info(symbol)
+            contract_size = float(getattr(sym_info, "trade_contract_size", 1.0) or 1.0)
+            formula_risk = abs(float(entry_price) - float(sl_price)) * float(volume) * contract_size
+        except Exception:
+            formula_risk = 0.0
+        return max(mt5_risk, formula_risk)
 
     def _get_ticket_risk_usd(self, pos):
         s_ticket = str(pos.ticket)
         risk_usd = float(self.state.get("initial_r_usd", {}).get(s_ticket, 0.0) or 0.0)
+        current_sl_risk = 0.0
+        if getattr(pos, "sl", 0.0) and pos.sl > 0:
+            is_buy = pos.type == mt5.ORDER_TYPE_BUY
+            sl_is_loss_side = (is_buy and pos.sl < pos.price_open) or (
+                not is_buy and pos.sl > pos.price_open
+            )
+            if sl_is_loss_side:
+                current_sl_risk = self._calc_risk_usd(
+                    pos.symbol, pos.type, pos.volume, pos.price_open, pos.sl
+                )
         if risk_usd > 0:
+            if current_sl_risk > risk_usd:
+                self.state.setdefault("initial_r_usd", {})[s_ticket] = current_sl_risk
+                return current_sl_risk
             return risk_usd
 
         one_r_dist = float(self.state.get("initial_r_dist", {}).get(s_ticket, 0.0) or 0.0)
         if one_r_dist <= 0:
-            return 0.0
+            if current_sl_risk > 0:
+                self.state.setdefault("initial_r_usd", {})[s_ticket] = current_sl_risk
+            return current_sl_risk
         is_buy = pos.type == mt5.ORDER_TYPE_BUY
         initial_sl = pos.price_open - one_r_dist if is_buy else pos.price_open + one_r_dist
         risk_usd = self._calc_risk_usd(pos.symbol, pos.type, pos.volume, pos.price_open, initial_sl)
         if risk_usd > 0:
             self.state.setdefault("initial_r_usd", {})[s_ticket] = risk_usd
         return risk_usd
+
+    def _get_ticket_r_dist(self, pos):
+        s_ticket = str(pos.ticket)
+        one_r_dist = float(self.state.get("initial_r_dist", {}).get(s_ticket, 0.0) or 0.0)
+        current_sl_dist = 0.0
+        if getattr(pos, "sl", 0.0) and pos.sl > 0:
+            is_buy = pos.type == mt5.ORDER_TYPE_BUY
+            sl_is_loss_side = (is_buy and pos.sl < pos.price_open) or (
+                not is_buy and pos.sl > pos.price_open
+            )
+            if sl_is_loss_side:
+                current_sl_dist = abs(pos.price_open - pos.sl)
+        if current_sl_dist > one_r_dist:
+            self.state.setdefault("initial_r_dist", {})[s_ticket] = current_sl_dist
+            return current_sl_dist
+        return one_r_dist
 
     def _resolve_money_value(self, value, unit, pos=None, equity=None):
         raw = float(value or 0.0)
@@ -1890,7 +1929,7 @@ class TradeManager:
         sym_info = mt5.symbol_info(pos.symbol)
         point = sym_info.point if sym_info else 0.00001
 
-        one_r_dist = self.state.get("initial_r_dist", {}).get(str(pos.ticket), 0.0)
+        one_r_dist = self._get_ticket_r_dist(pos)
         if one_r_dist <= 0:
             if pos.sl > 0:
                 one_r_dist = abs(pos.price_open - pos.sl)

@@ -741,7 +741,7 @@ def setup_right_panel(app, parent):
         "Trạng thái",
         "✖",
     ]
-    widths = [115, 95, 330, 205, 225, 265, 255, 385, 42]
+    widths = [190, 170, 640, 390, 420, 560, 500, 820, 60]
     anchors = [
         "center",
         "center",
