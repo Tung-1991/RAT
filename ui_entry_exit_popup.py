@@ -303,7 +303,7 @@ def open_entry_exit_popup(app, override_symbol=None):
             "tp_policy": _value(TP_POLICY_DISPLAY, var_tp_policy.get(), "FALLBACK_R"),
             "sl_source_group": _value(SL_SOURCE_DISPLAY, var_sl_source.get(), "BASE_SL"),
             "default_exit": {
-                "use_rr_tp": True,
+                "use_rr_tp": exit_tactic not in ("NO_TP", "OFF"),
                 "tp_rr_ratio": tp_rr,
                 "use_swing_tp": exit_tactic in ("SWING_REJECTION", "SWING_STRUCTURE"),
             },

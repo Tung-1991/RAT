@@ -658,8 +658,12 @@ class TradeManager:
         else:
             use_swing_tp = safeguard_cfg.get("BOT_USE_SWING_TP", False)
             use_rr_tp = safeguard_cfg.get("BOT_USE_RR_TP", True)
+            ee_exit_tactic = str(entry_exit_cfg.get("exit_tactic", "")).upper()
+            ee_tp_disabled = ee_exit_tactic in ("NO_TP", "OFF") or (
+                ee_decision and ee_decision.get("tp_disabled")
+            )
 
-            if ee_decision and ee_decision.get("tp_disabled"):
+            if ee_tp_disabled:
                 tp_price = 0.0
             elif ee_tp_override is not None:
                 tp_price = float(ee_tp_override)
@@ -1157,7 +1161,14 @@ class TradeManager:
                                     ) or s_ticket in self.state.get(
                                         "parent_baskets", {}
                                     )
-                                    exit_reason = "Basket_TP" if is_basket else "Hit_TP"
+                                    if is_basket:
+                                        exit_reason = (
+                                            "Basket_TP"
+                                            if real_pnl >= 0
+                                            else "Basket_TP_Order_Loss"
+                                        )
+                                    else:
+                                        exit_reason = "Hit_TP"
                                 elif deal_reason == mt5.DEAL_REASON_SO:
                                     exit_reason = "Stop_Out"
                                 elif deal_reason == mt5.DEAL_REASON_CLIENT:
@@ -2193,6 +2204,8 @@ class TradeManager:
                                     * pos.volume
                                     * sym_info.trade_contract_size
                                 )
+                            elif buffer_type == "R":
+                                buffer_usd = risk_usd * buffer_val if risk_usd > 0 else buffer_val
                             else:
                                 buffer_usd = buffer_val
 
@@ -2237,6 +2250,8 @@ class TradeManager:
                                 * pos.volume
                                 * sym_info.trade_contract_size
                             )
+                        elif buffer_type == "R":
+                            buffer_usd = risk_usd * buffer_val if risk_usd > 0 else buffer_val
                         else:
                             buffer_usd = buffer_val
 
@@ -2308,6 +2323,8 @@ class TradeManager:
                                 * pos.volume
                                 * sym_info.trade_contract_size
                             )
+                        elif buffer_type == "R":
+                            buffer_usd = risk_usd * buffer_val if risk_usd > 0 else buffer_val
                         else:
                             buffer_usd = buffer_val
                         target_usd = trigger_usd + (steps * step_usd)

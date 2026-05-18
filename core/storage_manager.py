@@ -452,7 +452,7 @@ def append_trade_log(ticket, symbol, type_str, volume, entry_price, sl, tp, fee,
         def reason_rank(reason):
             if reason in ("Manual_Close", "Watermark_Hit", "Basket_Drawdown_Hit"):
                 return 100
-            if reason.startswith("SL_") or reason in ("Hit_TP", "Basket_TP", "Hit_SL", "Stop_Out"):
+            if reason.startswith("SL_") or reason in ("Hit_TP", "Basket_TP", "Basket_TP_Order_Loss", "Hit_SL", "Stop_Out"):
                 return 80
             if reason in ("Bot_Close", "Closed"):
                 return 10

@@ -2322,7 +2322,7 @@ def open_tsl_popup(app, override_symbol=None):
 
     cbo_cash_buffer_type = ctk.CTkOptionMenu(
 
-        f_cash_r3, values=["USD", "PERCENT", "POINT", "ATR"], width=90
+        f_cash_r3, values=["USD", "PERCENT", "POINT", "ATR", "R"], width=90
 
     )
 
@@ -3797,7 +3797,24 @@ def show_history_popup(app):
     history_frame = ctk.CTkFrame(tab_all_history, fg_color="transparent")
     history_frame.pack(fill="both", expand=True, padx=6, pady=6)
 
-    tr = ttk.Treeview(history_frame, columns=cols, show="tree headings")
+    style = ttk.Style()
+    style.configure(
+        "History.Treeview",
+        background="#242424",
+        foreground="white",
+        fieldbackground="#242424",
+        rowheight=28,
+        font=("Consolas", 12),
+    )
+    style.configure(
+        "History.Treeview.Heading",
+        background="#1f1f1f",
+        foreground="#e0e0e0",
+        font=("Roboto", 12, "bold"),
+        relief="flat",
+    )
+
+    tr = ttk.Treeview(history_frame, columns=cols, show="tree headings", style="History.Treeview")
 
     yscrollbar = ttk.Scrollbar(history_frame, orient="vertical", command=tr.yview)
     xscrollbar = ttk.Scrollbar(history_frame, orient="horizontal", command=tr.xview)
@@ -3813,13 +3830,13 @@ def show_history_popup(app):
 
     # Cột Tree (chứa Session Name)
 
-    tr.column("#0", width=260, minwidth=260, anchor="w", stretch=False)
+    tr.column("#0", width=210, minwidth=210, anchor="w", stretch=False)
 
     tr.heading("#0", text="Session")
 
 
 
-    widths = [150, 100, 95, 85, 70, 110, 110, 110, 80, 95, 95, 95, 220, 240]
+    widths = [175, 110, 95, 70, 65, 115, 115, 105, 80, 90, 90, 90, 250, 180]
 
     for c, w in zip(cols, widths):
 
@@ -4070,6 +4087,9 @@ def show_history_popup(app):
                 for row in reversed(group_rows):
 
                     if len(row) >= 14:
+                        display_reason = row[10]
+                        if display_reason == "Basket_TP" and _to_float(row[9]) < 0:
+                            display_reason = "Basket_TP_Order_Loss"
 
                         tr.insert(
 
@@ -4107,7 +4127,7 @@ def show_history_popup(app):
 
                                 row[12] if len(row) > 12 else "",
 
-                                row[10],
+                                display_reason,
 
                             ),
 

@@ -1175,6 +1175,12 @@ class BotStrategyUI(ctk.CTkToplevel):
             cfg["exit_tactic"] = exit_tactic or "AUTO"
             cfg["sl_mode"] = sl_mode or "SANDBOX"
             cfg["missing_data_policy"] = missing_policy or "FALLBACK_R"
+            cfg.setdefault("default_exit", {})
+            cfg["default_exit"]["use_rr_tp"] = cfg["exit_tactic"] not in ("NO_TP", "OFF")
+            cfg["default_exit"]["use_swing_tp"] = cfg["exit_tactic"] in (
+                "SWING_REJECTION",
+                "SWING_STRUCTURE",
+            )
             cfg["enabled"] = bool(active)
             cfg["preview_only"] = not bool(active)
         return cfg

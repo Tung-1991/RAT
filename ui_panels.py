@@ -695,14 +695,14 @@ def setup_right_panel(app, parent):
         background="#2b2b2b",
         foreground="white",
         fieldbackground="#2b2b2b",
-        rowheight=50,
-        font=("Consolas", 18),
+        rowheight=34,
+        font=("Consolas", 13),
     )
     style.configure(
         "Treeview.Heading",
         background="#1f1f1f",
         foreground="#e0e0e0",
-        font=("Roboto", 20, "bold"),
+        font=("Roboto", 14, "bold"),
         relief="flat",
     )
     style.map("Treeview", background=[("selected", "#3949ab")])
@@ -741,7 +741,7 @@ def setup_right_panel(app, parent):
         "Trạng thái",
         "✖",
     ]
-    widths = [190, 190, 560, 360, 390, 500, 470, 620, 55]
+    widths = [115, 95, 330, 205, 225, 265, 255, 385, 42]
     anchors = [
         "center",
         "center",
