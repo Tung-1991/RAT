@@ -695,14 +695,14 @@ def setup_right_panel(app, parent):
         background="#2b2b2b",
         foreground="white",
         fieldbackground="#2b2b2b",
-        rowheight=34,
-        font=("Consolas", 13),
+        rowheight=50,
+        font=("Consolas", 18),
     )
     style.configure(
         "Treeview.Heading",
         background="#1f1f1f",
         foreground="#e0e0e0",
-        font=("Roboto", 14, "bold"),
+        font=("Roboto", 20, "bold"),
         relief="flat",
     )
     style.map("Treeview", background=[("selected", "#3949ab")])

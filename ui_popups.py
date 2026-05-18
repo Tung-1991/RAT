@@ -3803,14 +3803,14 @@ def show_history_popup(app):
         background="#242424",
         foreground="white",
         fieldbackground="#242424",
-        rowheight=28,
-        font=("Consolas", 12),
+        rowheight=50,
+        font=("Consolas", 18),
     )
     style.configure(
         "History.Treeview.Heading",
         background="#1f1f1f",
         foreground="#e0e0e0",
-        font=("Roboto", 12, "bold"),
+        font=("Roboto", 20, "bold"),
         relief="flat",
     )
 
