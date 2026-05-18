@@ -182,7 +182,6 @@ def setup_left_panel(app, parent):
     app.cbo_account_type.set(config.DEFAULT_ACCOUNT_TYPE)
     app.cbo_account_type.pack(side="right", fill="x", padx=(5, 0))
 
-
     # --- DÒNG 2: TACTIC ---
     ctk.CTkLabel(f_set, text="TSL:", font=FONT_SECTION, text_color="#D7DCE2").grid(
         row=2, column=0, sticky="e", padx=(0, 8), pady=2
@@ -206,14 +205,17 @@ def setup_left_panel(app, parent):
         f_tsl_row, text="SWING", width=38, command=lambda: app.toggle_tactic("SWING")
     )
     app.btn_tactic_swing.pack(side="left", padx=1)
-    
+
     # [FIX V4.4] Thêm nút CASH và PSAR lên Pannel
     app.btn_tactic_cash = ctk.CTkButton(
         f_tsl_row, text="CASH", width=38, command=lambda: app.toggle_tactic("BE_CASH")
     )
     app.btn_tactic_cash.pack(side="left", padx=1)
     app.btn_tactic_psar = ctk.CTkButton(
-        f_tsl_row, text="PSAR", width=38, command=lambda: app.toggle_tactic("PSAR_TRAIL")
+        f_tsl_row,
+        text="PSAR",
+        width=38,
+        command=lambda: app.toggle_tactic("PSAR_TRAIL"),
     )
     app.btn_tactic_psar.pack(side="left", padx=1)
 
@@ -223,22 +225,22 @@ def setup_left_panel(app, parent):
     )
     f_extra = ctk.CTkFrame(f_set, fg_color="transparent")
     f_extra.grid(row=4, column=1, sticky="ew", padx=5)
-    
+
     app.btn_tactic_dca = ctk.CTkButton(
         f_extra, text="DCA", width=36, command=lambda: app.toggle_tactic("AUTO_DCA")
     )
     app.btn_tactic_dca.pack(side="left", padx=1)
-    
+
     app.btn_tactic_pca = ctk.CTkButton(
         f_extra, text="PCA", width=36, command=lambda: app.toggle_tactic("AUTO_PCA")
     )
     app.btn_tactic_pca.pack(side="left", padx=1)
-    
+
     app.btn_tactic_rev_c = ctk.CTkButton(
         f_extra, text="REV", width=34, command=lambda: app.toggle_tactic("REV_C")
     )
     app.btn_tactic_rev_c.pack(side="left", padx=1)
-    
+
     app.btn_tactic_anti_cash = ctk.CTkButton(
         f_extra, text="A.CUT", width=38, command=lambda: app.toggle_tactic("ANTI_CASH")
     )
@@ -246,6 +248,7 @@ def setup_left_panel(app, parent):
 
     try:
         from grid.grid_storage import load_grid_settings
+
         _grid_on = bool(load_grid_settings().get("ENABLED", False))
     except Exception:
         _grid_on = False
@@ -253,7 +256,7 @@ def setup_left_panel(app, parent):
     f_ad_cluster.pack(side="left", padx=(4, 1))
     f_ad_status = ctk.CTkFrame(f_ad_cluster, fg_color="transparent")
     f_ad_status.pack(side="left", padx=(0, 2))
-    
+
     f_grid_state = ctk.CTkFrame(f_ad_status, fg_color="transparent")
     f_grid_state.pack(anchor="w", pady=0)
     app.ind_ad_grid_light = ctk.CTkFrame(
@@ -271,7 +274,7 @@ def setup_left_panel(app, parent):
         height=10,
         text_color="#00B8D4" if _grid_on else "gray",
     ).pack(side="left")
-    
+
     f_hedge_state = ctk.CTkFrame(f_ad_status, fg_color="transparent")
     f_hedge_state.pack(anchor="w", pady=0)
     app.ind_ad_hedge_light = ctk.CTkFrame(
@@ -466,7 +469,9 @@ def setup_left_panel(app, parent):
     f_price_row.grid_columnconfigure(1, weight=1)
     f_price_row.grid_columnconfigure(2, minsize=106)
 
-    app.frame_trade_mode = ctk.CTkFrame(f_price_row, fg_color="#424242", corner_radius=6)
+    app.frame_trade_mode = ctk.CTkFrame(
+        f_price_row, fg_color="#424242", corner_radius=6
+    )
     app.frame_trade_mode.grid(row=0, column=0, sticky="w", padx=(0, 8))
     app.btn_mode_normal = ctk.CTkButton(
         app.frame_trade_mode,
@@ -556,7 +561,9 @@ def setup_left_panel(app, parent):
     )
     app.lbl_prev_risk.pack()
 
-    ctk.CTkFrame(f_dashboard, height=1, fg_color="#444").pack(fill="x", padx=10, pady=(2, 0))
+    ctk.CTkFrame(f_dashboard, height=1, fg_color="#444").pack(
+        fill="x", padx=10, pady=(2, 0)
+    )
     f_preview_tabs = ctk.CTkFrame(f_dashboard, fg_color="transparent")
     f_preview_tabs.pack(fill="x", padx=8, pady=(2, 0))
     f_preview_body = ctk.CTkFrame(f_dashboard, fg_color="transparent", height=28)
@@ -741,7 +748,7 @@ def setup_right_panel(app, parent):
         "Trạng thái",
         "✖",
     ]
-    widths = [230, 230, 700, 450, 490, 625, 590, 775, 70]
+    widths = [200, 200, 500, 400, 400, 400, 400, 700, 60]
     anchors = [
         "center",
         "center",
@@ -819,7 +826,7 @@ def setup_right_panel(app, parent):
             widget = app.txt_log_grid
         else:
             widget = app.txt_log_manual
-            
+
         widget.configure(state="normal")
         widget.delete("1.0", "end")
         widget.configure(state="disabled")
@@ -853,7 +860,9 @@ def setup_right_panel(app, parent):
         state="disabled",
         wrap="none",
     )
-    sb_manual_x = ttk.Scrollbar(tab_manual, orient="horizontal", command=app.txt_log_manual.xview)
+    sb_manual_x = ttk.Scrollbar(
+        tab_manual, orient="horizontal", command=app.txt_log_manual.xview
+    )
     app.txt_log_manual.configure(xscrollcommand=sb_manual_x.set)
     sb_manual_x.pack(fill="x", side="bottom")
     app.txt_log_manual.pack(fill="both", expand=True)
@@ -874,7 +883,9 @@ def setup_right_panel(app, parent):
         state="disabled",
         wrap="none",
     )
-    sb_bot_x = ttk.Scrollbar(tab_bot, orient="horizontal", command=app.txt_log_bot.xview)
+    sb_bot_x = ttk.Scrollbar(
+        tab_bot, orient="horizontal", command=app.txt_log_bot.xview
+    )
     app.txt_log_bot.configure(xscrollcommand=sb_bot_x.set)
     sb_bot_x.pack(fill="x", side="bottom")
     app.txt_log_bot.pack(fill="both", expand=True)
@@ -895,7 +906,9 @@ def setup_right_panel(app, parent):
         state="disabled",
         wrap="none",
     )
-    sb_bot_log_x = ttk.Scrollbar(tab_bot_log, orient="horizontal", command=app.txt_log_bot_log.xview)
+    sb_bot_log_x = ttk.Scrollbar(
+        tab_bot_log, orient="horizontal", command=app.txt_log_bot_log.xview
+    )
     app.txt_log_bot_log.configure(xscrollcommand=sb_bot_log_x.set)
     sb_bot_log_x.pack(fill="x", side="bottom")
     app.txt_log_bot_log.pack(fill="both", expand=True)
@@ -917,7 +930,9 @@ def setup_right_panel(app, parent):
         state="disabled",
         wrap="none",
     )
-    sb_grid_x = ttk.Scrollbar(tab_grid, orient="horizontal", command=app.txt_log_grid.xview)
+    sb_grid_x = ttk.Scrollbar(
+        tab_grid, orient="horizontal", command=app.txt_log_grid.xview
+    )
     app.txt_log_grid.configure(xscrollcommand=sb_grid_x.set)
     sb_grid_x.pack(fill="x", side="bottom")
     app.txt_log_grid.pack(fill="both", expand=True)
@@ -938,7 +953,9 @@ def setup_right_panel(app, parent):
         state="disabled",
         wrap="none",
     )
-    sb_grid_log_x = ttk.Scrollbar(tab_grid_log, orient="horizontal", command=app.txt_log_grid_log.xview)
+    sb_grid_log_x = ttk.Scrollbar(
+        tab_grid_log, orient="horizontal", command=app.txt_log_grid_log.xview
+    )
     app.txt_log_grid_log.configure(xscrollcommand=sb_grid_log_x.set)
     sb_grid_log_x.pack(fill="x", side="bottom")
     app.txt_log_grid_log.pack(fill="both", expand=True)
