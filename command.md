@@ -1,9 +1,24 @@
+# Kaiser Trading System - Tài Liệu Ghi Chú & Lệnh Khởi Chạy
+
+Tài liệu này lưu trữ các câu lệnh PowerShell và mã nguồn Batch script được sử dụng cho việc quản lý, reset và vận hành bot.
+
+## 1. Lệnh Kích Hoạt Môi Trường PowerShell (Venv)
+
+Để chạy các lệnh bằng PowerShell, chạy các lệnh sau:
+
+```powershell
+# Cho phép thực thi script trong phiên làm việc hiện tại
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process
+
+# Kích hoạt môi trường ảo Python
 .\ratvenv\Scripts\Activate.ps1
+```
 
+## 2. Script Tự Động Reset Session & Cập Nhật Hệ Thống (Draft)
 
+Dưới đây là bản nháp script Batch để tự động Reset Session cho các Account, dọn dẹp bộ nhớ đệm `__pycache__`, cập nhật code từ Git và khởi chạy Bot:
 
-###
+```batch
 @echo off
 setlocal enabledelayedexpansion
 
@@ -57,4 +72,4 @@ call ratvenv\Scripts\activate.bat
 python main.py
 
 pause
-
+```

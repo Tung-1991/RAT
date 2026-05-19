@@ -1649,29 +1649,9 @@ class BotUI(ctk.CTk):
                 self.tree.selection_set(row_id)
                 ticket = int(row_id)
 
-                current_tactic = self.trade_mgr.get_trade_tactic(ticket)
-                rev_status = "ON" if "REV_C" in current_tactic else "OFF"
-
-                def toggle_rev():
-                    new_t = (
-                        current_tactic + "+REV_C"
-                        if rev_status == "OFF"
-                        else current_tactic.replace("+REV_C", "")
-                        .replace("++", "+")
-                        .strip("+")
-                    )
-                    self.trade_mgr.update_trade_tactic(ticket, new_t)
-                    self.log_message(
-                        f"Update Reverse Close #{ticket}: {rev_status} -> {'ON' if rev_status == 'OFF' else 'OFF'}"
-                    )
-
                 menu.add_command(
                     label=f"📝 Sửa lệnh #{ticket}",
                     command=lambda: self.open_edit_popup(ticket),
-                )
-                menu.add_command(
-                    label=f"🔄 Đảo Chiều Tự Cắt: {rev_status}",
-                    command=toggle_rev,
                 )
                 menu.add_separator()
                 menu.add_command(
