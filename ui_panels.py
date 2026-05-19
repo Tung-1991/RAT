@@ -625,8 +625,9 @@ def setup_left_panel(app, parent):
     )
     app.seg_grid_mode.set(app.var_grid_manual_mode.get())
 
+    app.frame_grid_options = ctk.CTkFrame(parent, fg_color="transparent")
     app.chk_grid_bypass = ctk.CTkCheckBox(
-        parent,
+        app.frame_grid_options,
         text="Bypass GRID Signal",
         variable=app.var_grid_bypass_signal,
         font=("Roboto", 11, "bold"),
@@ -634,6 +635,25 @@ def setup_left_panel(app, parent):
         checkbox_width=18,
         checkbox_height=18,
     )
+    app.chk_grid_bypass.pack(side="left", padx=(0, 14))
+    app.ind_grid_ready_light = ctk.CTkFrame(
+        app.frame_grid_options,
+        width=14,
+        height=14,
+        corner_radius=7,
+        fg_color="#FFB300",
+    )
+    app.ind_grid_ready_light.pack(side="left", padx=(0, 6))
+    app.ind_grid_ready_light.pack_propagate(False)
+    app.lbl_grid_manual_preview = ctk.CTkLabel(
+        app.frame_grid_options,
+        text="Mode: ---",
+        font=("Roboto", 11, "bold"),
+        text_color="#80DEEA",
+        anchor="w",
+        justify="left",
+    )
+    app.lbl_grid_manual_preview.pack(side="left")
 
     app.on_manual_trade_mode_change(app.var_manual_trade_mode.get())
 
@@ -848,6 +868,23 @@ def setup_right_panel(app, parent):
 
     tab_grid = log_tabview.add("GRID")
     tab_grid_log = log_tabview.add("GRID-Log")
+    app.log_tabview = log_tabview
+    app.log_tab_keys = {
+        "manual": log_tabview.get(),
+        "bot": "ðŸ¤– Bot",
+        "bot-log": "ðŸ¤– Bot-Log",
+        "grid": "GRID",
+        "grid-log": "GRID-Log",
+    }
+    app.log_tab_unread = {k: False for k in app.log_tab_keys}
+
+    def _clear_unread_after_click(_event=None):
+        app.after(60, app.clear_active_log_unread)
+
+    try:
+        log_tabview._segmented_button.bind("<ButtonRelease-1>", _clear_unread_after_click)
+    except Exception:
+        pass
 
     # --- Tab Manual ---
     app.txt_log_manual = tk.Text(

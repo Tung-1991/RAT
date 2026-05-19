@@ -906,7 +906,7 @@ def open_advanced_tools_popup(app):
     ).pack(anchor="w", padx=14, pady=(14, 6))
     ctk.CTkLabel(
         tab_grid,
-        text="GRID V1 test execution uses its own magic, settings, state and risk rules.",
+        text="Auto GRID cho daemon. Manual GRID tren panel trade van start duoc khi Auto GRID OFF.",
         font=("Arial", 12, "italic"),
         text_color="#80DEEA",
         anchor="w",
@@ -929,30 +929,36 @@ def open_advanced_tools_popup(app):
     def _toggle_grid_enabled():
         try:
             from grid.grid_storage import load_grid_settings, save_grid_settings
+            if var_grid_enabled.get() and hasattr(app, "set_auto_trade_enabled"):
+                app.set_auto_trade_enabled(False, reason="GRID_ON")
             next_cfg = load_grid_settings()
             next_cfg["ENABLED"] = var_grid_enabled.get()
             save_grid_settings(next_cfg)
             _set_status_lights(var_grid_enabled.get())
             lbl_grid_state.configure(
-                text=f"Status: {'ON' if var_grid_enabled.get() else 'OFF'}",
+                text=f"Auto GRID: {'ON' if var_grid_enabled.get() else 'OFF'}",
                 text_color="#00B8D4" if var_grid_enabled.get() else "gray",
             )
+            try:
+                lbl_grid_summary.configure(text=_grid_control_summary())
+            except Exception:
+                pass
             if hasattr(app, "log_message"):
                 state = "ON" if var_grid_enabled.get() else "OFF"
-                app.log_message(f"[GRID] GRID ENABLED = {state}", target="grid")
+                app.log_message(f"[GRID] AUTO GRID ENABLED = {state}", target="grid")
         except Exception as e:
             messagebox.showerror("GRID", f"Khong the luu GRID switch: {e}", parent=top)
     f_grid_switch = ctk.CTkFrame(tab_grid, fg_color="#242424", corner_radius=8)
     f_grid_switch.pack(fill="x", padx=14, pady=(0, 12))
     lbl_grid_state = ctk.CTkLabel(
         f_grid_switch,
-        text=f"Status: {'ON' if var_grid_enabled.get() else 'OFF'}",
+        text=f"Auto GRID: {'ON' if var_grid_enabled.get() else 'OFF'}",
         font=("Roboto", 12, "bold"),
         text_color="#00B8D4" if var_grid_enabled.get() else "gray",
     )
     ctk.CTkSwitch(
         f_grid_switch,
-        text="GRID ENABLED",
+        text="AUTO GRID ENABLED",
         variable=var_grid_enabled,
         progress_color="#00B8D4",
         fg_color=COL_RED,
@@ -960,6 +966,105 @@ def open_advanced_tools_popup(app):
         command=_toggle_grid_enabled,
     ).pack(side="left", padx=12, pady=12)
     lbl_grid_state.pack(side="left", padx=12)
+
+    def _grid_control_summary():
+        try:
+            from grid.grid_storage import load_grid_settings, load_grid_state
+            cfg = load_grid_settings()
+            st = load_grid_state()
+            last = (st.get("last_decision") or {})
+            last_txt = "No decision yet"
+            if last:
+                sym, data = list(last.items())[-1]
+                last_txt = f"{sym}: {data.get('status')} / {data.get('reason')}"
+            return (
+                f"Type: {cfg.get('GRID_TYPE', 'ATR_DYNAMIC')} | "
+                f"Signal: {cfg.get('GRID_SIGNAL_SOURCE', 'OFF')} | "
+                f"Scan: {cfg.get('GRID_SCAN_INTERVAL_SECONDS', 5)}s | "
+                f"Mode auto: {'ON' if cfg.get('DYNAMIC_MODE_ENABLED', True) else 'OFF'} | "
+                f"Lot: {cfg.get('FIXED_LOT', 0.01)} | "
+                f"Max orders: {cfg.get('MAX_GRID_ORDERS', 0)} | "
+                f"Max DD: {cfg.get('MAX_BASKET_DRAWDOWN', 0.0)}\n"
+                f"Today PnL: {float(st.get('grid_pnl_today', 0.0) or 0.0):+.2f} | "
+                f"Trades: {int(st.get('grid_trades_today', 0) or 0)} | "
+                f"Last: {last_txt}"
+            )
+        except Exception as e:
+            return f"GRID summary error: {e}"
+
+    lbl_grid_summary = ctk.CTkLabel(
+        tab_grid,
+        text=_grid_control_summary(),
+        font=("Consolas", 13),
+        text_color="#80DEEA",
+        justify="left",
+        anchor="w",
+    )
+    lbl_grid_summary.pack(fill="x", padx=14, pady=(0, 10))
+
+    quick = ctk.CTkFrame(tab_grid, fg_color="#242424", corner_radius=8)
+    quick.pack(fill="x", padx=14, pady=(0, 12))
+    ctk.CTkLabel(quick, text="Safety Quick", font=("Roboto", 13, "bold"), text_color="#00B8D4").grid(row=0, column=0, columnspan=4, sticky="w", padx=10, pady=(8, 4))
+
+    def _quick_entry(label, value, row, col):
+        ctk.CTkLabel(quick, text=label).grid(row=row, column=col, sticky="w", padx=10, pady=5)
+        entry = ctk.CTkEntry(quick, width=90, justify="center")
+        entry.insert(0, str(value))
+        entry.grid(row=row, column=col + 1, sticky="w", padx=10, pady=5)
+        return entry
+
+    e_q_max_orders = _quick_entry("Max Orders", grid_cfg.get("MAX_GRID_ORDERS", 0), 1, 0)
+    e_q_max_lot = _quick_entry("Max Lot", grid_cfg.get("MAX_TOTAL_LOT", 0.0), 1, 2)
+    e_q_max_dd = _quick_entry("Basket DD", grid_cfg.get("MAX_BASKET_DRAWDOWN", 0.0), 2, 0)
+    e_q_daily_loss = _quick_entry("Daily Loss", grid_cfg.get("GRID_MAX_DAILY_LOSS", 0.0), 2, 2)
+
+    def _save_quick_safety():
+        try:
+            from grid.grid_storage import load_grid_settings, save_grid_settings
+            next_cfg = load_grid_settings()
+            next_cfg["MAX_GRID_ORDERS"] = int(e_q_max_orders.get() or 0)
+            next_cfg["MAX_TOTAL_LOT"] = float(e_q_max_lot.get() or 0.0)
+            next_cfg["MAX_BASKET_DRAWDOWN"] = float(e_q_max_dd.get() or 0.0)
+            next_cfg["GRID_MAX_DAILY_LOSS"] = float(e_q_daily_loss.get() or 0.0)
+            save_grid_settings(next_cfg)
+            lbl_grid_summary.configure(text=_grid_control_summary())
+            if hasattr(app, "log_message"):
+                app.log_message("[GRID] Quick safety saved.", target="grid")
+        except ValueError:
+            messagebox.showerror("GRID", "Safety quick nhap sai kieu so.", parent=top)
+
+    def _clear_grid_block():
+        try:
+            from grid.grid_storage import load_grid_state, save_grid_state
+            st = load_grid_state()
+            for session in (st.get("active_sessions") or {}).values():
+                if isinstance(session, dict):
+                    if session.get("status") == "STOP_NEW":
+                        session["status"] = "ACTIVE"
+                    session.pop("stop_reason", None)
+                    session.pop("last_block_reason", None)
+            st["last_decision"] = {}
+            save_grid_state(st)
+            lbl_grid_summary.configure(text=_grid_control_summary())
+            if hasattr(app, "log_message"):
+                app.log_message("[GRID] Clear GRID block done.", target="grid")
+        except Exception as e:
+            messagebox.showerror("GRID", f"Khong the clear GRID block: {e}", parent=top)
+
+    ctk.CTkButton(
+        quick,
+        text="SAVE QUICK SAFETY",
+        fg_color="#00838F",
+        hover_color="#006064",
+        command=_save_quick_safety,
+    ).grid(row=3, column=0, columnspan=4, sticky="ew", padx=10, pady=(8, 10))
+    ctk.CTkButton(
+        quick,
+        text="CLEAR GRID BLOCK",
+        fg_color="#455A64",
+        hover_color="#37474F",
+        command=_clear_grid_block,
+    ).grid(row=4, column=0, columnspan=4, sticky="ew", padx=10, pady=(0, 10))
 
     def _open_grid_settings():
         from grid.grid_ui import open_grid_settings_popup

@@ -6,6 +6,7 @@ import config
 import time
 import MetaTrader5 as mt5
 from core.market_hours import is_symbol_trade_window_open
+from core.position_classifier import is_bot_position, is_manual_position
 from core.storage_manager import (
     apply_state_defaults,
     get_active_safeguard_brake,
@@ -156,9 +157,10 @@ class ChecklistManager:
         import core.storage_manager as storage_manager
 
         magics = storage_manager.get_magic_numbers()
-        bot_magic = magics.get("bot_magic", 9999)
-        manual_magic = magics.get("manual_magic", 8888)
-        my_pos = [p for p in positions if p.magic in (bot_magic, manual_magic)]
+        my_pos = [
+            p for p in positions
+            if is_bot_position(p, magics) or is_manual_position(p, magics)
+        ]
 
         try:
             max_open_pos = config.MAX_OPEN_POSITIONS
@@ -416,14 +418,7 @@ class ChecklistManager:
         import core.storage_manager as storage_manager
 
         magics = storage_manager.get_magic_numbers()
-        bot_magic = magics.get("bot_magic", 9999)
-        grid_magic = magics.get("grid_magic")
-        all_bot_pos = [p for p in positions if p.magic == bot_magic]
-        all_bot_pos = [
-            p
-            for p in all_bot_pos
-            if p.magic != grid_magic and "[GRID]" not in str(getattr(p, "comment", ""))
-        ]
+        all_bot_pos = [p for p in positions if is_bot_position(p, magics)]
 
         # [KAISER FIX] Chỉ đếm các lệnh Gốc (ENTRY), bỏ qua lệnh con (DCA/PCA) khi check giới hạn
         parent_bot_pos = [

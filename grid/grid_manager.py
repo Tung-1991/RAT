@@ -12,6 +12,7 @@ from datetime import datetime
 import MetaTrader5 as mt5
 
 from core.market_hours import is_symbol_trade_window_open
+from core.position_classifier import is_grid_position
 from core.storage_manager import append_trade_log, get_magic_numbers
 
 from .grid_config import GRID_COMMENT_PREFIX
@@ -34,16 +35,48 @@ class GridManager:
     def reload(self):
         return {"settings": load_grid_settings(), "state": load_grid_state()}
 
+    def _ensure_grid_state(self, state):
+        today = datetime.now().strftime("%Y-%m-%d")
+        if state.get("date") != today:
+            state["date"] = today
+            state["grid_pnl_today"] = 0.0
+            state["grid_trades_today"] = 0
+            state["grid_daily_loss_count"] = 0
+        state.setdefault("grid_pnl_today", 0.0)
+        state.setdefault("grid_trades_today", 0)
+        state.setdefault("grid_daily_loss_count", 0)
+        state.setdefault("last_decision", {})
+        state.pop("cooldown_until", None)
+
+    def clear_session_block(self, symbol=None):
+        state = load_grid_state()
+        self._ensure_grid_state(state)
+        sessions = state.setdefault("active_sessions", {})
+        for sym, session in list(sessions.items()):
+            if symbol and sym != symbol:
+                continue
+            if isinstance(session, dict):
+                if session.get("status") == "STOP_NEW":
+                    session["status"] = "ACTIVE"
+                session.pop("stop_reason", None)
+                session.pop("last_block_reason", None)
+                session["updated_at"] = time.time()
+        if symbol:
+            state.get("last_decision", {}).pop(symbol, None)
+        else:
+            state["last_decision"] = {}
+        save_grid_state(state)
+        return "SUCCESS"
+
     def start_manual_session(self, symbol, mode="NEUTRAL", bypass_signal=False, context=None):
         settings = load_grid_settings()
-        if not settings.get("ENABLED", False):
-            return "GRID_DISABLED"
 
         mode = str(mode or "NEUTRAL").upper()
         if mode not in {"NEUTRAL", "LONG", "SHORT"}:
             mode = settings.get("DEFAULT_MANUAL_MODE", "NEUTRAL")
 
         state = load_grid_state()
+        self._ensure_grid_state(state)
         session = self._ensure_session(state, symbol, settings, mode, "MANUAL", bypass_signal, context or {})
         save_grid_state(state)
         self.log(f"Manual session {symbol} mode={session['mode']} bypass_signal={bool(bypass_signal)}")
@@ -52,14 +85,13 @@ class GridManager:
     def scan(self, symbols=None, contexts=None):
         settings = load_grid_settings()
         state = load_grid_state()
-        if not settings.get("ENABLED", False):
-            return {"status": "DISABLED", "actions": []}
+        self._ensure_grid_state(state)
 
         contexts = contexts or {}
         watchlist = settings.get("WATCHLIST") or symbols or []
         actions = []
 
-        if settings.get("DYNAMIC_MODE_ENABLED", True):
+        if settings.get("ENABLED", False) and settings.get("DYNAMIC_MODE_ENABLED", True):
             for symbol in watchlist:
                 ctx = contexts.get(symbol, {})
                 if not ctx and self.data_engine:
@@ -120,7 +152,7 @@ class GridManager:
             })
 
         boundary = self._resolve_boundary(symbol, context, settings)
-        spacing = self._resolve_spacing(context, settings)
+        spacing = self._resolve_spacing(context, settings, boundary)
         session["boundary"] = boundary
         session["spacing"] = spacing
         return session
@@ -137,23 +169,28 @@ class GridManager:
             mode = settings.get("DEFAULT_MANUAL_MODE", "NEUTRAL")
             return {"permission": True, "mode": mode, "reason": "BYPASS_SIGNAL"}
 
+        signal_source = str(settings.get("GRID_SIGNAL_SOURCE", "OFF") or "OFF").upper()
         market_mode = context.get("grid_market_mode", context.get("market_mode", "ANY"))
         if settings.get("STOP_ON_BREAKOUT", True) and market_mode in settings.get("STOP_NEW_MARKET_MODES", ["TREND", "BREAKOUT"]):
             return {"permission": False, "mode": "BLOCK", "reason": f"MARKET_MODE_{market_mode}"}
 
-        signal = int(context.get("grid_latest_signal", context.get("latest_signal", 0)) or 0)
-        if signal == 1:
-            mode = "LONG"
-        elif signal == -1:
-            mode = "SHORT"
+        if signal_source == "OFF":
+            mode = str(settings.get("DEFAULT_MANUAL_MODE", "NEUTRAL") or "NEUTRAL").upper()
         else:
-            none_policy = settings.get("NONE_POLICY", "NEUTRAL")
-            if none_policy == "BLOCK":
-                return {"permission": False, "mode": "BLOCK", "reason": "SIGNAL_NONE"}
-            mode = "NEUTRAL"
+            signal_key = "grid_latest_signal" if signal_source == "IMPORTED" else "latest_signal"
+            signal = int(context.get(signal_key, 0) or 0)
+            if signal == 1:
+                mode = "LONG"
+            elif signal == -1:
+                mode = "SHORT"
+            else:
+                none_policy = settings.get("NONE_POLICY", "NEUTRAL")
+                if none_policy == "BLOCK":
+                    return {"permission": False, "mode": "BLOCK", "reason": "SIGNAL_NONE"}
+                mode = "NEUTRAL"
 
         boundary = self._resolve_boundary(symbol, context, settings)
-        spacing = self._resolve_spacing(context, settings)
+        spacing = self._resolve_spacing(context, settings, boundary)
         price = float(context.get("current_price", 0.0) or 0.0)
         if not boundary or not spacing or price <= 0:
             return {"permission": False, "mode": "BLOCK", "reason": "NO_BOUNDARY_OR_SPACING"}
@@ -162,6 +199,9 @@ class GridManager:
         return {"permission": True, "mode": mode, "reason": "OK"}
 
     def _prepare_grid_context(self, symbol, context, settings):
+        signal_source = str(settings.get("GRID_SIGNAL_SOURCE", "OFF") or "OFF").upper()
+        if signal_source != "IMPORTED":
+            return context
         cfg = settings.get("GRID_SIGNAL_CONFIG") or {}
         if not cfg or not self.data_engine or not self.signal_generator:
             return context
@@ -224,7 +264,20 @@ class GridManager:
             return None
         return {"upper": upper, "lower": lower, "source": f"SWING_{group}"}
 
-    def _resolve_spacing(self, context, settings):
+    def _resolve_spacing(self, context, settings, boundary=None):
+        grid_type = str(settings.get("GRID_TYPE", "ATR_DYNAMIC") or "ATR_DYNAMIC").upper()
+        if grid_type == "ARITHMETIC":
+            if not boundary:
+                return 0.0
+            grid_count = int(settings.get("GRID_COUNT", 10) or 10)
+            price_range = float(boundary["upper"]) - float(boundary["lower"])
+            return price_range / grid_count if price_range > 0 and grid_count > 0 else 0.0
+
+        if grid_type == "GEOMETRIC":
+            price = float(context.get("current_price", 0.0) or 0.0)
+            step_pct = float(settings.get("GEOMETRIC_STEP_PERCENT", 1.0) or 1.0)
+            return price * (step_pct / 100.0) if price > 0 and step_pct > 0 else 0.0
+
         group = settings.get("GRID_TIMEFRAME_GROUP", "G2")
         atr = context.get(f"atr_{group}", context.get("atr"))
         try:
@@ -260,14 +313,62 @@ class GridManager:
 
     def _grid_positions(self, symbol=None):
         magics = get_magic_numbers()
-        grid_magic = magics.get("grid_magic")
         positions = self.connector.get_all_open_positions() if self.connector else []
         out = []
         for pos in positions:
-            is_grid = pos.magic == grid_magic or GRID_COMMENT_PREFIX in str(getattr(pos, "comment", ""))
-            if is_grid and (symbol is None or pos.symbol == symbol):
+            if is_grid_position(pos, magics) and (symbol is None or pos.symbol == symbol):
                 out.append(pos)
         return out
+
+    def _close_grid_positions(self, positions, reason):
+        closed = 0
+        if not self.connector:
+            return closed
+        for pos in positions:
+            try:
+                self.connector.close_position(pos)
+                closed += 1
+            except Exception as e:
+                self.log(f"Close grid position #{getattr(pos, 'ticket', '?')} failed: {e}", error=True)
+        if closed:
+            self.log(f"CLOSE_GRID reason={reason} positions={closed}")
+        return closed
+
+    def _grid_safeguard(self, state, settings):
+        max_daily_loss = float(settings.get("GRID_MAX_DAILY_LOSS", 0.0) or 0.0)
+        if max_daily_loss > 0 and float(state.get("grid_pnl_today", 0.0) or 0.0) <= -abs(max_daily_loss):
+            return False, "GRID_DAILY_LOSS"
+
+        max_trades = int(settings.get("GRID_MAX_TRADES_PER_DAY", 0) or 0)
+        if max_trades > 0 and int(state.get("grid_trades_today", 0) or 0) >= max_trades:
+            return False, "GRID_MAX_TRADES_DAY"
+        return True, "OK"
+
+    def _record_decision(self, state, symbol, session, status, reason, **extra):
+        decision = {
+            "status": status,
+            "reason": reason,
+            "symbol": symbol,
+            "mode": session.get("mode", "NEUTRAL") if isinstance(session, dict) else "NEUTRAL",
+            "source": session.get("source", "UNKNOWN") if isinstance(session, dict) else "UNKNOWN",
+            "time": time.time(),
+        }
+        decision.update(extra)
+        state.setdefault("last_decision", {})[symbol] = decision
+        if decision["source"] == "MANUAL":
+            parts = [
+                f"{symbol}",
+                f"status={status}",
+                f"reason={reason}",
+                f"mode={decision.get('mode')}",
+            ]
+            if "price" in extra:
+                parts.append(f"price={float(extra['price']):.5f}")
+            if "direction" in extra:
+                parts.append(f"direction={extra['direction']}")
+            if "level" in extra:
+                parts.append(f"level={extra['level']}")
+            self.log("DECISION " + " ".join(parts))
 
     def _scan_session(self, symbol, session, context, settings, state):
         actions = []
@@ -277,20 +378,31 @@ class GridManager:
             session["status"] = "STOP_NEW"
             session["stop_reason"] = gate["reason"]
             state.setdefault("last_preview", {})[symbol] = gate
+            self._record_decision(state, symbol, session, "BLOCK", gate["reason"])
             return actions
         if session.get("status") == "STOP_NEW" and not bypass:
             state.setdefault("last_preview", {})[symbol] = gate
+            self._record_decision(state, symbol, session, "BLOCK", session.get("stop_reason", "STOP_NEW"))
             return actions
 
         safety_ok, safety_reason = self._hard_safety(symbol, settings, state)
         if not safety_ok:
             session["last_block_reason"] = safety_reason
+            self._record_decision(state, symbol, session, "BLOCK", safety_reason)
+            return actions
+
+        guard_ok, guard_reason = self._grid_safeguard(state, settings)
+        if not guard_ok:
+            session["status"] = "STOP_NEW"
+            session["last_block_reason"] = guard_reason
+            self._record_decision(state, symbol, session, "BLOCK", guard_reason)
             return actions
 
         boundary = self._resolve_boundary(symbol, context, settings)
-        spacing = self._resolve_spacing(context, settings)
+        spacing = self._resolve_spacing(context, settings, boundary)
         price = float(context.get("current_price", 0.0) or 0.0)
         if not boundary or not spacing or price <= 0:
+            self._record_decision(state, symbol, session, "BLOCK", "NO_BOUNDARY_SPACING_OR_PRICE")
             return actions
         session["boundary"] = boundary
         session["spacing"] = spacing
@@ -303,9 +415,31 @@ class GridManager:
         }
 
         grid_positions = self._grid_positions(symbol)
+        basket_pnl = sum(p.profit + p.swap + getattr(p, "commission", 0.0) for p in grid_positions)
+        basket_tp = float(settings.get("BASKET_TP_USD", 0.0) or 0.0)
+        basket_sl = float(settings.get("BASKET_SL_USD", 0.0) or 0.0)
+        stop_price = float(settings.get("GRID_STOP_LOSS_PRICE", 0.0) or 0.0)
+        take_price = float(settings.get("GRID_TAKE_PROFIT_PRICE", 0.0) or 0.0)
+        close_reason = None
+        if basket_tp > 0 and basket_pnl >= abs(basket_tp):
+            close_reason = "BASKET_TP"
+        elif basket_sl > 0 and basket_pnl <= -abs(basket_sl):
+            close_reason = "BASKET_SL"
+        elif stop_price > 0 and price <= stop_price:
+            close_reason = "GRID_STOP_PRICE"
+        elif take_price > 0 and price >= take_price:
+            close_reason = "GRID_TAKE_PRICE"
+        if close_reason:
+            closed = self._close_grid_positions(grid_positions, close_reason)
+            session["status"] = "STOP_NEW"
+            session["last_block_reason"] = close_reason
+            self._record_decision(state, symbol, session, "CLOSE", close_reason, price=price, pnl=basket_pnl, closed=closed)
+            return actions
+
         max_orders = int(settings.get("MAX_GRID_ORDERS", 0) or 0)
         if max_orders > 0 and len(grid_positions) >= max_orders:
             session["last_block_reason"] = "MAX_GRID_ORDERS"
+            self._record_decision(state, symbol, session, "BLOCK", "MAX_GRID_ORDERS", price=price, boundary=boundary, spacing=spacing)
             return actions
 
         gross_lot = sum(float(p.volume) for p in grid_positions)
@@ -313,19 +447,21 @@ class GridManager:
         max_total_lot = float(settings.get("MAX_TOTAL_LOT", 0.0) or 0.0)
         if max_total_lot > 0 and gross_lot + fixed_lot > max_total_lot:
             session["last_block_reason"] = "MAX_GROSS_LOT"
+            self._record_decision(state, symbol, session, "BLOCK", "MAX_GROSS_LOT", price=price, boundary=boundary, spacing=spacing)
             return actions
 
         max_dd = float(settings.get("MAX_BASKET_DRAWDOWN", 0.0) or 0.0)
         if max_dd > 0:
-            pnl = sum(p.profit + p.swap + getattr(p, "commission", 0.0) for p in grid_positions)
-            if pnl <= -abs(max_dd):
+            if basket_pnl <= -abs(max_dd):
                 session["status"] = "STOP_NEW"
                 session["last_block_reason"] = "MAX_SESSION_DD"
+                self._record_decision(state, symbol, session, "BLOCK", "MAX_SESSION_DD", price=price, boundary=boundary, spacing=spacing, pnl=basket_pnl)
                 return actions
 
         level = self._level_for_price(price, boundary, spacing)
         direction = self._direction_for_level(price, boundary, session.get("mode", "NEUTRAL"))
         if not direction:
+            self._record_decision(state, symbol, session, "WAIT", "NO_DIRECTION_FOR_MODE", price=price, boundary=boundary, spacing=spacing, level=level)
             return actions
 
         level_id = f"{direction}_{level}"
@@ -334,9 +470,11 @@ class GridManager:
         last_action = state.setdefault("last_grid_action_times", {}).get(key, 0)
         cooldown = float(settings.get("REOPEN_COOLDOWN_SECONDS", settings.get("COOLDOWN_SECONDS", 60)) or 0)
         if now - float(last_action or 0) < cooldown:
+            self._record_decision(state, symbol, session, "WAIT", "LEVEL_COOLDOWN", price=price, direction=direction, level=level, cooldown=cooldown)
             return actions
 
         if self._has_open_level(grid_positions, level_id):
+            self._record_decision(state, symbol, session, "WAIT", "LEVEL_ALREADY_OPEN", price=price, direction=direction, level=level)
             return actions
 
         tp_mult = float(settings.get("TAKE_PROFIT_SPACING_MULTIPLIER", 0.8) or 0.8)
@@ -346,6 +484,7 @@ class GridManager:
         if info and info.point > 0:
             tp_price = round(tp_price / info.point) * info.point
 
+        self._record_decision(state, symbol, session, "READY", "ORDER_READY", price=price, direction=direction, level=level, tp=tp_price)
         grid_magic = get_magic_numbers().get("grid_magic", 99999)
         result = self.executor.place_grid_order(
             symbol=symbol,
@@ -360,9 +499,11 @@ class GridManager:
             state["last_grid_action_times"][key] = now
             state.setdefault("level_reopen_counts", {})[key] = int(state.setdefault("level_reopen_counts", {}).get(key, 0)) + 1
             session.setdefault("opened_orders", []).append({"time": now, "level": level_id, "direction": direction, "result": result})
+            self._record_decision(state, symbol, session, "OPEN", result, price=price, direction=direction, level=level, tp=tp_price)
             actions.append(result)
         else:
             session["last_block_reason"] = result
+            self._record_decision(state, symbol, session, "BLOCK", result, price=price, direction=direction, level=level)
         return actions
 
     def _level_for_price(self, price, boundary, spacing):
@@ -439,6 +580,10 @@ class GridManager:
                     mae_usd=min(real_pnl, 0.0),
                     mfe_usd=max(real_pnl, 0.0),
                 )
+                state["grid_pnl_today"] = float(state.get("grid_pnl_today", 0.0) or 0.0) + real_pnl
+                state["grid_trades_today"] = int(state.get("grid_trades_today", 0) or 0) + 1
+                if real_pnl < 0:
+                    state["grid_daily_loss_count"] = int(state.get("grid_daily_loss_count", 0) or 0) + 1
                 self.log(f"Closed {pos_type} {d_out.symbol} #{ticket} PnL={real_pnl:+.2f}")
             except Exception as e:
                 self.log(f"History sync failed for #{ticket}: {e}", error=True)

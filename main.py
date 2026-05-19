@@ -22,6 +22,7 @@ from core.trade_manager import TradeManager
 from core.storage_manager import load_state, save_state
 from core.signal_listener import SignalListener
 from core.data_engine import data_engine
+from core.position_classifier import is_bot_position, is_grid_position, is_manual_position
 from signals.signal_generator import signal_generator
 from grid.grid_manager import GridManager
 import traceback
@@ -327,6 +328,8 @@ class BotUI(ctk.CTk):
                 pass
 
     def on_auto_trade_toggle(self):
+        if self.var_auto_trade.get():
+            self.set_grid_enabled(False, reason="BOT_ON")
         # [FIX] Ép lưu cấu hình ngay lập tức để Daemon ngầm nhận được tín hiệu
         config.AUTO_TRADE_ENABLED = self.var_auto_trade.get()
         self._save_brain_live_config()
@@ -342,6 +345,42 @@ class BotUI(ctk.CTk):
                 "🔴 AUTO-TRADE DAEMON ĐÃ TẮT. Chuyển về chế độ bắn tay (Manual).",
                 target="bot",
             )
+
+    def set_auto_trade_enabled(self, enabled, reason=""):
+        enabled = bool(enabled)
+        self.var_auto_trade.set(enabled)
+        config.AUTO_TRADE_ENABLED = enabled
+        self._save_brain_live_config()
+
+        if hasattr(self, "ind_auto_light") and self.ind_auto_light.winfo_exists():
+            self.ind_auto_light.configure(fg_color=COL_GREEN if enabled else COL_RED)
+
+        if enabled:
+            self.log_message("AUTO-TRADE DAEMON ON. Bot can open new trades.", target="bot")
+        else:
+            msg = "AUTO-TRADE DAEMON OFF. Manual mode."
+            if reason:
+                msg = f"{msg} Reason={reason}"
+            self.log_message(msg, target="bot")
+
+    def set_grid_enabled(self, enabled, reason=""):
+        enabled = bool(enabled)
+        try:
+            from grid.grid_storage import load_grid_settings, save_grid_settings
+
+            next_cfg = load_grid_settings()
+            next_cfg["ENABLED"] = enabled
+            save_grid_settings(next_cfg)
+            for attr in ("ind_grid_light", "ind_ad_grid_light"):
+                light = getattr(self, attr, None)
+                if light and light.winfo_exists():
+                    light.configure(fg_color=COL_GREEN if enabled else COL_RED)
+            msg = f"[GRID] GRID ENABLED = {'ON' if enabled else 'OFF'}"
+            if reason:
+                msg = f"{msg} Reason={reason}"
+            self.log_message(msg, target="grid")
+        except Exception as e:
+            self.log_message(f"[GRID] Cannot update GRID switch: {e}", error=True, target="grid")
 
     def get_current_tactic_string(self):
         active = [k for k, v in self.tactic_states.items() if v]
@@ -436,6 +475,7 @@ class BotUI(ctk.CTk):
         config.UI_ACTIVE_SYMBOL = new_symbol
         self._save_brain_live_config()
         self.lbl_dashboard_price.configure(text="Đang nạp...", text_color="gray")
+        self.update_grid_manual_preview()
         threading.Thread(target=lambda: mt5.symbol_select(new_symbol, True)).start()
 
     def on_direction_change(self, value):
@@ -469,6 +509,7 @@ class BotUI(ctk.CTk):
 
     def on_grid_mode_change(self, value):
         self.var_grid_manual_mode.set(value)
+        self.update_grid_manual_preview()
         if self.var_manual_trade_mode.get() == "GRID":
             sym = self.cbo_symbol.get()
             self.btn_action.configure(
@@ -494,17 +535,72 @@ class BotUI(ctk.CTk):
                 self.frame_direction.grid_remove()
             if hasattr(self, "seg_grid_mode"):
                 self.seg_grid_mode.pack(fill="x", padx=10, pady=(5, 5), before=self.btn_action)
-            if hasattr(self, "chk_grid_bypass"):
-                self.chk_grid_bypass.pack(anchor="w", padx=12, pady=(0, 5), before=self.btn_action)
+            if hasattr(self, "frame_grid_options"):
+                self.frame_grid_options.pack(fill="x", padx=12, pady=(0, 6), before=self.btn_action)
+                self.update_grid_manual_preview()
             self.on_grid_mode_change(self.var_grid_manual_mode.get())
         else:
             if hasattr(self, "seg_grid_mode"):
                 self.seg_grid_mode.pack_forget()
-            if hasattr(self, "chk_grid_bypass"):
-                self.chk_grid_bypass.pack_forget()
+            if hasattr(self, "frame_grid_options"):
+                self.frame_grid_options.pack_forget()
             if hasattr(self, "frame_direction"):
                 self.frame_direction.grid()
             self.on_direction_change(self.var_direction.get())
+
+    def update_grid_manual_preview(self):
+        if not hasattr(self, "lbl_grid_manual_preview"):
+            return
+        try:
+            from grid.grid_storage import load_grid_settings
+
+            cfg = load_grid_settings()
+            sym = self.cbo_symbol.get()
+            ctx = getattr(self, "latest_market_context", {}).get(sym, {})
+            price = float(ctx.get("current_price", 0.0) or 0.0)
+            mode = self.var_grid_manual_mode.get()
+            grid_type = cfg.get("GRID_TYPE", "ATR_DYNAMIC")
+            group = cfg.get("GRID_TIMEFRAME_GROUP", "G2")
+            upper = float(cfg.get("MANUAL_UPPER_BOUNDARY", 0.0) or 0.0)
+            lower = float(cfg.get("MANUAL_LOWER_BOUNDARY", 0.0) or 0.0)
+            if upper <= lower:
+                upper = float(ctx.get(f"swing_high_{group}", ctx.get("swing_high")) or 0.0)
+                lower = float(ctx.get(f"swing_low_{group}", ctx.get("swing_low")) or 0.0)
+
+            spacing = 0.0
+            if grid_type == "ARITHMETIC" and upper > lower:
+                spacing = (upper - lower) / max(1, int(cfg.get("GRID_COUNT", 10) or 10))
+            elif grid_type == "GEOMETRIC" and price > 0:
+                spacing = price * (float(cfg.get("GEOMETRIC_STEP_PERCENT", 1.0) or 1.0) / 100.0)
+            else:
+                atr = float(ctx.get(f"atr_{group}", ctx.get("atr")) or 0.0)
+                spacing = atr * float(cfg.get("SPACING_ATR_MULTIPLIER", 1.0) or 1.0)
+
+            signal_source = cfg.get("GRID_SIGNAL_SOURCE", "OFF")
+            status = "BLOCK"
+            color = "#F44336"
+            reason = "Missing data"
+            if upper > lower and price > 0 and spacing > 0:
+                mid = (upper + lower) / 2.0
+                if mode == "LONG":
+                    next_action = "BUY" if price <= mid else "WAIT"
+                elif mode == "SHORT":
+                    next_action = "SELL" if price >= mid else "WAIT"
+                else:
+                    next_action = "BUY" if price < mid else ("SELL" if price > mid else "WAIT")
+                status = "READY" if next_action in ("BUY", "SELL") else "WAIT"
+                color = "#00C853" if status == "READY" else "#FFB300"
+                reason = next_action
+            else:
+                reason = "Missing data"
+            text = f"GRID: {grid_type} | Signal: {signal_source} | {status}: {reason}"
+            if hasattr(self, "ind_grid_ready_light"):
+                self.ind_grid_ready_light.configure(fg_color=color)
+            self.lbl_grid_manual_preview.configure(text=text)
+        except Exception as e:
+            if hasattr(self, "ind_grid_ready_light"):
+                self.ind_grid_ready_light.configure(fg_color="#F44336")
+            self.lbl_grid_manual_preview.configure(text=f"GRID Preview error: {e}")
 
     # ==========================================
     # CÁC HÀM MỞ POPUP & GIAO DIỆN PHỤ
@@ -721,14 +817,11 @@ class BotUI(ctk.CTk):
 
                 tick = mt5.symbol_info_tick(sym)
                 magics = storage_manager.get_magic_numbers()
-                bot_magic = magics.get("bot_magic", 9999)
-                manual_magic = magics.get("manual_magic", 8888)
-                grid_magic = magics.get("grid_magic")
                 
                 pos = [
                     p
                     for p in self.connector.get_all_open_positions()
-                    if p.magic in (bot_magic, manual_magic, grid_magic)
+                    if is_bot_position(p, magics) or is_manual_position(p, magics) or is_grid_position(p, magics)
                 ]
                 self.after(
                     0,
@@ -1204,12 +1297,11 @@ class BotUI(ctk.CTk):
                 display_ticket = f" ┗━ #{ticket_str}"
 
             origin_tag = "[UI]"
-            is_grid = "[GRID]" in str(p.comment)
             try:
                 import core.storage_manager as storage_manager
-                is_grid = is_grid or p.magic == storage_manager.get_magic_numbers().get("grid_magic")
+                is_grid = is_grid_position(p, storage_manager.get_magic_numbers())
             except Exception:
-                pass
+                is_grid = "[GRID]" in str(p.comment)
 
             if is_grid:
                 origin_tag = "[GRID]"
@@ -1475,6 +1567,8 @@ class BotUI(ctk.CTk):
                 target = "bot"  # Lệnh thực thi -> Sang Tab BOT
             else:
                 target = "bot-log"  # Log logic/check -> Sang Tab BOT-LOG
+        elif target == "grid" and "DECISION" in msg:
+            target = "grid"
         elif target == "grid":
             if any(k in msg for k in ["ENTRY", "CHILD", "Đóng lệnh", "PnL", "SUCCESS", "FAIL"]):
                 target = "grid"
@@ -1482,6 +1576,36 @@ class BotUI(ctk.CTk):
                 target = "grid-log"
 
         self.after(0, lambda: self._write_log(txt, tag, target))
+
+    def _log_target_from_tab_name(self, tab_name):
+        if "Bot-Log" in tab_name:
+            return "bot-log"
+        if "GRID-Log" in tab_name:
+            return "grid-log"
+        if "Bot" in tab_name:
+            return "bot"
+        if "GRID" in tab_name:
+            return "grid"
+        return "manual"
+
+    def _set_log_tab_unread(self, target, unread):
+        tabview = getattr(self, "log_tabview", None)
+        keys = getattr(self, "log_tab_keys", {})
+        if not tabview or target not in keys:
+            return
+        self.log_tab_unread[target] = bool(unread)
+        base = keys[target]
+        label = f"{base} *" if unread else base
+        try:
+            tabview._segmented_button._buttons_dict[base].configure(text=label)
+        except Exception:
+            pass
+
+    def clear_active_log_unread(self):
+        tabview = getattr(self, "log_tabview", None)
+        if not tabview:
+            return
+        self._set_log_tab_unread(self._log_target_from_tab_name(tabview.get()), False)
 
     def _write_log(self, txt, tag, target="manual"):
         if target == "bot":
@@ -1505,6 +1629,9 @@ class BotUI(ctk.CTk):
             widget.insert("end", txt, tag)
             widget.see("end")
             widget.configure(state="disabled")
+            tabview = getattr(self, "log_tabview", None)
+            if tabview and self._log_target_from_tab_name(tabview.get()) != target:
+                self._set_log_tab_unread(target, True)
 
     def reset_daily_stats(self):
         if messagebox.askyesno("Xác nhận", "Tạo Phiên/Group mới (Clear Cache)?", parent=self):

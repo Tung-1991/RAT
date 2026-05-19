@@ -13,6 +13,7 @@ import config
 from core.exness_connector import ExnessConnector
 from core.data_engine import data_engine
 from core.market_hours import is_symbol_trade_window_open
+from core.position_classifier import is_bot_position
 from signals.signal_generator import signal_generator
 from core.storage_manager import get_brain_settings_for_symbol
 from core.logger_setup import setup_logging  # [NEW V4.3] Import hệ thống Log
@@ -55,6 +56,7 @@ class StandaloneBotDaemon:
 
         self.dca_pca_interval = 2
         self.last_dca_pca_scan = 0
+        self.last_grid_scan = 0
         self.pending_signals = []
         self.heartbeat_contexts = {}
         self.last_entry_signal_times = {}
@@ -227,9 +229,17 @@ class StandaloneBotDaemon:
                     self.last_dca_pca_scan = now
 
                 grid_cfg = load_grid_settings()
-                if grid_cfg.get("ENABLED", False):
+                try:
+                    grid_interval = max(
+                        0.5,
+                        float(grid_cfg.get("GRID_SCAN_INTERVAL_SECONDS", 5) or 5),
+                    )
+                except Exception:
+                    grid_interval = 5.0
+                if grid_cfg.get("ENABLED", False) and (now - self.last_grid_scan >= grid_interval):
                     grid_symbols = grid_cfg.get("WATCHLIST") or symbols
                     self.grid_manager.scan(grid_symbols, self.heartbeat_contexts)
+                    self.last_grid_scan = now
 
                 # Luồng gốc ngủ rất ngắn để không gây kẹt tiến trình
                 time.sleep(0.5)
@@ -300,11 +310,9 @@ class StandaloneBotDaemon:
 
         import core.storage_manager as storage_manager
         magics = storage_manager.get_magic_numbers()
-        bot_magic = magics.get("bot_magic", 9999)
-        grid_magic = magics.get("grid_magic")
         bot_positions = {}
         for pos in positions:
-            if pos.magic == bot_magic and pos.magic != grid_magic and "[GRID]" not in str(getattr(pos, "comment", "")):
+            if is_bot_position(pos, magics):
                 if pos.symbol not in bot_positions:
                     bot_positions[pos.symbol] = []
                 bot_positions[pos.symbol].append(pos)

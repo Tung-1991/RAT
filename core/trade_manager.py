@@ -24,6 +24,7 @@ from core.storage_manager import (
     mark_safeguard_brake,
 )
 from core.market_hours import is_symbol_trade_window_open
+from core.position_classifier import is_bot_position, is_grid_position, is_manual_position
 from core.entry_exit_engine import evaluate_entry_exit, format_decision
 
 
@@ -365,19 +366,12 @@ class TradeManager:
         import core.storage_manager as storage_manager
 
         magics = storage_manager.get_magic_numbers()
-        bot_magic = magics.get("bot_magic", 9999)
-        grid_magic = magics.get("grid_magic")
         safe_cfg = self._get_brain_settings(symbol).get("bot_safeguard", {})
 
         positions = [
             p
             for p in self.connector.get_all_open_positions()
-            if (
-                p.symbol == symbol
-                and p.magic == bot_magic
-                and p.magic != grid_magic
-                and "[GRID]" not in str(getattr(p, "comment", ""))
-            )
+            if p.symbol == symbol and is_bot_position(p, magics)
         ]
         opposite_type = (
             mt5.ORDER_TYPE_SELL if new_direction == "BUY" else mt5.ORDER_TYPE_BUY
@@ -589,12 +583,11 @@ class TradeManager:
         import core.storage_manager as storage_manager
 
         magics = storage_manager.get_magic_numbers()
-        bot_magic = magics.get("bot_magic", 9999)
         if signal_class in ["DCA", "PCA"]:
             positions = [
                 p
                 for p in self.connector.get_all_open_positions()
-                if p.symbol == symbol and p.magic == bot_magic
+                if p.symbol == symbol and is_bot_position(p, magics)
             ]
             if positions:
                 parent_pos = sorted(positions, key=lambda x: x.time)[0]
@@ -1082,13 +1075,10 @@ class TradeManager:
                             import core.storage_manager as storage_manager
 
                             magics = storage_manager.get_magic_numbers()
-                            bot_magic = magics.get("bot_magic", 9999)
-                            grid_magic = magics.get("grid_magic")
-                            is_grid = d_out.magic == grid_magic or any(
-                                "[GRID]" in str(getattr(d, "comment", ""))
-                                for d in deals
+                            is_grid = is_grid_position(d_out, magics) or any(
+                                is_grid_position(d, magics) for d in deals
                             )
-                            is_bot = d_out.magic == bot_magic and not is_grid
+                            is_bot = is_bot_position(d_out, magics) and not is_grid
                             if not is_bot:
                                 is_bot = any(
                                     marker in str(getattr(d, "comment", ""))
@@ -1361,14 +1351,10 @@ class TradeManager:
 
             magics = storage_manager.get_magic_numbers()
             bot_magic = magics.get("bot_magic", 9999)
-            manual_magic = magics.get("manual_magic", 8888)
-            grid_magic = magics.get("grid_magic")
             tracked_positions = [
                 p
                 for p in current_positions
-                if p.magic in (bot_magic, manual_magic)
-                and p.magic != grid_magic
-                and "[GRID]" not in str(getattr(p, "comment", ""))
+                if is_bot_position(p, magics) or is_manual_position(p, magics)
             ]
 
             needs_save = False
