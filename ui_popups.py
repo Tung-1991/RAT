@@ -974,17 +974,31 @@ def open_advanced_tools_popup(app):
             st = load_grid_state()
             last = (st.get("last_decision") or {})
             last_txt = "No decision yet"
+            range_txt = "Range: ---"
+            next_txt = "Next: ---"
             if last:
                 sym, data = list(last.items())[-1]
                 last_txt = f"{sym}: {data.get('status')} / {data.get('reason')}"
+                boundary = data.get("boundary") or (st.get("active_sessions", {}).get(sym, {}) or {}).get("boundary")
+                if isinstance(boundary, dict):
+                    range_txt = f"Range: {float(boundary.get('lower', 0.0)):.2f} -> {float(boundary.get('upper', 0.0)):.2f} ({boundary.get('source', '---')})"
+                if data.get("reason") == "PRICE_OUT_OF_BOUNDARY":
+                    policy = cfg.get("OUT_OF_RANGE_POLICY", "STOP")
+                    next_txt = "Next: stop new orders" if policy == "STOP" else "Next: auto rebuild range"
+                elif data.get("status") in ("READY", "OPEN"):
+                    next_txt = f"Next: {data.get('direction', 'ORDER')}"
+                else:
+                    next_txt = f"Next: {data.get('reason', 'WAIT')}"
             return (
                 f"Type: {cfg.get('GRID_TYPE', 'ATR_DYNAMIC')} | "
                 f"Signal: {cfg.get('GRID_SIGNAL_SOURCE', 'OFF')} | "
+                f"OutRange: {cfg.get('OUT_OF_RANGE_POLICY', 'STOP')} | "
                 f"Scan: {cfg.get('GRID_SCAN_INTERVAL_SECONDS', 5)}s | "
                 f"Mode auto: {'ON' if cfg.get('DYNAMIC_MODE_ENABLED', True) else 'OFF'} | "
                 f"Lot: {cfg.get('FIXED_LOT', 0.01)} | "
                 f"Max orders: {cfg.get('MAX_GRID_ORDERS', 0)} | "
                 f"Max DD: {cfg.get('MAX_BASKET_DRAWDOWN', 0.0)}\n"
+                f"{range_txt} | {next_txt}\n"
                 f"Today PnL: {float(st.get('grid_pnl_today', 0.0) or 0.0):+.2f} | "
                 f"Trades: {int(st.get('grid_trades_today', 0) or 0)} | "
                 f"Last: {last_txt}"
@@ -1035,21 +1049,43 @@ def open_advanced_tools_popup(app):
 
     def _clear_grid_block():
         try:
-            from grid.grid_storage import load_grid_state, save_grid_state
-            st = load_grid_state()
-            for session in (st.get("active_sessions") or {}).values():
-                if isinstance(session, dict):
-                    if session.get("status") == "STOP_NEW":
-                        session["status"] = "ACTIVE"
-                    session.pop("stop_reason", None)
-                    session.pop("last_block_reason", None)
-            st["last_decision"] = {}
-            save_grid_state(st)
+            mgr = getattr(app, "grid_mgr", None)
+            if mgr:
+                mgr.clear_session_block()
             lbl_grid_summary.configure(text=_grid_control_summary())
             if hasattr(app, "log_message"):
                 app.log_message("[GRID] Clear GRID block done.", target="grid")
         except Exception as e:
             messagebox.showerror("GRID", f"Khong the clear GRID block: {e}", parent=top)
+
+    def _current_grid_symbol():
+        try:
+            return app.cbo_symbol.get()
+        except Exception:
+            return getattr(config, "DEFAULT_SYMBOL", "ETHUSD")
+
+    def _rebuild_grid_range():
+        try:
+            sym = _current_grid_symbol()
+            ctx = getattr(app, "latest_market_context", {}).get(sym, {})
+            mgr = getattr(app, "grid_mgr", None)
+            result = mgr.rebuild_session_range(sym, ctx) if mgr else "FAILED|NO_GRID_MANAGER"
+            lbl_grid_summary.configure(text=_grid_control_summary())
+            if hasattr(app, "log_message"):
+                app.log_message(f"[GRID] Rebuild range {sym}: {result}", target="grid")
+        except Exception as e:
+            messagebox.showerror("GRID", f"Khong the rebuild GRID range: {e}", parent=top)
+
+    def _stop_grid_session():
+        try:
+            sym = _current_grid_symbol()
+            mgr = getattr(app, "grid_mgr", None)
+            result = mgr.stop_session(sym) if mgr else "FAILED|NO_GRID_MANAGER"
+            lbl_grid_summary.configure(text=_grid_control_summary())
+            if hasattr(app, "log_message"):
+                app.log_message(f"[GRID] Stop session {sym}: {result}", target="grid")
+        except Exception as e:
+            messagebox.showerror("GRID", f"Khong the stop GRID session: {e}", parent=top)
 
     ctk.CTkButton(
         quick,
@@ -1065,6 +1101,20 @@ def open_advanced_tools_popup(app):
         hover_color="#37474F",
         command=_clear_grid_block,
     ).grid(row=4, column=0, columnspan=4, sticky="ew", padx=10, pady=(0, 10))
+    ctk.CTkButton(
+        quick,
+        text="REBUILD GRID RANGE",
+        fg_color="#1565C0",
+        hover_color="#0D47A1",
+        command=_rebuild_grid_range,
+    ).grid(row=5, column=0, columnspan=4, sticky="ew", padx=10, pady=(0, 10))
+    ctk.CTkButton(
+        quick,
+        text="STOP GRID SESSION",
+        fg_color="#6D4C41",
+        hover_color="#4E342E",
+        command=_stop_grid_session,
+    ).grid(row=6, column=0, columnspan=4, sticky="ew", padx=10, pady=(0, 10))
 
     def _open_grid_settings():
         from grid.grid_ui import open_grid_settings_popup

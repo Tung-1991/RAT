@@ -7,6 +7,7 @@ from typing import Any, Dict, Optional
 BOT_COMMENT_PREFIX = "[BOT]"
 MANUAL_COMMENT_PREFIX = "[USER]"
 GRID_COMMENT_PREFIX = "[GRID]"
+GRID_SAFE_COMMENT_PREFIX = "GRID_"
 HEDGE_COMMENT_PREFIX = "[HEDGE]"
 
 
@@ -25,7 +26,12 @@ def is_grid_position(pos: Any, magics: Optional[Dict[str, int]] = None) -> bool:
     if pos is None:
         return False
     grid_magic = (magics or {}).get("grid_magic")
-    return (grid_magic is not None and _magic(pos) == int(grid_magic)) or GRID_COMMENT_PREFIX in _comment(pos)
+    comment = _comment(pos)
+    return (
+        (grid_magic is not None and _magic(pos) == int(grid_magic))
+        or GRID_COMMENT_PREFIX in comment
+        or comment.startswith(GRID_SAFE_COMMENT_PREFIX)
+    )
 
 
 def is_bot_position(pos: Any, magics: Optional[Dict[str, int]] = None) -> bool:

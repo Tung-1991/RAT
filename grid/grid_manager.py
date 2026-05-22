@@ -17,7 +17,7 @@ from core.storage_manager import append_trade_log, get_magic_numbers
 
 from .grid_config import GRID_COMMENT_PREFIX
 from .grid_executor import GridExecutor
-from .grid_storage import load_grid_settings, load_grid_state, save_grid_state
+from .grid_storage import load_grid_settings, load_grid_state, save_grid_settings, save_grid_state
 
 
 class GridManager:
@@ -27,6 +27,7 @@ class GridManager:
         self.signal_generator = signal_generator
         self.log_callback = log_callback
         self.executor = GridExecutor(connector=connector, log_callback=log_callback)
+        self._decision_log_cache = {}
 
     def log(self, message, error=False):
         if self.log_callback:
@@ -46,6 +47,7 @@ class GridManager:
         state.setdefault("grid_trades_today", 0)
         state.setdefault("grid_daily_loss_count", 0)
         state.setdefault("last_decision", {})
+        state.setdefault("last_decision_log_keys", {})
         state.pop("cooldown_until", None)
 
     def clear_session_block(self, symbol=None):
@@ -67,6 +69,75 @@ class GridManager:
             state["last_decision"] = {}
         save_grid_state(state)
         return "SUCCESS"
+
+    def stop_session(self, symbol=None):
+        state = load_grid_state()
+        self._ensure_grid_state(state)
+        changed = 0
+        for sym, session in list(state.setdefault("active_sessions", {}).items()):
+            if symbol and sym != symbol:
+                continue
+            if isinstance(session, dict):
+                session["status"] = "STOP_NEW"
+                session["stop_reason"] = "USER_STOP_SESSION"
+                session["last_block_reason"] = "USER_STOP_SESSION"
+                session["updated_at"] = time.time()
+                changed += 1
+        save_grid_state(state)
+        return f"SUCCESS|{changed}"
+
+    def rebuild_session_range(self, symbol, context=None):
+        settings = load_grid_settings()
+        state = load_grid_state()
+        self._ensure_grid_state(state)
+        context = context or {}
+        if not context and self.data_engine:
+            try:
+                _, context = self.data_engine.fetch_data_v4(symbol)
+            except Exception:
+                context = {}
+        context = self._prepare_grid_context(symbol, context or {}, settings)
+        price = float((context or {}).get("current_price", 0.0) or 0.0)
+        boundary = self._resolve_rebuilt_boundary(symbol, context or {}, settings, price)
+        spacing = self._resolve_spacing(context or {}, settings, boundary)
+        if not boundary or not spacing or price <= 0:
+            state.setdefault("last_decision", {})[symbol] = {
+                "status": "BLOCK",
+                "reason": "REBUILD_FAILED",
+                "symbol": symbol,
+                "mode": settings.get("DEFAULT_MANUAL_MODE", "NEUTRAL"),
+                "source": "GRID_CONTROL",
+                "time": time.time(),
+            }
+            save_grid_state(state)
+            return "FAILED|REBUILD_FAILED"
+
+        session = self._ensure_session(
+            state,
+            symbol,
+            settings,
+            settings.get("DEFAULT_MANUAL_MODE", "NEUTRAL"),
+            "AUTO",
+            False,
+            context or {},
+        )
+        session["boundary"] = boundary
+        session["spacing"] = spacing
+        session["status"] = "ACTIVE"
+        session.pop("stop_reason", None)
+        session.pop("last_block_reason", None)
+        session["updated_at"] = time.time()
+        state.setdefault("last_preview", {})[symbol] = {
+            "permission": True,
+            "mode": session.get("mode", "NEUTRAL"),
+            "reason": "REBUILD_RANGE",
+            "boundary": boundary,
+            "spacing": spacing,
+            "price": price,
+        }
+        self._record_decision(state, symbol, session, "WAIT", "REBUILD_RANGE", settings=settings, price=price, boundary=boundary, spacing=spacing)
+        save_grid_state(state)
+        return "SUCCESS|REBUILD_RANGE"
 
     def start_manual_session(self, symbol, mode="NEUTRAL", bypass_signal=False, context=None):
         settings = load_grid_settings()
@@ -146,10 +217,11 @@ class GridManager:
             session.update({
                 "mode": mode,
                 "source": source,
-                "status": "ACTIVE",
                 "updated_at": now,
                 "bypass_signal": bool(bypass_signal),
             })
+            if source == "MANUAL" or session.get("status") != "STOP_NEW":
+                session["status"] = "ACTIVE"
 
         boundary = self._resolve_boundary(symbol, context, settings)
         spacing = self._resolve_spacing(context, settings, boundary)
@@ -195,6 +267,17 @@ class GridManager:
         if not boundary or not spacing or price <= 0:
             return {"permission": False, "mode": "BLOCK", "reason": "NO_BOUNDARY_OR_SPACING"}
         if not (boundary["lower"] < price < boundary["upper"]):
+            if str(settings.get("OUT_OF_RANGE_POLICY", "STOP") or "STOP").upper() == "AUTO_REBUILD":
+                rebuilt = self._resolve_rebuilt_boundary(symbol, context, settings, price, spacing)
+                rebuilt_spacing = self._resolve_spacing(context, settings, rebuilt)
+                if rebuilt and rebuilt_spacing and rebuilt["lower"] < price < rebuilt["upper"]:
+                    return {
+                        "permission": True,
+                        "mode": mode,
+                        "reason": "AUTO_REBUILD_RANGE",
+                        "boundary": rebuilt,
+                        "spacing": rebuilt_spacing,
+                    }
             return {"permission": False, "mode": "BLOCK", "reason": "PRICE_OUT_OF_BOUNDARY"}
         return {"permission": True, "mode": mode, "reason": "OK"}
 
@@ -287,6 +370,36 @@ class GridManager:
         mult = float(settings.get("SPACING_ATR_MULTIPLIER", 1.0) or 1.0)
         return atr * mult if atr > 0 and mult > 0 else 0.0
 
+    def _resolve_rebuilt_boundary(self, symbol, context, settings, price, spacing=None):
+        price = float(price or 0.0)
+        if price <= 0:
+            return None
+        spacing = float(spacing or 0.0)
+        if spacing <= 0:
+            spacing = self._resolve_spacing(context, settings, self._resolve_boundary(symbol, context, settings))
+        if spacing <= 0:
+            group = settings.get("GRID_TIMEFRAME_GROUP", "G2")
+            try:
+                atr = float(context.get(f"atr_{group}", context.get("atr")) or 0.0)
+            except (TypeError, ValueError):
+                atr = 0.0
+            if atr > 0:
+                spacing = atr * float(settings.get("SPACING_ATR_MULTIPLIER", 1.0) or 1.0)
+        if spacing <= 0:
+            return None
+        grid_count = max(2, int(settings.get("GRID_COUNT", 10) or 10))
+        half_range = spacing * grid_count / 2.0
+        return {"upper": price + half_range, "lower": price - half_range, "source": "AUTO_REBUILD"}
+
+    def _resolve_lot_size(self, symbol, settings):
+        overrides = settings.get("SYMBOL_LOT_OVERRIDES") or {}
+        lot = None
+        if isinstance(overrides, dict):
+            lot = overrides.get(symbol)
+        if lot in ("", None):
+            lot = settings.get("FIXED_LOT", 0.01)
+        return float(lot or 0.01)
+
     def _hard_safety(self, symbol, settings, state):
         if not self.connector or not getattr(self.connector, "_is_connected", False):
             return False, "NO_CONNECTION"
@@ -344,7 +457,7 @@ class GridManager:
             return False, "GRID_MAX_TRADES_DAY"
         return True, "OK"
 
-    def _record_decision(self, state, symbol, session, status, reason, **extra):
+    def _record_decision(self, state, symbol, session, status, reason, settings=None, **extra):
         decision = {
             "status": status,
             "reason": reason,
@@ -355,12 +468,27 @@ class GridManager:
         }
         decision.update(extra)
         state.setdefault("last_decision", {})[symbol] = decision
-        if decision["source"] == "MANUAL":
+        log_key = f"{symbol}|{status}|{reason}|{decision.get('mode')}|{decision.get('source')}|{extra.get('direction', '')}|{extra.get('level', '')}"
+        last_logs = state.setdefault("last_decision_log_keys", {})
+        prev = self._decision_log_cache.get(symbol) or last_logs.get(symbol, {})
+        now = time.time()
+        cfg = settings or {}
+        repeat_cooldown = float(cfg.get("REOPEN_COOLDOWN_SECONDS", cfg.get("COOLDOWN_SECONDS", 60)) or 60)
+        repeat_cooldown = max(5.0, repeat_cooldown)
+        if status not in {"BLOCK", "WAIT"}:
+            repeat_cooldown = 60.0
+        should_log = (
+            prev.get("key") != log_key
+            or now - float(prev.get("time", 0) or 0) >= repeat_cooldown
+            or status in {"OPEN", "CLOSE"}
+        )
+        if should_log:
             parts = [
                 f"{symbol}",
                 f"status={status}",
                 f"reason={reason}",
                 f"mode={decision.get('mode')}",
+                f"source={decision.get('source')}",
             ]
             if "price" in extra:
                 parts.append(f"price={float(extra['price']):.5f}")
@@ -368,7 +496,14 @@ class GridManager:
                 parts.append(f"direction={extra['direction']}")
             if "level" in extra:
                 parts.append(f"level={extra['level']}")
+            if "boundary" in extra and isinstance(extra["boundary"], dict):
+                parts.append(
+                    f"range={float(extra['boundary'].get('lower', 0.0)):.5f}->{float(extra['boundary'].get('upper', 0.0)):.5f}"
+                )
             self.log("DECISION " + " ".join(parts))
+            cache_item = {"key": log_key, "time": now}
+            self._decision_log_cache[symbol] = cache_item
+            last_logs[symbol] = cache_item
 
     def _scan_session(self, symbol, session, context, settings, state):
         actions = []
@@ -378,31 +513,31 @@ class GridManager:
             session["status"] = "STOP_NEW"
             session["stop_reason"] = gate["reason"]
             state.setdefault("last_preview", {})[symbol] = gate
-            self._record_decision(state, symbol, session, "BLOCK", gate["reason"])
+            self._record_decision(state, symbol, session, "BLOCK", gate["reason"], settings=settings)
             return actions
         if session.get("status") == "STOP_NEW" and not bypass:
             state.setdefault("last_preview", {})[symbol] = gate
-            self._record_decision(state, symbol, session, "BLOCK", session.get("stop_reason", "STOP_NEW"))
+            self._record_decision(state, symbol, session, "BLOCK", session.get("stop_reason", "STOP_NEW"), settings=settings)
             return actions
 
         safety_ok, safety_reason = self._hard_safety(symbol, settings, state)
         if not safety_ok:
             session["last_block_reason"] = safety_reason
-            self._record_decision(state, symbol, session, "BLOCK", safety_reason)
+            self._record_decision(state, symbol, session, "BLOCK", safety_reason, settings=settings)
             return actions
 
         guard_ok, guard_reason = self._grid_safeguard(state, settings)
         if not guard_ok:
             session["status"] = "STOP_NEW"
             session["last_block_reason"] = guard_reason
-            self._record_decision(state, symbol, session, "BLOCK", guard_reason)
+            self._record_decision(state, symbol, session, "BLOCK", guard_reason, settings=settings)
             return actions
 
-        boundary = self._resolve_boundary(symbol, context, settings)
-        spacing = self._resolve_spacing(context, settings, boundary)
+        boundary = gate.get("boundary") or self._resolve_boundary(symbol, context, settings)
+        spacing = gate.get("spacing") or self._resolve_spacing(context, settings, boundary)
         price = float(context.get("current_price", 0.0) or 0.0)
         if not boundary or not spacing or price <= 0:
-            self._record_decision(state, symbol, session, "BLOCK", "NO_BOUNDARY_SPACING_OR_PRICE")
+            self._record_decision(state, symbol, session, "BLOCK", "NO_BOUNDARY_SPACING_OR_PRICE", settings=settings)
             return actions
         session["boundary"] = boundary
         session["spacing"] = spacing
@@ -433,21 +568,21 @@ class GridManager:
             closed = self._close_grid_positions(grid_positions, close_reason)
             session["status"] = "STOP_NEW"
             session["last_block_reason"] = close_reason
-            self._record_decision(state, symbol, session, "CLOSE", close_reason, price=price, pnl=basket_pnl, closed=closed)
+            self._record_decision(state, symbol, session, "CLOSE", close_reason, settings=settings, price=price, pnl=basket_pnl, closed=closed)
             return actions
 
         max_orders = int(settings.get("MAX_GRID_ORDERS", 0) or 0)
         if max_orders > 0 and len(grid_positions) >= max_orders:
             session["last_block_reason"] = "MAX_GRID_ORDERS"
-            self._record_decision(state, symbol, session, "BLOCK", "MAX_GRID_ORDERS", price=price, boundary=boundary, spacing=spacing)
+            self._record_decision(state, symbol, session, "BLOCK", "MAX_GRID_ORDERS", settings=settings, price=price, boundary=boundary, spacing=spacing)
             return actions
 
         gross_lot = sum(float(p.volume) for p in grid_positions)
-        fixed_lot = float(settings.get("FIXED_LOT", 0.01) or 0.01)
+        fixed_lot = self._resolve_lot_size(symbol, settings)
         max_total_lot = float(settings.get("MAX_TOTAL_LOT", 0.0) or 0.0)
         if max_total_lot > 0 and gross_lot + fixed_lot > max_total_lot:
             session["last_block_reason"] = "MAX_GROSS_LOT"
-            self._record_decision(state, symbol, session, "BLOCK", "MAX_GROSS_LOT", price=price, boundary=boundary, spacing=spacing)
+            self._record_decision(state, symbol, session, "BLOCK", "MAX_GROSS_LOT", settings=settings, price=price, boundary=boundary, spacing=spacing)
             return actions
 
         max_dd = float(settings.get("MAX_BASKET_DRAWDOWN", 0.0) or 0.0)
@@ -455,13 +590,13 @@ class GridManager:
             if basket_pnl <= -abs(max_dd):
                 session["status"] = "STOP_NEW"
                 session["last_block_reason"] = "MAX_SESSION_DD"
-                self._record_decision(state, symbol, session, "BLOCK", "MAX_SESSION_DD", price=price, boundary=boundary, spacing=spacing, pnl=basket_pnl)
+                self._record_decision(state, symbol, session, "BLOCK", "MAX_SESSION_DD", settings=settings, price=price, boundary=boundary, spacing=spacing, pnl=basket_pnl)
                 return actions
 
         level = self._level_for_price(price, boundary, spacing)
         direction = self._direction_for_level(price, boundary, session.get("mode", "NEUTRAL"))
         if not direction:
-            self._record_decision(state, symbol, session, "WAIT", "NO_DIRECTION_FOR_MODE", price=price, boundary=boundary, spacing=spacing, level=level)
+            self._record_decision(state, symbol, session, "WAIT", "NO_DIRECTION_FOR_MODE", settings=settings, price=price, boundary=boundary, spacing=spacing, level=level)
             return actions
 
         level_id = f"{direction}_{level}"
@@ -470,11 +605,15 @@ class GridManager:
         last_action = state.setdefault("last_grid_action_times", {}).get(key, 0)
         cooldown = float(settings.get("REOPEN_COOLDOWN_SECONDS", settings.get("COOLDOWN_SECONDS", 60)) or 0)
         if now - float(last_action or 0) < cooldown:
-            self._record_decision(state, symbol, session, "WAIT", "LEVEL_COOLDOWN", price=price, direction=direction, level=level, cooldown=cooldown)
+            self._record_decision(state, symbol, session, "WAIT", "LEVEL_COOLDOWN", settings=settings, price=price, direction=direction, level=level, cooldown=cooldown)
             return actions
 
+        # Reserve the level before sending the order so fast daemon/manual scans
+        # cannot submit the same level twice while MT5 is still responding.
+        state["last_grid_action_times"][key] = now
+
         if self._has_open_level(grid_positions, level_id):
-            self._record_decision(state, symbol, session, "WAIT", "LEVEL_ALREADY_OPEN", price=price, direction=direction, level=level)
+            self._record_decision(state, symbol, session, "WAIT", "LEVEL_ALREADY_OPEN", settings=settings, price=price, direction=direction, level=level)
             return actions
 
         tp_mult = float(settings.get("TAKE_PROFIT_SPACING_MULTIPLIER", 0.8) or 0.8)
@@ -484,7 +623,7 @@ class GridManager:
         if info and info.point > 0:
             tp_price = round(tp_price / info.point) * info.point
 
-        self._record_decision(state, symbol, session, "READY", "ORDER_READY", price=price, direction=direction, level=level, tp=tp_price)
+        self._record_decision(state, symbol, session, "READY", "ORDER_READY", settings=settings, price=price, direction=direction, level=level, tp=tp_price)
         grid_magic = get_magic_numbers().get("grid_magic", 99999)
         result = self.executor.place_grid_order(
             symbol=symbol,
@@ -496,14 +635,20 @@ class GridManager:
             session_id=session["session_id"],
         )
         if "SUCCESS" in result:
-            state["last_grid_action_times"][key] = now
             state.setdefault("level_reopen_counts", {})[key] = int(state.setdefault("level_reopen_counts", {}).get(key, 0)) + 1
             session.setdefault("opened_orders", []).append({"time": now, "level": level_id, "direction": direction, "result": result})
-            self._record_decision(state, symbol, session, "OPEN", result, price=price, direction=direction, level=level, tp=tp_price)
+            self._record_decision(state, symbol, session, "OPEN", result, settings=settings, price=price, direction=direction, level=level, tp=tp_price)
             actions.append(result)
         else:
+            state["last_grid_action_times"].pop(key, None)
             session["last_block_reason"] = result
-            self._record_decision(state, symbol, session, "BLOCK", result, price=price, direction=direction, level=level)
+            if "VALIDATION" in str(result) or "ORDER_REJECTED" in str(result):
+                session["status"] = "STOP_NEW"
+                session["stop_reason"] = result
+                settings["ENABLED"] = False
+                save_grid_settings(settings)
+                self.log(f"AUTO GRID disabled after order failure: {result}", error=True)
+            self._record_decision(state, symbol, session, "BLOCK", result, settings=settings, price=price, direction=direction, level=level)
         return actions
 
     def _level_for_price(self, price, boundary, spacing):

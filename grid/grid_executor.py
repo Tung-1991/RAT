@@ -3,8 +3,6 @@
 
 import MetaTrader5 as mt5
 
-from .grid_config import GRID_CHILD_COMMENT
-
 
 class GridExecutor:
     def __init__(self, connector=None, log_callback=None):
@@ -20,7 +18,22 @@ class GridExecutor:
             return "GRID_FAIL|NO_CONNECTION"
 
         order_type = mt5.ORDER_TYPE_BUY if direction == "BUY" else mt5.ORDER_TYPE_SELL
-        comment = f"{GRID_CHILD_COMMENT}|{session_id}|L:{level_id}"
+        # MT5 may reject special chars in comments on some servers.
+        safe_level = "".join(ch for ch in str(level_id) if ch.isalnum() or ch == "_")[:12]
+        comment = f"GRID_{safe_level}"[:20]
+        if hasattr(self.connector, "validate_order_before_placement"):
+            is_valid, reason = self.connector.validate_order_before_placement(
+                symbol=symbol,
+                order_type=order_type,
+                lot_size=lot_size,
+                sl_price=0.0,
+                tp_price=tp_price,
+            )
+            if not is_valid:
+                safe_reason = str(reason).replace("|", "/")[:120]
+                self.log(f"ORDER BLOCKED {direction} {symbol} lot={lot_size:.2f} tp={tp_price:.5f} reason={safe_reason}", error=True)
+                return f"GRID_FAIL|VALIDATION|{safe_reason}"
+
         result = self.connector.place_order(
             symbol=symbol,
             order_type=order_type,
@@ -33,4 +46,10 @@ class GridExecutor:
         if result and result.retcode == mt5.TRADE_RETCODE_DONE:
             self.log(f"ORDER {direction} {symbol} #{result.order} lot={lot_size:.2f} tp={tp_price:.5f} level={level_id}")
             return f"SUCCESS|{result.order}"
-        return "GRID_FAIL|MT5_ORDER_REJECTED"
+        retcode = getattr(result, "retcode", "NONE") if result else "NONE"
+        server_comment = getattr(result, "comment", "") if result else ""
+        last_error = mt5.last_error()
+        detail = f"retcode={retcode}; comment={server_comment}; last_error={last_error}"
+        safe_detail = detail.replace("|", "/")[:160]
+        self.log(f"ORDER REJECTED {direction} {symbol} lot={lot_size:.2f} tp={tp_price:.5f} {safe_detail}", error=True)
+        return f"GRID_FAIL|MT5_ORDER_REJECTED|{safe_detail}"

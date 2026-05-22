@@ -626,6 +626,7 @@ def setup_left_panel(app, parent):
     app.seg_grid_mode.set(app.var_grid_manual_mode.get())
 
     app.frame_grid_options = ctk.CTkFrame(parent, fg_color="transparent")
+    app.frame_grid_options.grid_columnconfigure(1, weight=1)
     app.chk_grid_bypass = ctk.CTkCheckBox(
         app.frame_grid_options,
         text="Bypass GRID Signal",
@@ -635,9 +636,11 @@ def setup_left_panel(app, parent):
         checkbox_width=18,
         checkbox_height=18,
     )
-    app.chk_grid_bypass.pack(side="left", padx=(0, 14))
+    app.chk_grid_bypass.grid(row=0, column=0, sticky="w", padx=(0, 10), pady=(0, 4))
+    app.frame_grid_status = ctk.CTkFrame(app.frame_grid_options, fg_color="transparent")
+    app.frame_grid_status.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(2, 0))
     app.ind_grid_ready_light = ctk.CTkFrame(
-        app.frame_grid_options,
+        app.frame_grid_status,
         width=14,
         height=14,
         corner_radius=7,
@@ -646,12 +649,13 @@ def setup_left_panel(app, parent):
     app.ind_grid_ready_light.pack(side="left", padx=(0, 6))
     app.ind_grid_ready_light.pack_propagate(False)
     app.lbl_grid_manual_preview = ctk.CTkLabel(
-        app.frame_grid_options,
+        app.frame_grid_status,
         text="Mode: ---",
         font=("Roboto", 11, "bold"),
         text_color="#80DEEA",
         anchor="w",
         justify="left",
+        wraplength=560,
     )
     app.lbl_grid_manual_preview.pack(side="left")
 
@@ -870,7 +874,7 @@ def setup_right_panel(app, parent):
     tab_grid_log = log_tabview.add("GRID-Log")
     app.log_tabview = log_tabview
     app.log_tab_keys = {
-        "manual": log_tabview.get(),
+        "manual": "ðŸ“‹ Manual",
         "bot": "ðŸ¤– Bot",
         "bot-log": "ðŸ¤– Bot-Log",
         "grid": "GRID",
@@ -878,11 +882,18 @@ def setup_right_panel(app, parent):
     }
     app.log_tab_unread = {k: False for k in app.log_tab_keys}
 
-    def _clear_unread_after_click(_event=None):
-        app.after(60, app.clear_active_log_unread)
+    def _clear_unread_after_click(event=None):
+        try:
+            tab_text = event.widget.cget("text") if event and event.widget else log_tabview.get()
+            app.after(20, lambda t=tab_text: app.clear_log_unread_by_tab_name(t))
+        except Exception:
+            app.after(60, app.clear_active_log_unread)
 
     try:
+        log_tabview.configure(command=app.clear_active_log_unread)
         log_tabview._segmented_button.bind("<ButtonRelease-1>", _clear_unread_after_click)
+        for _btn in log_tabview._segmented_button._buttons_dict.values():
+            _btn.bind("<ButtonRelease-1>", _clear_unread_after_click)
     except Exception:
         pass
 

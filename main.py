@@ -163,6 +163,7 @@ class BotUI(ctk.CTk):
             TSL_SETTINGS_FILE = os.path.join(acc_dir, "tsl_settings.json")
             PRESETS_FILE = os.path.join(acc_dir, "presets_config.json")
             BRAIN_SETTINGS_FILE = os.path.join(acc_dir, "brain_settings.json")
+            self.reset_grid_runtime_switch()
             
             
             self.log_message(f"✅ Đã tải Workspace cho tài khoản: {acc_info['login']}")
@@ -231,6 +232,18 @@ class BotUI(ctk.CTk):
             self.log_message("🚀 Đã kích hoạt Bot Daemon ngầm.", target="bot")
         except Exception as e:
             self.log_message(f"❌ Lỗi kích hoạt Daemon: {e}", error=True, target="bot")
+
+    def reset_grid_runtime_switch(self):
+        try:
+            from grid.grid_storage import load_grid_settings, save_grid_settings
+
+            cfg = load_grid_settings()
+            if cfg.get("ENABLED", False):
+                cfg["ENABLED"] = False
+                save_grid_settings(cfg)
+                self.log_message("[GRID] Auto GRID reset to OFF on app startup.", target="grid")
+        except Exception as e:
+            self.log_message(f"[GRID] Cannot reset startup switch: {e}", error=True, target="grid")
 
     def on_closing(self):
         self.running = False
@@ -582,15 +595,26 @@ class BotUI(ctk.CTk):
             reason = "Missing data"
             if upper > lower and price > 0 and spacing > 0:
                 mid = (upper + lower) / 2.0
-                if mode == "LONG":
+                if not (lower < price < upper):
+                    next_action = "OUT_OF_RANGE"
+                    status = "BLOCK"
+                    color = "#F44336"
+                    reason = f"PRICE_OUT_OF_BOUNDARY/{cfg.get('OUT_OF_RANGE_POLICY', 'STOP')}"
+                elif mode == "LONG":
                     next_action = "BUY" if price <= mid else "WAIT"
+                    status = "READY" if next_action == "BUY" else "WAIT"
+                    color = "#00C853" if status == "READY" else "#FFB300"
+                    reason = next_action
                 elif mode == "SHORT":
                     next_action = "SELL" if price >= mid else "WAIT"
+                    status = "READY" if next_action == "SELL" else "WAIT"
+                    color = "#00C853" if status == "READY" else "#FFB300"
+                    reason = next_action
                 else:
                     next_action = "BUY" if price < mid else ("SELL" if price > mid else "WAIT")
-                status = "READY" if next_action in ("BUY", "SELL") else "WAIT"
-                color = "#00C853" if status == "READY" else "#FFB300"
-                reason = next_action
+                    status = "READY" if next_action in ("BUY", "SELL") else "WAIT"
+                    color = "#00C853" if status == "READY" else "#FFB300"
+                    reason = next_action
             else:
                 reason = "Missing data"
             text = f"GRID: {grid_type} | Signal: {signal_source} | {status}: {reason}"
@@ -1088,10 +1112,27 @@ class BotUI(ctk.CTk):
                     spread_cost_per_lot = (tick.ask - tick.bid) * c_size
                     strict_fee = comm_rate + spread_cost_per_lot
 
-                loss_per_lot = active_sl_dist * c_size
+                order_type = mt5.ORDER_TYPE_BUY if d == "BUY" else mt5.ORDER_TYPE_SELL
+                calc_loss = mt5.order_calc_profit(order_type, sym, 1.0, cur_price, p_sl)
+                loss_per_lot = abs(float(calc_loss)) if calc_loss is not None and calc_loss < 0 else active_sl_dist * c_size
                 if (loss_per_lot + strict_fee) > 0:
                     raw_calc = risk_usd / (loss_per_lot + strict_fee)
                     f_lot = round(raw_calc / vol_step) * vol_step
+
+            auto_lot_cap = 0.0
+            try:
+                brain = self.trade_mgr._get_brain_settings(sym)
+                auto_lot_cap = float((brain.get("symbol_configs", {}).get(sym, {}) or {}).get("max_lot_cap", 0.0) or 0.0)
+            except Exception:
+                auto_lot_cap = 0.0
+            if auto_lot_cap <= 0:
+                auto_lot_cap = float(getattr(config, "MAX_LOT_CAP", 0.0) or 0.0)
+            if mlot <= 0 and auto_lot_cap > 0 and f_lot > auto_lot_cap:
+                self.lbl_prev_lot.configure(text=f"CHẶN AUTO LOT: {f_lot:.2f} > {auto_lot_cap:.2f}", text_color=COL_RED)
+                if hasattr(self, "btn_action"):
+                    self.btn_action.configure(state="normal")
+            elif hasattr(self, "btn_action"):
+                self.btn_action.configure(state="normal")
 
             if f_lot < vol_min:
                 self.lbl_prev_lot.configure(text=f"LOT: KHÔNG HỢP LỆ (Min {vol_min})", text_color=COL_RED)
@@ -1301,7 +1342,7 @@ class BotUI(ctk.CTk):
                 import core.storage_manager as storage_manager
                 is_grid = is_grid_position(p, storage_manager.get_magic_numbers())
             except Exception:
-                is_grid = "[GRID]" in str(p.comment)
+                is_grid = "[GRID]" in str(p.comment) or str(p.comment).startswith("GRID_")
 
             if is_grid:
                 origin_tag = "[GRID]"
@@ -1345,7 +1386,10 @@ class BotUI(ctk.CTk):
 
             # [KAISER FIX] Hiển thị rõ loại lệnh con trên Status nếu là lệnh DCA/PCA
             if is_grid:
-                if "[GRID]_CHILD" in str(p.comment):
+                risk_str = "GRID Basket"
+                rew_str = f"TP ${rew_usd:.1f} ({rew_pct:.1f}%)" if p.tp > 0 else "GRID No TP"
+                rr_str = f"{risk_str}  |  {rew_str}"
+                if "[GRID]_CHILD" in str(p.comment) or str(p.comment).startswith("GRID_"):
                     stt_txt = "GRID Child"
                 else:
                     stt_txt = "GRID Running"
@@ -1556,6 +1600,8 @@ class BotUI(ctk.CTk):
             target = "grid"
         if target == "manual" and any(k in msg for k in bot_markers):
             target = "bot"
+        if target == "manual" and "[USER EXEC]" in msg:
+            target = "manual"
 
         if target == "bot":
             if "[BOT EXEC]" in msg or "[TSL]" in msg:
@@ -1567,6 +1613,8 @@ class BotUI(ctk.CTk):
                 target = "bot"  # Lệnh thực thi -> Sang Tab BOT
             else:
                 target = "bot-log"  # Log logic/check -> Sang Tab BOT-LOG
+        elif target == "grid" and "ORDER " in msg:
+            target = "grid"
         elif target == "grid" and "DECISION" in msg:
             target = "grid"
         elif target == "grid":
@@ -1578,6 +1626,7 @@ class BotUI(ctk.CTk):
         self.after(0, lambda: self._write_log(txt, tag, target))
 
     def _log_target_from_tab_name(self, tab_name):
+        tab_name = str(tab_name or "").replace(" *", "")
         if "Bot-Log" in tab_name:
             return "bot-log"
         if "GRID-Log" in tab_name:
@@ -1597,7 +1646,15 @@ class BotUI(ctk.CTk):
         base = keys[target]
         label = f"{base} *" if unread else base
         try:
-            tabview._segmented_button._buttons_dict[base].configure(text=label)
+            buttons = tabview._segmented_button._buttons_dict
+            for key, candidate in buttons.items():
+                try:
+                    current = str(candidate.cget("text"))
+                    clean = current.replace(" *", "")
+                    if key == base or clean == base:
+                        candidate.configure(text=label)
+                except Exception:
+                    pass
         except Exception:
             pass
 
@@ -1605,7 +1662,13 @@ class BotUI(ctk.CTk):
         tabview = getattr(self, "log_tabview", None)
         if not tabview:
             return
-        self._set_log_tab_unread(self._log_target_from_tab_name(tabview.get()), False)
+        active = tabview.get().replace(" *", "")
+        self._set_log_tab_unread(self._log_target_from_tab_name(active), False)
+
+    def clear_log_unread_by_tab_name(self, tab_name):
+        clean = str(tab_name or "").replace(" *", "")
+        self._set_log_tab_unread(self._log_target_from_tab_name(clean), False)
+        self.after(50, self.clear_active_log_unread)
 
     def _write_log(self, txt, tag, target="manual"):
         if target == "bot":
@@ -1632,6 +1695,8 @@ class BotUI(ctk.CTk):
             tabview = getattr(self, "log_tabview", None)
             if tabview and self._log_target_from_tab_name(tabview.get()) != target:
                 self._set_log_tab_unread(target, True)
+            if tabview:
+                self.after(50, self.clear_active_log_unread)
 
     def reset_daily_stats(self):
         if messagebox.askyesno("Xác nhận", "Tạo Phiên/Group mới (Clear Cache)?", parent=self):

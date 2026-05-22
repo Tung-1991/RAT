@@ -34,6 +34,10 @@ REASON_TEXT = {
     "LEVEL_ALREADY_OPEN": "Level này đã có lệnh mở",
     "NO_DIRECTION_FOR_MODE": "Giá chưa vào vùng hợp lệ của mode",
     "PRICE_OUT_OF_BOUNDARY": "Giá đang nằm ngoài vùng lưới",
+    "AUTO_REBUILD_RANGE": "Giá ngoài vùng, đã tự dựng lại vùng lưới",
+    "REBUILD_RANGE": "Đã dựng lại vùng lưới",
+    "REBUILD_FAILED": "Không đủ dữ liệu để dựng lại vùng lưới",
+    "USER_STOP_SESSION": "Người dùng đã dừng session GRID",
     "MAX_GRID_ORDERS": "Đã chạm giới hạn số lệnh GRID",
     "MAX_GROSS_LOT": "Đã chạm giới hạn tổng lot",
     "MAX_SESSION_DD": "Basket đang âm quá ngưỡng",
@@ -178,6 +182,49 @@ def _preview_data(cfg, state, app):
     }
 
 
+def _preview_levels(pdata, cfg, max_rows=12):
+    lower = float(pdata.get("lower", 0.0) or 0.0)
+    upper = float(pdata.get("upper", 0.0) or 0.0)
+    price = float(pdata.get("price", 0.0) or 0.0)
+    spacing = float(pdata.get("spacing", 0.0) or 0.0)
+    tp_distance = float(pdata.get("tp_distance", 0.0) or 0.0)
+    mode = str(cfg.get("DEFAULT_MANUAL_MODE", "NEUTRAL") or "NEUTRAL").upper()
+    if upper <= lower or price <= 0 or spacing <= 0:
+        return []
+
+    midpoint = (upper + lower) / 2.0
+    levels = []
+    count = int((upper - lower) / spacing) + 1
+    count = max(1, min(count, 80))
+    for idx in range(count + 1):
+        level_price = lower + idx * spacing
+        if level_price > upper + spacing * 0.25:
+            break
+        direction = ""
+        if mode == "LONG":
+            direction = "BUY" if level_price <= midpoint else ""
+        elif mode == "SHORT":
+            direction = "SELL" if level_price >= midpoint else ""
+        elif level_price < midpoint:
+            direction = "BUY"
+        elif level_price > midpoint:
+            direction = "SELL"
+        if not direction:
+            continue
+        tp = level_price + tp_distance if direction == "BUY" else level_price - tp_distance
+        distance = abs(price - level_price)
+        levels.append({
+            "idx": idx,
+            "price": level_price,
+            "direction": direction,
+            "tp": tp,
+            "distance": distance,
+        })
+
+    levels.sort(key=lambda item: item["distance"])
+    return levels[:max_rows]
+
+
 def _set_card(label, value):
     try:
         label.configure(text=str(value))
@@ -200,6 +247,7 @@ def open_grid_settings_popup(app):
     tabs = ctk.CTkTabview(top)
     tabs.pack(fill="both", expand=True, padx=12, pady=(10, 6))
     tab_preview = tabs.add("Tổng quan")
+    tab_simple = tabs.add("Dễ dùng")
     tab_basic = tabs.add("Cơ bản")
     tab_safety = tabs.add("An toàn")
     tab_adv = tabs.add("Tín hiệu & Nâng cao")
@@ -233,6 +281,85 @@ def open_grid_settings_popup(app):
         ctk.CTkLabel(preview, text=k, text_color=COL_TEXT, anchor="w", width=140, font=("Roboto", 12, "bold")).grid(row=i, column=0, padx=14, pady=5, sticky="w")
         ctk.CTkLabel(preview, text=v, text_color="#E0F7FA", anchor="w").grid(row=i, column=1, padx=14, pady=5, sticky="w")
 
+    level_box = ctk.CTkFrame(tab_preview, fg_color=COL_PANEL, corner_radius=8)
+    level_box.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+    ctk.CTkLabel(
+        level_box,
+        text="Level gần giá hiện tại",
+        text_color=COL_TEXT,
+        font=("Roboto", 15, "bold"),
+        anchor="w",
+    ).pack(fill="x", padx=14, pady=(12, 6))
+    ctk.CTkLabel(
+        level_box,
+        text="Preview này chỉ để nhìn nhanh vùng BUY/SELL và TP dự kiến. Lệnh thật vẫn phải qua signal, safety, cooldown và START/Auto scan.",
+        text_color=COL_HINT,
+        font=("Arial", 13, "italic"),
+        anchor="w",
+        justify="left",
+        wraplength=1050,
+    ).pack(fill="x", padx=14, pady=(0, 8))
+    grid = ctk.CTkFrame(level_box, fg_color="transparent")
+    grid.pack(fill="x", padx=14, pady=(0, 12))
+    headers = ["Level", "Hướng", "Giá level", "TP dự kiến", "Cách giá hiện tại"]
+    widths = [80, 90, 150, 150, 170]
+    for col, title in enumerate(headers):
+        ctk.CTkLabel(grid, text=title, text_color=COL_TEXT, font=("Roboto", 12, "bold"), width=widths[col], anchor="w").grid(row=0, column=col, sticky="w", padx=6, pady=4)
+    levels = _preview_levels(pdata, cfg)
+    if not levels:
+        ctk.CTkLabel(
+            grid,
+            text="Chưa đủ dữ liệu để dựng level. Cần có giá hiện tại, vùng giá và khoảng lưới.",
+            text_color=COL_MUTED,
+            font=("Arial", 13),
+            anchor="w",
+        ).grid(row=1, column=0, columnspan=5, sticky="w", padx=6, pady=8)
+    for row_idx, item in enumerate(levels, start=1):
+        color = COL_READY if row_idx == 1 else ("#42A5F5" if item["direction"] == "BUY" else "#EF5350")
+        values = [str(item["idx"]), item["direction"], f"{item['price']:.5f}", f"{item['tp']:.5f}", f"{item['distance']:.5f}"]
+        for col, value in enumerate(values):
+            ctk.CTkLabel(
+                grid,
+                text=value,
+                text_color=color if col == 1 else "#E0F7FA",
+                font=("Consolas", 12, "bold" if row_idx == 1 else "normal"),
+                width=widths[col],
+                anchor="w",
+            ).grid(row=row_idx, column=col, sticky="w", padx=6, pady=3)
+
+    _hint(
+        tab_simple,
+        "Simple Mode chỉ giữ các thứ cần nhớ để chạy GRID hằng ngày. Các rule sâu như signal, ping/spread, basket TP/SL vẫn nằm ở tab An toàn và Tín hiệu & Nâng cao.",
+    )
+    simple = ctk.CTkFrame(tab_simple, fg_color=COL_PANEL, corner_radius=8)
+    simple.pack(fill="x", padx=10, pady=10)
+    simple.grid_columnconfigure(2, weight=1)
+    simple_mode = _option(simple, "1. Hướng đánh:", ["NEUTRAL", "LONG", "SHORT"], cfg.get("DEFAULT_MANUAL_MODE", "NEUTRAL"), 0, hint="NEUTRAL: mua thấp bán cao. LONG: chỉ BUY vùng thấp. SHORT: chỉ SELL vùng cao.")
+    simple_type = _option(simple, "2. Kiểu lưới:", ["ATR_DYNAMIC", "ARITHMETIC", "GEOMETRIC"], cfg.get("GRID_TYPE", "ATR_DYNAMIC"), 1, hint="ATR_DYNAMIC dễ dùng nhất khi test live; Arithmetic/Geometric chia lưới cố định hơn.")
+    simple_boundary = _option(simple, "3. Vùng giá:", ["HYBRID", "AUTO_SWING", "MANUAL"], cfg.get("BOUNDARY_MODE", "HYBRID"), 2, hint="HYBRID: có nhập tay thì dùng tay, không thì dùng swing. AUTO_SWING: tự lấy swing. MANUAL: buộc dùng giá nhập tay.")
+    simple_lot = _entry(simple, "4. Lot mỗi lệnh:", cfg.get("FIXED_LOT", 0.01), 3, hint="V1 không martingale. ETHUSD trên Exness thường cần tối thiểu 0.1.")
+    simple_max_orders = _entry(simple, "5. Max orders:", cfg.get("MAX_GRID_ORDERS", 0), 4, hint="Giới hạn số lệnh GRID đang mở. Test nhỏ nên để 3.")
+    simple_out_range = _option(simple, "6. Ngoài vùng:", ["STOP", "AUTO_REBUILD"], cfg.get("OUT_OF_RANGE_POLICY", "STOP"), 5, hint="STOP: đứng chờ. AUTO_REBUILD: dựng vùng mới quanh giá hiện tại.")
+
+    def save_simple():
+        try:
+            next_cfg = load_grid_settings()
+            next_cfg.update({
+                "DEFAULT_MANUAL_MODE": simple_mode.get(),
+                "GRID_TYPE": simple_type.get(),
+                "BOUNDARY_MODE": simple_boundary.get(),
+                "FIXED_LOT": float(simple_lot.get() or 0.01),
+                "MAX_GRID_ORDERS": int(simple_max_orders.get() or 0),
+                "OUT_OF_RANGE_POLICY": simple_out_range.get(),
+            })
+            save_grid_settings(next_cfg)
+            app.log_message("[GRID] Simple settings saved.", target="grid")
+            top.destroy()
+        except ValueError:
+            messagebox.showerror("GRID", "Giá trị Simple Mode không hợp lệ.", parent=top)
+
+    ctk.CTkButton(simple, text="LƯU SIMPLE GRID", fg_color=COL_GRID, command=save_simple).grid(row=6, column=0, columnspan=3, sticky="ew", padx=12, pady=(14, 10))
+
     _hint(tab_basic, "NEUTRAL: mua vùng thấp, bán vùng cao. LONG: chỉ canh BUY ở vùng thấp. SHORT: chỉ canh SELL ở vùng cao.")
     enabled = ctk.BooleanVar(value=cfg.get("ENABLED", False))
     basic = ctk.CTkFrame(tab_basic, fg_color=COL_PANEL, corner_radius=8)
@@ -249,13 +376,23 @@ def open_grid_settings_popup(app):
     ).grid(row=0, column=0, columnspan=3, sticky="w", padx=12, pady=(10, 6))
     default_mode = _option(basic, "Mode mặc định:", ["NEUTRAL", "LONG", "SHORT"], cfg.get("DEFAULT_MANUAL_MODE", "NEUTRAL"), 1, hint="Auto GRID dùng mode này khi Signal Source = OFF. Manual thì dùng mode đang chọn ở panel trade.")
     grid_type = _option(basic, "Kiểu lưới:", ["ATR_DYNAMIC", "ARITHMETIC", "GEOMETRIC"], cfg.get("GRID_TYPE", "ATR_DYNAMIC"), 2, hint="ATR_DYNAMIC: co giãn theo biến động. ARITHMETIC: chia đều theo giá. GEOMETRIC: chia đều theo phần trăm.")
+    out_of_range_policy = _option(basic, "Khi giá ngoài vùng:", ["STOP", "AUTO_REBUILD"], cfg.get("OUT_OF_RANGE_POLICY", "STOP"), 3, hint="STOP: dừng mở lệnh mới khi giá ra khỏi range. AUTO_REBUILD: tự dựng lại range quanh giá hiện tại rồi quét tiếp.")
     boundary_mode = _option(basic, "Cách lấy vùng giá:", ["HYBRID", "AUTO_SWING", "MANUAL"], cfg.get("BOUNDARY_MODE", "HYBRID"), 4, hint="HYBRID: ưu tiên giá nhập tay, nếu trống thì dùng swing. AUTO_SWING: dùng swing. MANUAL: dùng giá nhập tay.")
     upper = _entry(basic, "Giá trên:", cfg.get("MANUAL_UPPER_BOUNDARY", 0.0), 5, hint="Nhập 0 nếu muốn lấy range tự động từ swing/context.")
     lower = _entry(basic, "Giá dưới:", cfg.get("MANUAL_LOWER_BOUNDARY", 0.0), 6, hint="Ví dụ ETH 2100-2150 thì giá dưới = 2100, giá trên = 2150.")
     fixed_lot = _entry(basic, "Lot mỗi lệnh:", cfg.get("FIXED_LOT", 0.01), 7, hint="V1 dùng lot cố định, không martingale.")
-    tp_mult = _entry(basic, "TP mỗi lưới x:", cfg.get("TAKE_PROFIT_SPACING_MULTIPLIER", 0.8), 8, hint="Ví dụ 0.8 nghĩa là TP cách entry 0.8 lần khoảng lưới.")
-    scan_interval = _entry(basic, "Chu kỳ quét Auto (giây):", cfg.get("GRID_SCAN_INTERVAL_SECONDS", 5), 9, hint="Manual START quét ngay; Auto GRID sẽ quét theo chu kỳ này.")
-    ctk.CTkButton(basic, text="LƯU CÀI ĐẶT GRID", fg_color=COL_GRID, command=lambda: save()).grid(row=10, column=0, columnspan=3, sticky="ew", padx=12, pady=(14, 10))
+    lot_overrides_cfg = cfg.get("SYMBOL_LOT_OVERRIDES", {}) or {}
+    current_symbol = _current_symbol(app)
+    symbol_lot_override = _entry(
+        basic,
+        f"Lot riêng {current_symbol}:",
+        lot_overrides_cfg.get(current_symbol, ""),
+        8,
+        hint="Để trống = dùng lot mặc định. Dùng khi symbol có min lot riêng, ví dụ ETHUSD = 0.1.",
+    )
+    tp_mult = _entry(basic, "TP mỗi lưới x:", cfg.get("TAKE_PROFIT_SPACING_MULTIPLIER", 0.8), 9, hint="Ví dụ 0.8 nghĩa là TP cách entry 0.8 lần khoảng lưới.")
+    scan_interval = _entry(basic, "Chu kỳ quét Auto (giây):", cfg.get("GRID_SCAN_INTERVAL_SECONDS", 5), 10, hint="Manual START quét ngay; Auto GRID sẽ quét theo chu kỳ này.")
+    ctk.CTkButton(basic, text="LƯU CÀI ĐẶT GRID", fg_color=COL_GRID, command=lambda: save()).grid(row=11, column=0, columnspan=3, sticky="ew", padx=12, pady=(14, 10))
 
     _hint(tab_safety, "Safety của GRID độc lập với BOT. Clear block chỉ xóa trạng thái STOP_NEW/block, không reset PnL hoặc số lệnh hôm nay.")
     safety = ctk.CTkFrame(tab_safety, fg_color=COL_PANEL, corner_radius=8)
@@ -301,7 +438,7 @@ def open_grid_settings_popup(app):
     atr_mult = _entry(adv, "ATR multiplier:", cfg.get("SPACING_ATR_MULTIPLIER", 1.0), 4, hint="Chỉ dùng cho ATR_DYNAMIC. Ví dụ ATR 5 và multiplier 1.2 thì khoảng lưới = 6.")
     grid_count = _entry(adv, "Grid count:", cfg.get("GRID_COUNT", 10), 5, hint="Chỉ dùng cho ARITHMETIC. Ví dụ range 100 giá, count 10 thì mỗi lưới cách 10 giá.")
     geo_step = _entry(adv, "Geometric step %:", cfg.get("GEOMETRIC_STEP_PERCENT", 1.0), 6, hint="Chỉ dùng cho GEOMETRIC. Ví dụ 1% tại giá 2000 thì khoảng lưới khoảng 20.")
-    reopen_cd = _entry(adv, "Cooldown level (giây):", cfg.get("REOPEN_COOLDOWN_SECONDS", 60), 7)
+    reopen_cd = _entry(adv, "Cooldown level (giây):", cfg.get("REOPEN_COOLDOWN_SECONDS", 900), 7)
     check_ping = ctk.BooleanVar(value=cfg.get("CHECK_PING", True))
     check_spread = ctk.BooleanVar(value=cfg.get("CHECK_SPREAD", True))
     stop_breakout = ctk.BooleanVar(value=cfg.get("STOP_ON_BREAKOUT", True))
@@ -368,6 +505,12 @@ def open_grid_settings_popup(app):
             if enabled.get() and hasattr(app, "set_auto_trade_enabled"):
                 app.set_auto_trade_enabled(False, reason="GRID_AUTO_ON")
             next_cfg = dict(cfg)
+            lot_overrides = dict(next_cfg.get("SYMBOL_LOT_OVERRIDES", {}) or {})
+            override_value = symbol_lot_override.get().strip()
+            if override_value:
+                lot_overrides[current_symbol] = float(override_value)
+            else:
+                lot_overrides.pop(current_symbol, None)
             next_cfg.update({
                 "ENABLED": enabled.get(),
                 "DYNAMIC_MODE_ENABLED": True,
@@ -377,6 +520,7 @@ def open_grid_settings_popup(app):
                 "DEFAULT_MANUAL_MODE": default_mode.get(),
                 "GRID_TIMEFRAME_GROUP": grid_group.get(),
                 "BOUNDARY_MODE": boundary_mode.get(),
+                "OUT_OF_RANGE_POLICY": out_of_range_policy.get(),
                 "MANUAL_UPPER_BOUNDARY": float(upper.get() or 0.0),
                 "MANUAL_LOWER_BOUNDARY": float(lower.get() or 0.0),
                 "GRID_TYPE": grid_type.get(),
@@ -384,8 +528,9 @@ def open_grid_settings_popup(app):
                 "GEOMETRIC_STEP_PERCENT": float(geo_step.get() or 1.0),
                 "SPACING_ATR_MULTIPLIER": float(atr_mult.get() or 1.0),
                 "FIXED_LOT": float(fixed_lot.get() or 0.01),
+                "SYMBOL_LOT_OVERRIDES": lot_overrides,
                 "TAKE_PROFIT_SPACING_MULTIPLIER": float(tp_mult.get() or 0.8),
-                "REOPEN_COOLDOWN_SECONDS": int(reopen_cd.get() or 60),
+                "REOPEN_COOLDOWN_SECONDS": int(reopen_cd.get() or 900),
                 "MAX_GRID_ORDERS": int(max_orders.get() or 0),
                 "MAX_TOTAL_LOT": float(max_total_lot.get() or 0.0),
                 "MAX_BASKET_DRAWDOWN": float(max_dd.get() or 0.0),

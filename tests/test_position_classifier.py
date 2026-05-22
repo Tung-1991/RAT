@@ -33,6 +33,10 @@ class PositionClassifierTests(unittest.TestCase):
         self.assertTrue(is_grid_position(pos, self.magics))
         self.assertFalse(is_manual_position(pos, self.magics))
 
+    def test_grid_safe_comment_prefix(self):
+        pos = SimpleNamespace(magic=0, comment="GRID_SELL_6")
+        self.assertTrue(is_grid_position(pos, self.magics))
+
 
 if __name__ == "__main__":
     unittest.main()

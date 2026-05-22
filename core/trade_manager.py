@@ -919,6 +919,7 @@ class TradeManager:
 
         risk_pct = params.get("RISK_PERCENT", 0.3)
 
+        auto_lot = manual_lot <= 0
         if manual_lot > 0:
             lot_size = manual_lot
         else:
@@ -956,6 +957,8 @@ class TradeManager:
         brain = self._get_brain_settings(symbol)
         sym_cfgs = brain.get("symbol_configs", {}).get(symbol, {})
         max_lot_cap = float(sym_cfgs.get("max_lot_cap", 0.0))
+        if max_lot_cap <= 0:
+            max_lot_cap = float(getattr(config, "MAX_LOT_CAP", 0.0) or 0.0)
         if max_lot_cap > 0:
             lot_size = min(lot_size, max_lot_cap)
 
@@ -1028,7 +1031,7 @@ class TradeManager:
 
             save_state(self.state)
             self.log(
-                f"🚀 [USER EXEC] {direction} {symbol} #{result.order} | Vol: {lot_size:.2f} | TSL: {tactic_str}"
+                f"🚀 [USER EXEC] {direction} {symbol} #{result.order} | Vol: {lot_size:.2f} | Entry: {price:.5f} | SL: {sl_price:.5f} | TP: {tp_price:.5f} | TSL: {tactic_str}"
             )
             return f"SUCCESS|{result.order}"
 
