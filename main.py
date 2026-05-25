@@ -22,9 +22,10 @@ from core.trade_manager import TradeManager
 from core.storage_manager import load_state, save_state
 from core.signal_listener import SignalListener
 from core.data_engine import data_engine
-from core.position_classifier import is_bot_position, is_grid_position, is_manual_position
+from core.position_classifier import is_bot_position, is_grid_position, is_hedge_position, is_manual_position
 from signals.signal_generator import signal_generator
 from grid.grid_manager import GridManager
+from hedge.hedge_manager import HedgeManager
 import traceback
 
 def handle_exception(exc_type, exc_value, exc_traceback):
@@ -114,6 +115,7 @@ class BotUI(ctk.CTk):
         self.var_manual_trade_mode = tk.StringVar(value="NORMAL")
         self.var_grid_manual_mode = tk.StringVar(value="NEUTRAL")
         self.var_grid_bypass_signal = tk.BooleanVar(value=False)
+        self.var_hedge_bypass_entry = tk.BooleanVar(value=False)
 
         self.tactic_states = {
             "BE": True,
@@ -182,6 +184,12 @@ class BotUI(ctk.CTk):
             self.connector, self.checklist_mgr, log_callback=self.log_message
         )
         self.grid_mgr = GridManager(
+            self.connector,
+            data_engine=data_engine,
+            signal_generator=signal_generator,
+            log_callback=self.log_message,
+        )
+        self.hedge_mgr = HedgeManager(
             self.connector,
             data_engine=data_engine,
             signal_generator=signal_generator,
@@ -511,6 +519,13 @@ class BotUI(ctk.CTk):
                 hover_color="#006064",
             )
             return
+        if getattr(self, "var_manual_trade_mode", None) and self.var_manual_trade_mode.get() == "HEDGE":
+            self.btn_action.configure(
+                text=f"START HEDGE DUAL {sym}",
+                fg_color="#6A1B9A",
+                hover_color="#4A148C",
+            )
+            return
         if value == "BUY":
             self.btn_action.configure(
                 text=f"VÀO LỆNH MUA {sym}", fg_color=COL_GREEN, hover_color="#009624"
@@ -535,28 +550,55 @@ class BotUI(ctk.CTk):
         self.var_manual_trade_mode.set(value)
         if hasattr(self, "btn_mode_normal") and hasattr(self, "btn_mode_grid"):
             normal_on = value == "NORMAL"
+            grid_on = value == "GRID"
+            hedge_on = value == "HEDGE"
             self.btn_mode_normal.configure(
                 fg_color="#00838F" if normal_on else "#424242",
                 hover_color="#006064" if normal_on else "#616161",
             )
             self.btn_mode_grid.configure(
-                fg_color="#00838F" if not normal_on else "#424242",
-                hover_color="#006064" if not normal_on else "#616161",
+                fg_color="#00838F" if grid_on else "#424242",
+                hover_color="#006064" if grid_on else "#616161",
             )
+            if hasattr(self, "btn_mode_hedge"):
+                self.btn_mode_hedge.configure(
+                    fg_color="#6A1B9A" if hedge_on else "#424242",
+                    hover_color="#4A148C" if hedge_on else "#616161",
+                )
         if value == "GRID":
             if hasattr(self, "frame_direction"):
                 self.frame_direction.grid_remove()
+            if hasattr(self, "frame_hedge_options"):
+                self.frame_hedge_options.pack_forget()
             if hasattr(self, "seg_grid_mode"):
                 self.seg_grid_mode.pack(fill="x", padx=10, pady=(5, 5), before=self.btn_action)
             if hasattr(self, "frame_grid_options"):
                 self.frame_grid_options.pack(fill="x", padx=12, pady=(0, 6), before=self.btn_action)
                 self.update_grid_manual_preview()
             self.on_grid_mode_change(self.var_grid_manual_mode.get())
+        elif value == "HEDGE":
+            if hasattr(self, "frame_direction"):
+                self.frame_direction.grid_remove()
+            if hasattr(self, "seg_grid_mode"):
+                self.seg_grid_mode.pack_forget()
+            if hasattr(self, "frame_grid_options"):
+                self.frame_grid_options.pack_forget()
+            if hasattr(self, "frame_hedge_options"):
+                self.frame_hedge_options.pack(fill="x", padx=12, pady=(0, 6), before=self.btn_action)
+                self.update_hedge_manual_preview()
+            sym = self.cbo_symbol.get()
+            self.btn_action.configure(
+                text=f"START HEDGE DUAL {sym}",
+                fg_color="#6A1B9A",
+                hover_color="#4A148C",
+            )
         else:
             if hasattr(self, "seg_grid_mode"):
                 self.seg_grid_mode.pack_forget()
             if hasattr(self, "frame_grid_options"):
                 self.frame_grid_options.pack_forget()
+            if hasattr(self, "frame_hedge_options"):
+                self.frame_hedge_options.pack_forget()
             if hasattr(self, "frame_direction"):
                 self.frame_direction.grid()
             self.on_direction_change(self.var_direction.get())
@@ -625,6 +667,32 @@ class BotUI(ctk.CTk):
             if hasattr(self, "ind_grid_ready_light"):
                 self.ind_grid_ready_light.configure(fg_color="#F44336")
             self.lbl_grid_manual_preview.configure(text=f"GRID Preview error: {e}")
+
+    def update_hedge_manual_preview(self):
+        if not hasattr(self, "lbl_hedge_manual_preview"):
+            return
+        try:
+            from hedge.hedge_storage import load_hedge_settings
+
+            sym = self.cbo_symbol.get()
+            ctx = getattr(self, "latest_market_context", {}).get(sym, {})
+            gate = self.hedge_mgr.evaluate_entry_gate(sym, ctx, load_hedge_settings())
+            color = "#00C853" if gate["permission"] else "#FFB300"
+            if gate["reason"] not in ("OK", "") and gate["status"] != "READY":
+                color = "#F44336" if "NO_" in gate["reason"] else "#FFB300"
+            text = (
+                f"HEDGE: {gate.get('tactic', 'BASKET')} | "
+                f"Signal: {gate.get('signal_status', 'OFF')} | "
+                f"Swing: {gate.get('swing_status', 'OFF')} | "
+                f"{gate.get('status', 'WAIT')}: {gate.get('reason', '---')}"
+            )
+            if hasattr(self, "ind_hedge_ready_light"):
+                self.ind_hedge_ready_light.configure(fg_color=color)
+            self.lbl_hedge_manual_preview.configure(text=text)
+        except Exception as e:
+            if hasattr(self, "ind_hedge_ready_light"):
+                self.ind_hedge_ready_light.configure(fg_color="#F44336")
+            self.lbl_hedge_manual_preview.configure(text=f"HEDGE Preview error: {e}")
 
     # ==========================================
     # CÁC HÀM MỞ POPUP & GIAO DIỆN PHỤ
@@ -845,7 +913,12 @@ class BotUI(ctk.CTk):
                 pos = [
                     p
                     for p in self.connector.get_all_open_positions()
-                    if is_bot_position(p, magics) or is_manual_position(p, magics) or is_grid_position(p, magics)
+                    if (
+                        is_bot_position(p, magics)
+                        or is_manual_position(p, magics)
+                        or is_grid_position(p, magics)
+                        or is_hedge_position(p, magics)
+                    )
                 ]
                 self.after(
                     0,
@@ -957,7 +1030,22 @@ class BotUI(ctk.CTk):
             self.lbl_acc_info.configure(
                 text=f"ID: {acc['login']}\nServer: {acc['server']}"
             )
-        pnl = state["pnl_today"]
+        base_pnl = float(state.get("pnl_today", 0.0) or 0.0)
+        grid_pnl = 0.0
+        hedge_pnl = 0.0
+        try:
+            from grid.grid_storage import load_grid_state
+
+            grid_pnl = float(load_grid_state().get("grid_pnl_today", 0.0) or 0.0)
+        except Exception:
+            grid_pnl = 0.0
+        try:
+            from hedge.hedge_storage import load_hedge_state
+
+            hedge_pnl = float(load_hedge_state().get("hedge_pnl_today", 0.0) or 0.0)
+        except Exception:
+            hedge_pnl = 0.0
+        pnl = base_pnl + grid_pnl + hedge_pnl
         self.lbl_stats.configure(
             text=f"PNL: ${pnl:.2f}",
             text_color=COL_GREEN if pnl >= 0 else COL_RED,
@@ -1302,6 +1390,20 @@ class BotUI(ctk.CTk):
         current_tickets_on_chart = []
         child_to_parent = self.trade_mgr.state.get("child_to_parent", {})
         open_fee_total = 0.0  # [NEW] Tổng fee từ lệnh đang mở
+        hedge_ticket_map = {}
+        try:
+            from hedge.hedge_storage import load_hedge_state
+
+            hedge_state = load_hedge_state()
+            for _sym, _session in (hedge_state.get("active_sessions") or {}).items():
+                if not isinstance(_session, dict):
+                    continue
+                for _role, _key in (("BUY", "buy_ticket"), ("SELL", "sell_ticket"), ("RECOVERY", "recovery_ticket")):
+                    _ticket = _session.get(_key)
+                    if _ticket:
+                        hedge_ticket_map[str(_ticket)] = {"role": _role, "session": _session}
+        except Exception:
+            hedge_ticket_map = {}
 
         for p in positions:
             ticket_str = str(p.ticket)
@@ -1340,12 +1442,20 @@ class BotUI(ctk.CTk):
             origin_tag = "[UI]"
             try:
                 import core.storage_manager as storage_manager
-                is_grid = is_grid_position(p, storage_manager.get_magic_numbers())
+                magics = storage_manager.get_magic_numbers()
+                is_grid = is_grid_position(p, magics)
+                is_hedge = is_hedge_position(p, magics)
             except Exception:
                 is_grid = "[GRID]" in str(p.comment) or str(p.comment).startswith("GRID_")
+                is_hedge = "[HEDGE]" in str(p.comment) or str(p.comment).startswith("HEDGE_")
 
             if is_grid:
                 origin_tag = "[GRID]"
+            elif is_hedge:
+                hedge_info = hedge_ticket_map.get(ticket_str, {})
+                hedge_session = hedge_info.get("session", {}) if isinstance(hedge_info, dict) else {}
+                hedge_source = str(hedge_session.get("source", "") or "").upper()
+                origin_tag = f"[HEDGE-{hedge_source}]" if hedge_source else "[HEDGE]"
             elif "[BOT]_AUTO_DCA" in p.comment:
                 origin_tag = "[BOT-DCA]"
             elif "[BOT]_AUTO_PCA" in p.comment:
@@ -1393,6 +1503,20 @@ class BotUI(ctk.CTk):
                     stt_txt = "GRID Child"
                 else:
                     stt_txt = "GRID Running"
+            elif is_hedge:
+                hedge_info = hedge_ticket_map.get(ticket_str, {})
+                hedge_session = hedge_info.get("session", {}) if isinstance(hedge_info, dict) else {}
+                hedge_role = hedge_info.get("role", "---") if isinstance(hedge_info, dict) else "---"
+                hedge_tactic = str(hedge_session.get("tactic", "HEDGE") or "HEDGE").upper()
+                hedge_status = str(hedge_session.get("status", "RUNNING") or "RUNNING").upper()
+                hedge_source = str(hedge_session.get("source", "---") or "---").upper()
+                closed_pnl = float(hedge_session.get("closed_leg_pnl", 0.0) or 0.0)
+                if hedge_status == "RECOVERY":
+                    rr_str = f"HEDGE Recovery | closed {closed_pnl:+.2f}"
+                    stt_txt = f"HEDGE {hedge_source} | {hedge_tactic} | RECOVERY:{hedge_role}"
+                else:
+                    rr_str = f"HEDGE Pair | {hedge_tactic}"
+                    stt_txt = f"HEDGE {hedge_source} | {hedge_tactic} | {hedge_status}:{hedge_role}"
             elif "[BOT]_AUTO_DCA" in p.comment:
                 stt_txt = "DCA Child"
             elif "[BOT]_AUTO_PCA" in p.comment:
@@ -1460,7 +1584,7 @@ class BotUI(ctk.CTk):
                 stt_txt,
                 "❌",
             )
-            tag_to_apply = "grid_row" if is_grid else ("buy_row" if is_buy else "sell_row")
+            tag_to_apply = "hedge_row" if is_hedge else ("grid_row" if is_grid else ("buy_row" if is_buy else "sell_row"))
 
             if ticket_str in existing_items:
                 self.tree.item(ticket_str, values=values_data, tags=(tag_to_apply,))
@@ -1481,6 +1605,24 @@ class BotUI(ctk.CTk):
         )
 
     def on_click_trade(self):
+        if getattr(self, "var_manual_trade_mode", None) and self.var_manual_trade_mode.get() == "HEDGE":
+            symbol = self.cbo_symbol.get()
+            context = self.latest_market_context.get(symbol, {})
+
+            def run_hedge_thread():
+                result = self.hedge_mgr.start_manual_session(symbol, context=context)
+                scan_result = self.hedge_mgr.scan([symbol], {symbol: context})
+                if "SUCCESS" in result:
+                    self.log_message(
+                        f"[HEDGE] Manual dual session started for {symbol}. Manage actions: {scan_result.get('actions', [])}",
+                        target="hedge",
+                    )
+                else:
+                    self.log_message(f"[HEDGE] START failed: {result}", error=True, target="hedge")
+
+            threading.Thread(target=run_hedge_thread, daemon=True).start()
+            return
+
         if getattr(self, "var_manual_trade_mode", None) and self.var_manual_trade_mode.get() == "GRID":
             symbol = self.cbo_symbol.get()
             mode = self.var_grid_manual_mode.get()
@@ -1595,9 +1737,12 @@ class BotUI(ctk.CTk):
 
         # [NEW V4.4 FINAL] Tự động định tuyến log của bot vào 2 Tab (BOT và BOT-LOG)
         grid_markers = ("[GRID]", "[GRID]_", "GRID SAFEGUARD")
+        hedge_markers = ("[HEDGE]", "[HEDGE]_", "HEDGE_")
         bot_markers = ("[BOT]", "[BOT]_", "[BOT-DCA]", "[BOT-PCA]", "AUTO_DCA", "AUTO_PCA", "BOT SAFEGUARD")
         if target == "manual" and any(k in msg for k in grid_markers):
             target = "grid"
+        if target == "manual" and any(k in msg for k in hedge_markers):
+            target = "hedge"
         if target == "manual" and any(k in msg for k in bot_markers):
             target = "bot"
         if target == "manual" and "[USER EXEC]" in msg:
@@ -1622,6 +1767,10 @@ class BotUI(ctk.CTk):
                 target = "grid"
             else:
                 target = "grid-log"
+        elif target == "hedge" and any(k in msg for k in ["OPEN", "CLOSE", "SUCCESS", "FAIL", "PAIR_OPENED"]):
+            target = "hedge"
+        elif target == "hedge":
+            target = "hedge-log"
 
         self.after(0, lambda: self._write_log(txt, tag, target))
 
@@ -1631,10 +1780,14 @@ class BotUI(ctk.CTk):
             return "bot-log"
         if "GRID-Log" in tab_name:
             return "grid-log"
+        if "HEDGE-Log" in tab_name:
+            return "hedge-log"
         if "Bot" in tab_name:
             return "bot"
         if "GRID" in tab_name:
             return "grid"
+        if "HEDGE" in tab_name:
+            return "hedge"
         return "manual"
 
     def _set_log_tab_unread(self, target, unread):
@@ -1684,6 +1837,12 @@ class BotUI(ctk.CTk):
             widget = getattr(
                 self, "txt_log_grid_log", getattr(self, "txt_log_grid", None)
             )
+        elif target == "hedge":
+            widget = getattr(self, "txt_log_hedge", None)
+        elif target == "hedge-log":
+            widget = getattr(
+                self, "txt_log_hedge_log", getattr(self, "txt_log_hedge", None)
+            )
         else:
             widget = getattr(self, "txt_log_manual", None)
 
@@ -1729,6 +1888,34 @@ class BotUI(ctk.CTk):
                 }
             )
             save_state(self.trade_mgr.state)
+            try:
+                from grid.grid_storage import load_grid_state, save_grid_state
+
+                grid_state = load_grid_state()
+                grid_state.update(
+                    {
+                        "grid_pnl_today": 0.0,
+                        "grid_trades_today": 0,
+                        "grid_daily_loss_count": 0,
+                    }
+                )
+                save_grid_state(grid_state)
+            except Exception:
+                pass
+            try:
+                from hedge.hedge_storage import load_hedge_state, save_hedge_state
+
+                hedge_state = load_hedge_state()
+                hedge_state.update(
+                    {
+                        "hedge_pnl_today": 0.0,
+                        "hedge_sessions_today": 0,
+                        "hedge_daily_loss_count": 0,
+                    }
+                )
+                save_hedge_state(hedge_state)
+            except Exception:
+                pass
             try:
                 import core.storage_manager as storage_manager
 
@@ -1840,6 +2027,36 @@ class BotUI(ctk.CTk):
             if row_id:
                 self.tree.selection_set(row_id)
                 ticket = int(row_id)
+                try:
+                    import core.storage_manager as storage_manager
+                    from hedge.hedge_storage import load_hedge_state
+
+                    magics = storage_manager.get_magic_numbers()
+                    pos = next((p for p in self.connector.get_all_open_positions() if p.ticket == ticket), None)
+                    if pos and is_hedge_position(pos, magics):
+                        hedge_state = load_hedge_state()
+                        hedge_label = "HEDGE"
+                        for _sym, _session in (hedge_state.get("active_sessions") or {}).items():
+                            if not isinstance(_session, dict):
+                                continue
+                            ticket_roles = {
+                                str(_session.get("buy_ticket")): "BUY",
+                                str(_session.get("sell_ticket")): "SELL",
+                                str(_session.get("recovery_ticket")): "RECOVERY",
+                            }
+                            role = ticket_roles.get(str(ticket))
+                            if role:
+                                hedge_label = (
+                                    f"HEDGE {_session.get('source', '-')}"
+                                    f" | {_session.get('tactic', '-')}"
+                                    f" | {_session.get('status', '-')}"
+                                    f" | {role}"
+                                )
+                                break
+                        menu.add_command(label=hedge_label, state="disabled")
+                        menu.add_separator()
+                except Exception:
+                    pass
 
                 menu.add_command(
                     label=f"📝 Sửa lệnh #{ticket}",

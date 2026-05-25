@@ -20,6 +20,8 @@ from core.logger_setup import setup_logging  # [NEW V4.3] Import hệ thống Lo
 
 from grid.grid_manager import GridManager
 from grid.grid_storage import load_grid_settings
+from hedge.hedge_manager import HedgeManager
+from hedge.hedge_storage import load_hedge_settings, load_hedge_state
 
 logging.basicConfig(level=logging.INFO, format="[%(asctime)s] [DAEMON] %(message)s")
 logger = logging.getLogger("BotDaemon")
@@ -57,6 +59,7 @@ class StandaloneBotDaemon:
         self.dca_pca_interval = 2
         self.last_dca_pca_scan = 0
         self.last_grid_scan = 0
+        self.last_hedge_scan = 0
         self.pending_signals = []
         self.heartbeat_contexts = {}
         self.last_entry_signal_times = {}
@@ -65,6 +68,12 @@ class StandaloneBotDaemon:
             data_engine=data_engine,
             signal_generator=signal_generator,
             log_callback=lambda msg, error=False, target="grid": logger.error(msg) if error else logger.info(msg),
+        )
+        self.hedge_manager = HedgeManager(
+            connector=self.connector,
+            data_engine=data_engine,
+            signal_generator=signal_generator,
+            log_callback=lambda msg, error=False, target="hedge": logger.error(msg) if error else logger.info(msg),
         )
 
     def _get_entry_signal_cooldown(self, symbol):
@@ -240,6 +249,21 @@ class StandaloneBotDaemon:
                     grid_symbols = grid_cfg.get("WATCHLIST") or symbols
                     self.grid_manager.scan(grid_symbols, self.heartbeat_contexts)
                     self.last_grid_scan = now
+
+                hedge_cfg = load_hedge_settings()
+                hedge_state = load_hedge_state()
+                try:
+                    hedge_interval = max(
+                        0.5,
+                        float(hedge_cfg.get("HEDGE_SCAN_INTERVAL_SECONDS", 2) or 2),
+                    )
+                except Exception:
+                    hedge_interval = 2.0
+                hedge_has_sessions = bool(hedge_state.get("active_sessions") or {})
+                if (hedge_cfg.get("ENABLED", False) or hedge_has_sessions) and (now - self.last_hedge_scan >= hedge_interval):
+                    hedge_symbols = hedge_cfg.get("WATCHLIST") or []
+                    self.hedge_manager.scan(hedge_symbols, self.heartbeat_contexts)
+                    self.last_hedge_scan = now
 
                 # Luồng gốc ngủ rất ngắn để không gây kẹt tiến trình
                 time.sleep(0.5)

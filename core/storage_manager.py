@@ -136,25 +136,34 @@ def get_magic_numbers() -> Dict[str, int]:
     Đọc system_meta.json để lấy cặp MagicNumber. Nếu chưa có, tạo mới không trùng lặp.
     """
     import random
+
+    def generate_unique(used_magics):
+        while True:
+            m = random.randint(1000, 99999)
+            if m not in used_magics:
+                used_magics.add(m)
+                return m
     
     if os.path.exists(SYSTEM_META_FILE):
         try:
             with open(SYSTEM_META_FILE, "r") as f:
                 data = json.load(f)
                 if "bot_magic" in data and "manual_magic" in data:
+                    used_magics = set()
+                    for k, v in data.items():
+                        if k.endswith("_magic"):
+                            try:
+                                used_magics.add(int(v))
+                            except Exception:
+                                pass
+                    changed = False
                     if "grid_magic" not in data:
-                        used_magics = set()
-                        for k, v in data.items():
-                            if k.endswith("_magic"):
-                                try:
-                                    used_magics.add(int(v))
-                                except Exception:
-                                    pass
-                        while True:
-                            grid_magic = random.randint(1000, 99999)
-                            if grid_magic not in used_magics:
-                                data["grid_magic"] = grid_magic
-                                break
+                        data["grid_magic"] = generate_unique(used_magics)
+                        changed = True
+                    if "hedge_magic" not in data:
+                        data["hedge_magic"] = generate_unique(used_magics)
+                        changed = True
+                    if changed:
                         os.makedirs(_active_account_dir, exist_ok=True)
                         with open(SYSTEM_META_FILE, "w") as wf:
                             json.dump(data, wf, indent=4)
@@ -174,11 +183,12 @@ def get_magic_numbers() -> Dict[str, int]:
                         if "bot_magic" in d: used_magics.add(int(d["bot_magic"]))
                         if "manual_magic" in d: used_magics.add(int(d["manual_magic"]))
                         if "grid_magic" in d: used_magics.add(int(d["grid_magic"]))
+                        if "hedge_magic" in d: used_magics.add(int(d["hedge_magic"]))
                 except:
                     pass
 
     # Sinh 2 số mới
-    def generate_unique():
+    def generate_unique(used_magics=used_magics):
         while True:
             m = random.randint(1000, 99999)
             if m not in used_magics:
@@ -188,11 +198,13 @@ def get_magic_numbers() -> Dict[str, int]:
     new_bot_magic = generate_unique()
     new_manual_magic = generate_unique()
     new_grid_magic = generate_unique()
+    new_hedge_magic = generate_unique()
     
     meta_data = {
         "bot_magic": new_bot_magic,
         "manual_magic": new_manual_magic,
-        "grid_magic": new_grid_magic
+        "grid_magic": new_grid_magic,
+        "hedge_magic": new_hedge_magic
     }
     
     os.makedirs(_active_account_dir, exist_ok=True)

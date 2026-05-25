@@ -495,6 +495,17 @@ def setup_left_panel(app, parent):
         command=lambda: app.on_manual_trade_mode_change("GRID"),
     )
     app.btn_mode_grid.pack(fill="x", padx=4, pady=(1, 4))
+    app.btn_mode_hedge = ctk.CTkButton(
+        app.frame_trade_mode,
+        text="HEDGE",
+        width=96,
+        height=24,
+        font=("Roboto", 10, "bold"),
+        fg_color="#424242",
+        hover_color="#616161",
+        command=lambda: app.on_manual_trade_mode_change("HEDGE"),
+    )
+    app.btn_mode_hedge.pack(fill="x", padx=4, pady=(1, 4))
 
     app.lbl_dashboard_price = ctk.CTkLabel(
         f_price_row, text="----.--", font=FONT_PRICE, text_color="white"
@@ -659,6 +670,29 @@ def setup_left_panel(app, parent):
     )
     app.lbl_grid_manual_preview.pack(side="left")
 
+    app.frame_hedge_options = ctk.CTkFrame(parent, fg_color="transparent")
+    app.frame_hedge_status = ctk.CTkFrame(app.frame_hedge_options, fg_color="transparent")
+    app.frame_hedge_status.pack(fill="x", pady=(2, 0))
+    app.ind_hedge_ready_light = ctk.CTkFrame(
+        app.frame_hedge_status,
+        width=14,
+        height=14,
+        corner_radius=7,
+        fg_color="#FFB300",
+    )
+    app.ind_hedge_ready_light.pack(side="left", padx=(0, 6))
+    app.ind_hedge_ready_light.pack_propagate(False)
+    app.lbl_hedge_manual_preview = ctk.CTkLabel(
+        app.frame_hedge_status,
+        text="HEDGE: ---",
+        font=("Roboto", 11, "bold"),
+        text_color="#CE93D8",
+        anchor="w",
+        justify="left",
+        wraplength=560,
+    )
+    app.lbl_hedge_manual_preview.pack(side="left")
+
     app.on_manual_trade_mode_change(app.var_manual_trade_mode.get())
 
     # 6. SYSTEM HEALTH
@@ -760,6 +794,7 @@ def setup_right_panel(app, parent):
     app.tree.tag_configure("buy_row", background="#234d20", foreground="#e0e0e0")
     app.tree.tag_configure("sell_row", background="#5c1a1b", foreground="#e0e0e0")
     app.tree.tag_configure("grid_row", background="#153942", foreground="#E0F7FA")
+    app.tree.tag_configure("hedge_row", background="#3B1744", foreground="#F3E5F5")
 
     headers = [
         "Ticket",
@@ -844,10 +879,14 @@ def setup_right_panel(app, parent):
             widget = app.txt_log_bot_log
         elif "GRID-Log" in active_tab:  # [FIX] GRID-Log phải check trước GRID
             widget = app.txt_log_grid_log
+        elif "HEDGE-Log" in active_tab:
+            widget = app.txt_log_hedge_log
         elif "Bot" in active_tab:  # [FIX] Bot phải check trước khi dùng GRID
             widget = app.txt_log_bot
         elif "GRID" in active_tab:
             widget = app.txt_log_grid
+        elif "HEDGE" in active_tab:
+            widget = app.txt_log_hedge
         else:
             widget = app.txt_log_manual
 
@@ -872,6 +911,8 @@ def setup_right_panel(app, parent):
 
     tab_grid = log_tabview.add("GRID")
     tab_grid_log = log_tabview.add("GRID-Log")
+    tab_hedge = log_tabview.add("HEDGE")
+    tab_hedge_log = log_tabview.add("HEDGE-Log")
     app.log_tabview = log_tabview
     app.log_tab_keys = {
         "manual": "ðŸ“‹ Manual",
@@ -879,6 +920,8 @@ def setup_right_panel(app, parent):
         "bot-log": "ðŸ¤– Bot-Log",
         "grid": "GRID",
         "grid-log": "GRID-Log",
+        "hedge": "HEDGE",
+        "hedge-log": "HEDGE-Log",
     }
     app.log_tab_unread = {k: False for k in app.log_tab_keys}
 
@@ -1012,5 +1055,51 @@ def setup_right_panel(app, parent):
     app.txt_log_grid_log.tag_config("ERROR", foreground=COL_RED)
     app.txt_log_grid_log.tag_config("WARN", foreground=COL_WARN)
     app.txt_log_grid_log.tag_config("BLUE", foreground="#29B6F6")
+
+    # --- Tab HEDGE ---
+    app.txt_log_hedge = tk.Text(
+        tab_hedge,
+        font=("Consolas", 18),
+        bg="#140816",
+        fg="#F3E5F5",
+        bd=0,
+        highlightthickness=0,
+        state="disabled",
+        wrap="none",
+    )
+    sb_hedge_x = ttk.Scrollbar(
+        tab_hedge, orient="horizontal", command=app.txt_log_hedge.xview
+    )
+    app.txt_log_hedge.configure(xscrollcommand=sb_hedge_x.set)
+    sb_hedge_x.pack(fill="x", side="bottom")
+    app.txt_log_hedge.pack(fill="both", expand=True)
+    app.txt_log_hedge.tag_config("INFO", foreground="#E1BEE7")
+    app.txt_log_hedge.tag_config("SUCCESS", foreground="#CE93D8")
+    app.txt_log_hedge.tag_config("ERROR", foreground=COL_RED)
+    app.txt_log_hedge.tag_config("WARN", foreground=COL_WARN)
+    app.txt_log_hedge.tag_config("BLUE", foreground="#29B6F6")
+
+    # --- Tab HEDGE Log ---
+    app.txt_log_hedge_log = tk.Text(
+        tab_hedge_log,
+        font=("Consolas", 18),
+        bg="#140816",
+        fg="#E1BEE7",
+        bd=0,
+        highlightthickness=0,
+        state="disabled",
+        wrap="none",
+    )
+    sb_hedge_log_x = ttk.Scrollbar(
+        tab_hedge_log, orient="horizontal", command=app.txt_log_hedge_log.xview
+    )
+    app.txt_log_hedge_log.configure(xscrollcommand=sb_hedge_log_x.set)
+    sb_hedge_log_x.pack(fill="x", side="bottom")
+    app.txt_log_hedge_log.pack(fill="both", expand=True)
+    app.txt_log_hedge_log.tag_config("INFO", foreground="#E1BEE7")
+    app.txt_log_hedge_log.tag_config("SUCCESS", foreground="#CE93D8")
+    app.txt_log_hedge_log.tag_config("ERROR", foreground=COL_RED)
+    app.txt_log_hedge_log.tag_config("WARN", foreground=COL_WARN)
+    app.txt_log_hedge_log.tag_config("BLUE", foreground="#29B6F6")
 
     app.txt_log = app.txt_log_manual

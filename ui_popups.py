@@ -901,11 +901,13 @@ def open_advanced_tools_popup(app):
     tab_grid = tabs.add("GRID")
     tab_hedge = tabs.add("HEDGE")
     tab_backtest = tabs.add("BACKTEST")
+    grid_body = ctk.CTkScrollableFrame(tab_grid, fg_color="transparent")
+    grid_body.pack(fill="both", expand=True)
     ctk.CTkLabel(
-        tab_grid, text="GRID Control", font=("Roboto", 16, "bold"), text_color="#00B8D4"
+        grid_body, text="GRID Control", font=("Roboto", 16, "bold"), text_color="#00B8D4"
     ).pack(anchor="w", padx=14, pady=(14, 6))
     ctk.CTkLabel(
-        tab_grid,
+        grid_body,
         text="Auto GRID cho daemon. Manual GRID tren panel trade van start duoc khi Auto GRID OFF.",
         font=("Arial", 12, "italic"),
         text_color="#80DEEA",
@@ -948,7 +950,7 @@ def open_advanced_tools_popup(app):
                 app.log_message(f"[GRID] AUTO GRID ENABLED = {state}", target="grid")
         except Exception as e:
             messagebox.showerror("GRID", f"Khong the luu GRID switch: {e}", parent=top)
-    f_grid_switch = ctk.CTkFrame(tab_grid, fg_color="#242424", corner_radius=8)
+    f_grid_switch = ctk.CTkFrame(grid_body, fg_color="#242424", corner_radius=8)
     f_grid_switch.pack(fill="x", padx=14, pady=(0, 12))
     lbl_grid_state = ctk.CTkLabel(
         f_grid_switch,
@@ -1007,7 +1009,7 @@ def open_advanced_tools_popup(app):
             return f"GRID summary error: {e}"
 
     lbl_grid_summary = ctk.CTkLabel(
-        tab_grid,
+        grid_body,
         text=_grid_control_summary(),
         font=("Consolas", 13),
         text_color="#80DEEA",
@@ -1016,7 +1018,7 @@ def open_advanced_tools_popup(app):
     )
     lbl_grid_summary.pack(fill="x", padx=14, pady=(0, 10))
 
-    quick = ctk.CTkFrame(tab_grid, fg_color="#242424", corner_radius=8)
+    quick = ctk.CTkFrame(grid_body, fg_color="#242424", corner_radius=8)
     quick.pack(fill="x", padx=14, pady=(0, 12))
     ctk.CTkLabel(quick, text="Safety Quick", font=("Roboto", 13, "bold"), text_color="#00B8D4").grid(row=0, column=0, columnspan=4, sticky="w", padx=10, pady=(8, 4))
 
@@ -1120,20 +1122,480 @@ def open_advanced_tools_popup(app):
         from grid.grid_ui import open_grid_settings_popup
         open_grid_settings_popup(app)
     ctk.CTkButton(
-        tab_grid,
+        grid_body,
         text="OPEN GRID SETTINGS",
         fg_color="#00838F",
         hover_color="#006064",
         font=("Roboto", 13, "bold"),
         command=_open_grid_settings,
     ).pack(anchor="w", padx=14, pady=8)
+    hedge_body = ctk.CTkScrollableFrame(tab_hedge, fg_color="transparent")
+    hedge_body.pack(fill="both", expand=True)
     ctk.CTkLabel(
-        tab_hedge,
-        text="HEDGE module placeholder. This tab is reserved for the next phase.",
-        font=("Arial", 13, "italic"),
-        text_color="#BDBDBD",
+        hedge_body, text="HEDGE Dual Control", font=("Roboto", 16, "bold"), text_color="#CE93D8"
+    ).pack(anchor="w", padx=14, pady=(14, 6))
+    ctk.CTkLabel(
+        hedge_body,
+        text="Auto HEDGE quét watchlist riêng theo chu kỳ riêng. Signal và Swing chỉ là bộ lọc entry; safety/daily loss là state riêng của HEDGE.",
+        font=("Arial", 12, "italic"),
+        text_color="#E1BEE7",
+        anchor="w",
         wraplength=680,
-    ).pack(fill="x", padx=14, pady=18)
+    ).pack(fill="x", padx=14, pady=(0, 12))
+    try:
+        from hedge.hedge_storage import load_hedge_settings, load_hedge_state, save_hedge_settings
+        hedge_cfg = load_hedge_settings()
+        hedge_state = load_hedge_state()
+    except Exception:
+        hedge_cfg = {"ENABLED": False}
+        hedge_state = {}
+
+    var_hedge_enabled = ctk.BooleanVar(value=hedge_cfg.get("ENABLED", False))
+    var_hedge_signal = ctk.BooleanVar(value=hedge_cfg.get("USE_SIGNAL_FILTER", False))
+    var_hedge_swing = ctk.BooleanVar(value=hedge_cfg.get("USE_SWING_FILTER", True))
+    var_hedge_override = ctk.BooleanVar(value=False)
+
+    def _current_hedge_symbol():
+        try:
+            return app.cbo_symbol.get()
+        except Exception:
+            return getattr(config, "DEFAULT_SYMBOL", "ETHUSD")
+
+    def _hedge_timeframe_for_group(group):
+        try:
+            cfg = _effective_hedge_cfg(_current_hedge_symbol())
+        except Exception:
+            cfg = hedge_cfg
+        return cfg.get("SWING_TIMEFRAME", hedge_cfg.get("SWING_TIMEFRAME", "15m"))
+
+    def _save_hedge_timeframe_for_group(group, timeframe):
+        return None
+
+    def _effective_hedge_cfg(symbol=None):
+        symbol = symbol or _current_hedge_symbol()
+        try:
+            mgr = getattr(app, "hedge_mgr", None)
+            return mgr.settings_for_symbol(symbol, load_hedge_settings()) if mgr else load_hedge_settings()
+        except Exception:
+            return hedge_cfg
+
+    def _hedge_preview_text():
+        symbol = _current_hedge_symbol()
+        cfg = _effective_hedge_cfg(symbol)
+        ctx = getattr(app, "latest_market_context", {}).get(symbol, {})
+        gate = {"status": "WAIT", "reason": "No preview", "signal_status": "---", "swing_status": "---"}
+        try:
+            gate = app.hedge_mgr.evaluate_entry_gate(symbol, ctx, cfg)
+        except Exception:
+            pass
+        group = cfg.get("SWING_GROUP", "G2")
+        tf = _hedge_timeframe_for_group(group)
+        try:
+            from hedge.hedge_storage import load_hedge_settings as _load_hs
+            override_on = symbol in (_load_hs().get("SYMBOL_OVERRIDES") or {})
+        except Exception:
+            override_on = False
+        return (
+            f"Preview {symbol}: {gate.get('status')} / {gate.get('reason')}\n"
+            f"Entry: Signal {gate.get('signal_status')} | Swing {gate.get('swing_status')} | "
+            f"Swing {group} / {tf} | tolerance {cfg.get('SWING_TOLERANCE_ATR', 0.2)} ATR\n"
+            f"Tactic: {cfg.get('TACTIC', 'BASKET')} | Lot mỗi chân: {cfg.get('FIXED_LOT', 0.1)} | "
+            f"Override symbol: {'ON' if override_on else 'OFF'}"
+        )
+
+    def _set_hedge_lights(is_on):
+        color = COL_GREEN if is_on else COL_RED
+        for attr in ("ind_hedge_light", "ind_ad_hedge_light"):
+            light = getattr(app, attr, None)
+            if light and light.winfo_exists():
+                light.configure(fg_color=color)
+
+    def _hedge_summary():
+        try:
+            from hedge.hedge_storage import load_hedge_settings, load_hedge_state
+            cfg = load_hedge_settings()
+            st = load_hedge_state()
+            last = st.get("last_decision") or {}
+            last_txt = "No decision yet"
+            if last:
+                sym, data = list(last.items())[-1]
+                last_txt = f"{sym}: {data.get('status')} / {data.get('reason')}"
+            return (
+                f"Auto scan: {'ON' if cfg.get('ENABLED') else 'OFF'} | "
+                f"Watchlist: {', '.join(cfg.get('WATCHLIST') or []) or 'trống'} | "
+                f"Scan: {cfg.get('HEDGE_SCAN_INTERVAL_SECONDS', 2)}s\n"
+                f"Tactic: {cfg.get('TACTIC', 'BASKET')} | "
+                f"Signal filter: {'ON' if cfg.get('USE_SIGNAL_FILTER') else 'OFF'} | "
+                f"Swing filter: {'ON' if cfg.get('USE_SWING_FILTER') else 'OFF'} "
+                f"{cfg.get('SWING_GROUP', 'G2')}({cfg.get('SWING_TIMEFRAME', '15m')}) | "
+                f"Lot: {cfg.get('FIXED_LOT', 0.1)} | Max pairs/symbol: {cfg.get('MAX_PAIRS_PER_SYMBOL', 1)}\n"
+                f"Pair TP: {cfg.get('PAIR_TP_USD', 5.0)} | Pair SL: {cfg.get('PAIR_SL_USD', 10.0)} | "
+                f"Daily loss: {cfg.get('HEDGE_MAX_DAILY_LOSS', 0.0)} | "
+                f"Cooldown close: {cfg.get('COOLDOWN_AFTER_CLOSE_SECONDS', 900)}s | "
+                f"Cooldown loss: {cfg.get('COOLDOWN_AFTER_LOSS_SECONDS', 1800)}s\n"
+                f"Today PnL: {float(st.get('hedge_pnl_today', 0.0) or 0.0):+.2f} | "
+                f"Sessions: {int(st.get('hedge_sessions_today', 0) or 0)} | Last: {last_txt}"
+            )
+        except Exception as e:
+            return f"HEDGE summary error: {e}"
+
+    def _toggle_hedge_enabled():
+        try:
+            from hedge.hedge_storage import load_hedge_settings, save_hedge_settings
+            cfg = load_hedge_settings()
+            cfg["ENABLED"] = var_hedge_enabled.get()
+            save_hedge_settings(cfg)
+            _set_hedge_lights(var_hedge_enabled.get())
+            lbl_hedge_state.configure(
+                text=f"Auto scan: {'ON' if var_hedge_enabled.get() else 'OFF'}",
+                text_color="#CE93D8" if var_hedge_enabled.get() else "gray",
+            )
+            lbl_hedge_summary.configure(text=_hedge_summary())
+            if hasattr(app, "log_message"):
+                app.log_message(f"[HEDGE] AUTO HEDGE ENABLED = {'ON' if var_hedge_enabled.get() else 'OFF'}", target="hedge")
+        except Exception as e:
+            messagebox.showerror("HEDGE", f"Khong the luu HEDGE switch: {e}", parent=top)
+
+    f_hedge_switch = ctk.CTkFrame(hedge_body, fg_color="#242424", corner_radius=8)
+    f_hedge_switch.pack(fill="x", padx=14, pady=(0, 12))
+    lbl_hedge_state = ctk.CTkLabel(
+        f_hedge_switch,
+        text=f"Auto scan: {'ON' if var_hedge_enabled.get() else 'OFF'}",
+        font=("Roboto", 12, "bold"),
+        text_color="#CE93D8" if var_hedge_enabled.get() else "gray",
+    )
+    ctk.CTkSwitch(
+        f_hedge_switch,
+        text="AUTO HEDGE SCAN",
+        variable=var_hedge_enabled,
+        progress_color="#8E24AA",
+        fg_color=COL_RED,
+        font=("Roboto", 13, "bold"),
+        command=_toggle_hedge_enabled,
+    ).pack(side="left", padx=12, pady=12)
+    lbl_hedge_state.pack(side="left", padx=12)
+
+    lbl_hedge_summary = ctk.CTkLabel(
+        hedge_body,
+        text=_hedge_summary(),
+        font=("Consolas", 13),
+        text_color="#E1BEE7",
+        justify="left",
+        anchor="w",
+    )
+    lbl_hedge_summary.pack(fill="x", padx=14, pady=(0, 10))
+
+    lbl_hedge_preview = ctk.CTkLabel(
+        hedge_body,
+        text=_hedge_preview_text(),
+        font=("Consolas", 13, "bold"),
+        text_color="#FFFFFF",
+        fg_color="#211628",
+        corner_radius=8,
+        justify="left",
+        anchor="w",
+        wraplength=700,
+    )
+    lbl_hedge_preview.pack(fill="x", padx=14, pady=(0, 10), ipady=8)
+
+    ctk.CTkLabel(
+        hedge_body,
+        text=(
+            "BASKET: đóng cả cặp theo tổng PnL. LEG_OUT: chân nào âm tới ngưỡng thì đóng chân đó, "
+            "giữ chân còn lại để gỡ. Xóa chặn chỉ reset cooldown/block runtime, không đóng lệnh và không reset PnL ngày."
+        ),
+        font=("Arial", 12),
+        text_color="#F8BBD0",
+        anchor="w",
+        justify="left",
+        wraplength=700,
+    ).pack(fill="x", padx=14, pady=(0, 10))
+
+    hquick = ctk.CTkFrame(
+        hedge_body,
+        fg_color="#242424",
+        corner_radius=8,
+        border_width=1,
+        border_color="#6A1B9A",
+    )
+    hquick.pack(fill="x", padx=14, pady=(0, 12))
+    ctk.CTkLabel(hquick, text="Cấu hình mặc định HEDGE", font=("Roboto", 13, "bold"), text_color="#CE93D8").grid(row=0, column=0, columnspan=4, sticky="w", padx=10, pady=(8, 4))
+    ctk.CTkLabel(
+        hquick,
+        text="1) ENTRY FILTER",
+        font=("Roboto", 11, "bold"),
+        text_color="#FFFFFF",
+        fg_color="#4A148C",
+        corner_radius=6,
+    ).grid(row=1, column=0, columnspan=4, sticky="ew", padx=10, pady=(6, 4))
+
+    def _h_entry(label, value, row, col):
+        ctk.CTkLabel(hquick, text=label).grid(row=row, column=col, sticky="w", padx=10, pady=5)
+        entry = ctk.CTkEntry(hquick, width=90, justify="center")
+        entry.insert(0, str(value))
+        entry.grid(row=row, column=col + 1, sticky="w", padx=10, pady=5)
+        return entry
+
+    ctk.CTkLabel(hquick, text="Tactic").grid(row=2, column=0, sticky="w", padx=10, pady=5)
+    cbo_h_tactic = ctk.CTkOptionMenu(hquick, values=["BASKET", "LEG_OUT"], width=130)
+    cbo_h_tactic.set(str(hedge_cfg.get("TACTIC", "BASKET")).upper())
+    cbo_h_tactic.grid(row=2, column=1, sticky="w", padx=10, pady=5)
+    ctk.CTkCheckBox(hquick, text="Dùng signal filter", variable=var_hedge_signal).grid(row=2, column=2, sticky="w", padx=10, pady=5)
+    ctk.CTkCheckBox(hquick, text="Dùng swing filter", variable=var_hedge_swing).grid(row=2, column=3, sticky="w", padx=10, pady=5)
+    e_h_swing_tol = _h_entry("Swing tolerance ATR", hedge_cfg.get("SWING_TOLERANCE_ATR", 0.2), 3, 0)
+    ctk.CTkLabel(hquick, text="Nguồn swing").grid(row=3, column=2, sticky="w", padx=10, pady=5)
+    cbo_h_swing_group = ctk.CTkOptionMenu(hquick, values=["G0", "G1", "G2", "G3"], width=90)
+    cbo_h_swing_group.set(str(hedge_cfg.get("SWING_GROUP", "G2")).upper())
+    cbo_h_swing_group.grid(row=3, column=3, sticky="w", padx=10, pady=5)
+    ctk.CTkLabel(hquick, text="Khung nến HEDGE").grid(row=4, column=0, sticky="w", padx=10, pady=5)
+    cbo_h_swing_tf = ctk.CTkOptionMenu(hquick, values=["1m", "5m", "15m", "30m", "1h", "4h", "1d"], width=90)
+    cbo_h_swing_tf.set(str(hedge_cfg.get("SWING_TIMEFRAME", _hedge_timeframe_for_group(cbo_h_swing_group.get()))))
+    cbo_h_swing_tf.grid(row=4, column=1, sticky="w", padx=10, pady=5)
+    e_h_scan_interval = _h_entry("Chu kỳ quét Auto", hedge_cfg.get("HEDGE_SCAN_INTERVAL_SECONDS", 2), 4, 2)
+    ctk.CTkLabel(
+        hquick,
+        text="2) MONEY / TP-SL",
+        font=("Roboto", 11, "bold"),
+        text_color="#FFFFFF",
+        fg_color="#6A1B9A",
+        corner_radius=6,
+    ).grid(row=5, column=0, columnspan=4, sticky="ew", padx=10, pady=(10, 4))
+    e_h_lot = _h_entry("Lot mỗi chân", hedge_cfg.get("FIXED_LOT", 0.1), 6, 0)
+    e_h_max_pairs = _h_entry("Max pairs/symbol", hedge_cfg.get("MAX_PAIRS_PER_SYMBOL", 1), 6, 2)
+    e_h_pair_tp = _h_entry("Basket TP USD", hedge_cfg.get("PAIR_TP_USD", 5.0), 7, 0)
+    e_h_pair_sl = _h_entry("Basket SL USD", hedge_cfg.get("PAIR_SL_USD", 10.0), 7, 2)
+    e_h_leg_sl = _h_entry("Leg-out SL USD", hedge_cfg.get("LOSING_LEG_SL_USD", 5.0), 8, 0)
+    e_h_recovery = _h_entry("Recovery net target", hedge_cfg.get("RECOVERY_TARGET_USD", 2.0), 8, 2)
+    e_h_giveback = _h_entry("Recovery giveback", hedge_cfg.get("RECOVERY_GIVEBACK_USD", 2.0), 9, 0)
+    ctk.CTkLabel(
+        hquick,
+        text="BASKET TP/SL tính theo tổng PnL của cả cặp BUY+SELL. LEG_OUT SL đóng chân âm. Recovery net target = tổng PnL sau khi bù lỗ/fee đạt ngưỡng thì chốt. Giveback = đang gỡ tốt mà hồi lại quá mức thì cắt.",
+        text_color="#F8BBD0",
+        font=("Arial", 11, "italic"),
+        wraplength=680,
+        justify="left",
+    ).grid(row=10, column=0, columnspan=4, sticky="w", padx=10, pady=(0, 5))
+    ctk.CTkLabel(
+        hquick,
+        text="3) COOLDOWN / SAFETY",
+        font=("Roboto", 11, "bold"),
+        text_color="#FFFFFF",
+        fg_color="#7B1FA2",
+        corner_radius=6,
+    ).grid(row=11, column=0, columnspan=4, sticky="ew", padx=10, pady=(10, 4))
+    e_h_cooldown = _h_entry("Cooldown sau đóng", hedge_cfg.get("COOLDOWN_AFTER_CLOSE_SECONDS", 900), 12, 0)
+    e_h_loss_cooldown = _h_entry("Cooldown sau thua", hedge_cfg.get("COOLDOWN_AFTER_LOSS_SECONDS", 1800), 12, 2)
+    e_h_max_losses = _h_entry("Thua liên tiếp", hedge_cfg.get("MAX_CONSECUTIVE_LOSSES", 3), 13, 0)
+    e_h_global_cd = _h_entry("Cooldown tổng", hedge_cfg.get("GLOBAL_COOLDOWN_SECONDS", 3600), 13, 2)
+    e_h_daily_loss = _h_entry("Daily loss HEDGE", hedge_cfg.get("HEDGE_MAX_DAILY_LOSS", 0.0), 14, 0)
+    e_h_max_day = _h_entry("Session/ngày tối đa", hedge_cfg.get("MAX_SESSIONS_PER_DAY", 0), 14, 2)
+    ctk.CTkLabel(
+        hquick,
+        text="Signal filter dùng latest_signal từ signal engine. Swing/ATR dùng code lấy dữ liệu có sẵn nhưng timeframe/config là riêng HEDGE. Daily loss reset theo ngày hệ thống, counter vẫn riêng HEDGE.",
+        text_color="#F8BBD0",
+        font=("Arial", 11, "italic"),
+        wraplength=680,
+        justify="left",
+    ).grid(row=15, column=0, columnspan=4, sticky="w", padx=10, pady=(0, 5))
+
+    watchlist_frame = ctk.CTkFrame(
+        hedge_body,
+        fg_color="#202429",
+        corner_radius=8,
+        border_width=1,
+        border_color="#455A64",
+    )
+    watchlist_frame.pack(fill="x", padx=14, pady=(0, 12))
+    ctk.CTkLabel(
+        watchlist_frame,
+        text="Danh sách Auto HEDGE quét",
+        font=("Roboto", 13, "bold"),
+        text_color="#CE93D8",
+    ).grid(row=0, column=0, columnspan=4, sticky="w", padx=10, pady=(8, 4))
+    ctk.CTkLabel(
+        watchlist_frame,
+        text="Chỉ các symbol được tick ở đây mới được Auto HEDGE scan/mở cặp. Manual HEDGE vẫn chạy theo symbol đang chọn.",
+        text_color="#F8BBD0",
+        font=("Arial", 11, "italic"),
+        wraplength=680,
+        justify="left",
+    ).grid(row=1, column=0, columnspan=4, sticky="w", padx=10, pady=(0, 6))
+    hedge_watchlist_vars = {}
+    selected_watchlist = set(hedge_cfg.get("WATCHLIST") or [])
+    for idx, sym in enumerate(getattr(config, "COIN_LIST", []) or [getattr(config, "DEFAULT_SYMBOL", "ETHUSD")]):
+        var = ctk.BooleanVar(value=sym in selected_watchlist)
+        hedge_watchlist_vars[sym] = var
+        ctk.CTkCheckBox(watchlist_frame, text=sym, variable=var).grid(
+            row=2 + idx // 4,
+            column=idx % 4,
+            sticky="w",
+            padx=10,
+            pady=4,
+        )
+
+    def _refresh_hedge_preview():
+        lbl_hedge_summary.configure(text=_hedge_summary())
+        lbl_hedge_preview.configure(text=_hedge_preview_text())
+
+    try:
+        cbo_h_swing_group.configure(command=lambda _v: _refresh_hedge_preview())
+        cbo_h_swing_tf.configure(command=lambda _v: lbl_hedge_preview.configure(text=_hedge_preview_text()))
+    except Exception:
+        pass
+
+    override_frame = ctk.CTkFrame(
+        hedge_body,
+        fg_color="#261C2B",
+        corner_radius=8,
+        border_width=1,
+        border_color="#7B1FA2",
+    )
+    override_frame.pack(fill="x", padx=14, pady=(0, 12))
+    def _hedge_override_has(symbol):
+        try:
+            from hedge.hedge_storage import load_hedge_settings
+            return bool((load_hedge_settings().get("SYMBOL_OVERRIDES") or {}).get(symbol))
+        except Exception:
+            return False
+
+    lbl_hedge_override_title = ctk.CTkLabel(
+        override_frame,
+        text="",
+        font=("Roboto", 13, "bold"),
+        text_color="#CE93D8",
+    )
+    lbl_hedge_override_title.grid(row=0, column=0, columnspan=4, sticky="w", padx=10, pady=(8, 4))
+    ctk.CTkLabel(
+        override_frame,
+        text="Mở popup để cấu hình riêng từng symbol. Symbol có cấu hình riêng sẽ hiện dấu *.",
+        text_color="#F8BBD0",
+        font=("Arial", 11, "italic"),
+        wraplength=680,
+        justify="left",
+    ).grid(row=1, column=0, columnspan=4, sticky="w", padx=10, pady=(0, 8))
+
+    def _refresh_hedge_override_button():
+        sym = _current_hedge_symbol()
+        mark = " *" if _hedge_override_has(sym) else ""
+        lbl_hedge_override_title.configure(text=f"Override HEDGE theo symbol: {sym}{mark}")
+        if hasattr(btn_open_hedge_override, "configure"):
+            btn_open_hedge_override.configure(text=f"MỞ POPUP OVERRIDE {sym}{mark}")
+
+    def _open_hedge_override_popup():
+        from ui_hedge_override_popup import open_hedge_override_popup
+        open_hedge_override_popup(app, _current_hedge_symbol(), on_close=lambda: (_refresh_hedge_preview(), _refresh_hedge_override_button()))
+
+    def _save_hedge_quick():
+        try:
+            from hedge.hedge_storage import load_hedge_settings, save_hedge_settings
+            cfg = load_hedge_settings()
+            cfg["TACTIC"] = cbo_h_tactic.get()
+            cfg["USE_SIGNAL_FILTER"] = var_hedge_signal.get()
+            cfg["USE_SWING_FILTER"] = var_hedge_swing.get()
+            cfg["FIXED_LOT"] = float(e_h_lot.get() or 0.1)
+            cfg["MAX_PAIRS_PER_SYMBOL"] = int(e_h_max_pairs.get() or 1)
+            cfg["PAIR_TP_USD"] = float(e_h_pair_tp.get() or 0.0)
+            cfg["PAIR_SL_USD"] = float(e_h_pair_sl.get() or 0.0)
+            cfg["LOSING_LEG_SL_USD"] = float(e_h_leg_sl.get() or 0.0)
+            cfg["RECOVERY_TARGET_USD"] = float(e_h_recovery.get() or 0.0)
+            cfg["RECOVERY_GIVEBACK_USD"] = float(e_h_giveback.get() or 0.0)
+            cfg["COOLDOWN_AFTER_CLOSE_SECONDS"] = int(float(e_h_cooldown.get() or 0))
+            cfg["COOLDOWN_AFTER_LOSS_SECONDS"] = int(float(e_h_loss_cooldown.get() or 0))
+            cfg["MAX_CONSECUTIVE_LOSSES"] = int(float(e_h_max_losses.get() or 0))
+            cfg["GLOBAL_COOLDOWN_SECONDS"] = int(float(e_h_global_cd.get() or 0))
+            cfg["HEDGE_SCAN_INTERVAL_SECONDS"] = max(1, int(float(e_h_scan_interval.get() or 2)))
+            cfg["HEDGE_MAX_DAILY_LOSS"] = float(e_h_daily_loss.get() or 0.0)
+            cfg["MAX_SESSIONS_PER_DAY"] = int(float(e_h_max_day.get() or 0))
+            cfg["SWING_TOLERANCE_ATR"] = float(e_h_swing_tol.get() or 0.2)
+            cfg["SWING_GROUP"] = cbo_h_swing_group.get()
+            cfg["SWING_TIMEFRAME"] = cbo_h_swing_tf.get()
+            cfg["WATCHLIST"] = [sym for sym, var in hedge_watchlist_vars.items() if var.get()]
+            save_hedge_settings(cfg)
+            _refresh_hedge_preview()
+            if hasattr(app, "update_hedge_manual_preview"):
+                app.update_hedge_manual_preview()
+            if hasattr(app, "log_message"):
+                app.log_message("[HEDGE] Quick settings saved.", target="hedge")
+        except ValueError:
+            messagebox.showerror("HEDGE", "HEDGE quick nhap sai kieu so.", parent=top)
+
+    def _clear_hedge_block():
+        mgr = getattr(app, "hedge_mgr", None)
+        result = mgr.clear_session_block() if mgr else "FAILED|NO_HEDGE_MANAGER"
+        _refresh_hedge_preview()
+        if hasattr(app, "log_message"):
+            app.log_message(f"[HEDGE] Clear block: {result}", target="hedge")
+
+    def _stop_hedge_session():
+        sym = app.cbo_symbol.get() if hasattr(app, "cbo_symbol") else None
+        mgr = getattr(app, "hedge_mgr", None)
+        result = mgr.stop_session(sym) if mgr else "FAILED|NO_HEDGE_MANAGER"
+        _refresh_hedge_preview()
+        if hasattr(app, "log_message"):
+            app.log_message(f"[HEDGE] Stop session {sym}: {result}", target="hedge")
+
+    def _collect_hedge_quick_values():
+        return {
+            "TACTIC": cbo_h_tactic.get(),
+            "USE_SIGNAL_FILTER": var_hedge_signal.get(),
+            "USE_SWING_FILTER": var_hedge_swing.get(),
+            "FIXED_LOT": float(e_h_lot.get() or 0.1),
+            "MAX_PAIRS_PER_SYMBOL": int(e_h_max_pairs.get() or 1),
+            "PAIR_TP_USD": float(e_h_pair_tp.get() or 0.0),
+            "PAIR_SL_USD": float(e_h_pair_sl.get() or 0.0),
+            "LOSING_LEG_SL_USD": float(e_h_leg_sl.get() or 0.0),
+            "RECOVERY_TARGET_USD": float(e_h_recovery.get() or 0.0),
+            "RECOVERY_GIVEBACK_USD": float(e_h_giveback.get() or 0.0),
+            "COOLDOWN_AFTER_CLOSE_SECONDS": int(float(e_h_cooldown.get() or 0)),
+            "COOLDOWN_AFTER_LOSS_SECONDS": int(float(e_h_loss_cooldown.get() or 0)),
+            "MAX_CONSECUTIVE_LOSSES": int(float(e_h_max_losses.get() or 0)),
+            "GLOBAL_COOLDOWN_SECONDS": int(float(e_h_global_cd.get() or 0)),
+            "HEDGE_SCAN_INTERVAL_SECONDS": max(1, int(float(e_h_scan_interval.get() or 2))),
+            "HEDGE_MAX_DAILY_LOSS": float(e_h_daily_loss.get() or 0.0),
+            "MAX_SESSIONS_PER_DAY": int(float(e_h_max_day.get() or 0)),
+            "SWING_TOLERANCE_ATR": float(e_h_swing_tol.get() or 0.2),
+            "SWING_GROUP": cbo_h_swing_group.get(),
+            "SWING_TIMEFRAME": cbo_h_swing_tf.get(),
+        }
+
+    def _save_hedge_override():
+        try:
+            from hedge.hedge_storage import load_hedge_settings, save_hedge_settings
+
+            sym = _current_hedge_symbol()
+            cfg = load_hedge_settings()
+            cfg.setdefault("SYMBOL_OVERRIDES", {})[sym] = _collect_hedge_quick_values()
+            save_hedge_settings(cfg)
+            var_hedge_override.set(True)
+            _refresh_hedge_preview()
+            if hasattr(app, "log_message"):
+                app.log_message(f"[HEDGE] Override saved for {sym}.", target="hedge")
+        except ValueError:
+            messagebox.showerror("HEDGE", "Override nhap sai kieu so.", parent=top)
+
+    def _clear_hedge_override():
+        from hedge.hedge_storage import load_hedge_settings, save_hedge_settings
+
+        sym = _current_hedge_symbol()
+        cfg = load_hedge_settings()
+        cfg.setdefault("SYMBOL_OVERRIDES", {}).pop(sym, None)
+        save_hedge_settings(cfg)
+        var_hedge_override.set(False)
+        _refresh_hedge_preview()
+        if hasattr(app, "log_message"):
+            app.log_message(f"[HEDGE] Override cleared for {sym}.", target="hedge")
+
+    ctk.CTkButton(hquick, text="LƯU MẶC ĐỊNH HEDGE", fg_color="#6A1B9A", hover_color="#4A148C", command=_save_hedge_quick).grid(row=16, column=0, columnspan=4, sticky="ew", padx=10, pady=(8, 10))
+    ctk.CTkButton(hquick, text="XÓA CHẶN / RESET COOLDOWN", fg_color="#455A64", hover_color="#37474F", command=_clear_hedge_block).grid(row=17, column=0, columnspan=4, sticky="ew", padx=10, pady=(0, 10))
+    btn_open_hedge_override = ctk.CTkButton(
+        override_frame,
+        text="MỞ POPUP OVERRIDE",
+        fg_color="#7B1FA2",
+        hover_color="#4A148C",
+        command=_open_hedge_override_popup,
+    )
+    btn_open_hedge_override.grid(row=2, column=0, columnspan=4, sticky="ew", padx=10, pady=(8, 10))
+    _refresh_hedge_override_button()
     ctk.CTkLabel(
         tab_backtest,
         text="BACKTEST module placeholder. This tab is reserved for historical GRID simulation.",
@@ -2678,3 +3140,4 @@ def open_minibrain_popup(app, title, mb_cfg, on_save_callback):
         font=("Roboto", 13, "bold"),
         command=save_mb,
     ).pack(pady=10)
+
