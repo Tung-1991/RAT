@@ -166,6 +166,7 @@ class BotUI(ctk.CTk):
             PRESETS_FILE = os.path.join(acc_dir, "presets_config.json")
             BRAIN_SETTINGS_FILE = os.path.join(acc_dir, "brain_settings.json")
             self.reset_grid_runtime_switch()
+            self.reset_hedge_runtime_switch()
             
             
             self.log_message(f"✅ Đã tải Workspace cho tài khoản: {acc_info['login']}")
@@ -253,8 +254,37 @@ class BotUI(ctk.CTk):
         except Exception as e:
             self.log_message(f"[GRID] Cannot reset startup switch: {e}", error=True, target="grid")
 
+    def reset_hedge_runtime_switch(self):
+        try:
+            from hedge.hedge_storage import load_hedge_settings, save_hedge_settings
+
+            cfg = load_hedge_settings()
+            if cfg.get("ENABLED", False):
+                cfg["ENABLED"] = False
+                save_hedge_settings(cfg)
+                self.log_message("[HEDGE] Auto HEDGE reset to OFF.", target="hedge")
+        except Exception as e:
+            self.log_message(f"[HEDGE] Cannot reset switch: {e}", error=True, target="hedge")
+
+    def refresh_hedge_runtime_light(self):
+        try:
+            from hedge.hedge_storage import load_hedge_settings
+
+            is_on = bool(load_hedge_settings().get("ENABLED", False))
+        except Exception:
+            is_on = False
+        color = COL_GREEN if is_on else COL_RED
+        for attr in ("ind_hedge_light", "ind_ad_hedge_light", "ind_hedge_ready_light"):
+            light = getattr(self, attr, None)
+            try:
+                if light and light.winfo_exists():
+                    light.configure(fg_color=color)
+            except Exception:
+                pass
+
     def on_closing(self):
         self.running = False
+        self.reset_hedge_runtime_switch()
         if hasattr(self, "signal_listener"):
             self.signal_listener.stop()
         if self.daemon_process:
@@ -681,9 +711,9 @@ class BotUI(ctk.CTk):
             if gate["reason"] not in ("OK", "") and gate["status"] != "READY":
                 color = "#F44336" if "NO_" in gate["reason"] else "#FFB300"
             text = (
-                f"HEDGE: {gate.get('tactic', 'BASKET')} | "
+                f"HEDGE: {gate.get('tactic', 'DUAL')} | "
                 f"Signal: {gate.get('signal_status', 'OFF')} | "
-                f"Swing: {gate.get('swing_status', 'OFF')} | "
+                f"E/E: {gate.get('entry_status', 'OFF')} | "
                 f"{gate.get('status', 'WAIT')}: {gate.get('reason', '---')}"
             )
             if hasattr(self, "ind_hedge_ready_light"):
@@ -841,6 +871,7 @@ class BotUI(ctk.CTk):
                         self.entry_exit_tactic_states[key] = key in active_entry_tactics
                     if hasattr(self, "btn_entry_swing"):
                         self.update_entry_exit_buttons_ui()
+                    self.refresh_hedge_runtime_light()
             except:
                 pass
 
@@ -1398,7 +1429,7 @@ class BotUI(ctk.CTk):
             for _sym, _session in (hedge_state.get("active_sessions") or {}).items():
                 if not isinstance(_session, dict):
                     continue
-                for _role, _key in (("BUY", "buy_ticket"), ("SELL", "sell_ticket"), ("RECOVERY", "recovery_ticket")):
+                for _role, _key in (("BUY", "buy_ticket"), ("SELL", "sell_ticket")):
                     _ticket = _session.get(_key)
                     if _ticket:
                         hedge_ticket_map[str(_ticket)] = {"role": _role, "session": _session}
@@ -1510,13 +1541,13 @@ class BotUI(ctk.CTk):
                 hedge_tactic = str(hedge_session.get("tactic", "HEDGE") or "HEDGE").upper()
                 hedge_status = str(hedge_session.get("status", "RUNNING") or "RUNNING").upper()
                 hedge_source = str(hedge_session.get("source", "---") or "---").upper()
-                closed_pnl = float(hedge_session.get("closed_leg_pnl", 0.0) or 0.0)
-                if hedge_status == "RECOVERY":
-                    rr_str = f"HEDGE Recovery | closed {closed_pnl:+.2f}"
-                    stt_txt = f"HEDGE {hedge_source} | {hedge_tactic} | RECOVERY:{hedge_role}"
-                else:
-                    rr_str = f"HEDGE Pair | {hedge_tactic}"
-                    stt_txt = f"HEDGE {hedge_source} | {hedge_tactic} | {hedge_status}:{hedge_role}"
+                hedge_tsl = str(hedge_session.get("hedge_tsl_mode", "") or "").upper()
+                hedge_tsl_txt = f" | TSL:{hedge_tsl}" if hedge_tsl and hedge_tsl != "OFF" else ""
+                survivor = ""
+                if str(p.ticket) in (hedge_session.get("survivor_protected") or {}):
+                    survivor = " | SURVIVOR"
+                rr_str = f"HEDGE Dual | {hedge_tactic}"
+                stt_txt = f"HEDGE {hedge_source} | {hedge_tactic} | {hedge_status}:{hedge_role}{hedge_tsl_txt}{survivor}"
             elif "[BOT]_AUTO_DCA" in p.comment:
                 stt_txt = "DCA Child"
             elif "[BOT]_AUTO_PCA" in p.comment:
@@ -2027,6 +2058,35 @@ class BotUI(ctk.CTk):
             if row_id:
                 self.tree.selection_set(row_id)
                 ticket = int(row_id)
+                hedge_session = None
+                hedge_symbol = None
+                hedge_role = None
+
+                def close_hedge_session():
+                    if not hedge_session:
+                        return
+                    tickets = [
+                        int(t)
+                        for t in (hedge_session.get("buy_ticket"), hedge_session.get("sell_ticket"))
+                        if t
+                    ]
+                    positions = [
+                        p
+                        for p in self.connector.get_all_open_positions()
+                        if int(getattr(p, "ticket", 0) or 0) in tickets
+                    ]
+                    if not positions:
+                        return
+                    if self.var_confirm_close.get() and not messagebox.askyesno(
+                        "Confirm",
+                        f"Close HEDGE pair {hedge_symbol or ''} ({len(positions)} open legs)?",
+                        parent=self,
+                    ):
+                        return
+                    for pos in positions:
+                        self.trade_mgr.set_exit_reason(pos.ticket, "Manual_Close_HEDGE_Pair")
+                        threading.Thread(target=lambda p=pos: self.connector.close_position(p)).start()
+
                 try:
                     import core.storage_manager as storage_manager
                     from hedge.hedge_storage import load_hedge_state
@@ -2042,10 +2102,12 @@ class BotUI(ctk.CTk):
                             ticket_roles = {
                                 str(_session.get("buy_ticket")): "BUY",
                                 str(_session.get("sell_ticket")): "SELL",
-                                str(_session.get("recovery_ticket")): "RECOVERY",
                             }
                             role = ticket_roles.get(str(ticket))
                             if role:
+                                hedge_session = _session
+                                hedge_symbol = _sym
+                                hedge_role = role
                                 hedge_label = (
                                     f"HEDGE {_session.get('source', '-')}"
                                     f" | {_session.get('tactic', '-')}"
@@ -2055,6 +2117,12 @@ class BotUI(ctk.CTk):
                                 break
                         menu.add_command(label=hedge_label, state="disabled")
                         menu.add_separator()
+                        if hedge_session:
+                            menu.add_command(
+                                label=f"Close HEDGE Pair {hedge_symbol or ''}",
+                                command=close_hedge_session,
+                            )
+                            menu.add_separator()
                 except Exception:
                     pass
 

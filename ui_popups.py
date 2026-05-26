@@ -891,8 +891,8 @@ def open_advanced_tools_popup(app):
 
     top = ctk.CTkToplevel(app)
     top.title("Advanced Tools")
-    top.geometry("760x560")
-    top.minsize(680, 480)
+    top.geometry("1080x720")
+    top.minsize(980, 620)
     top.attributes("-topmost", True)
     top.focus_force()
     top.grab_set()
@@ -1136,7 +1136,7 @@ def open_advanced_tools_popup(app):
     ).pack(anchor="w", padx=14, pady=(14, 6))
     ctk.CTkLabel(
         hedge_body,
-        text="Auto HEDGE quét watchlist riêng theo chu kỳ riêng. Signal và Swing chỉ là bộ lọc entry; safety/daily loss là state riêng của HEDGE.",
+        text="Auto HEDGE quét watchlist riêng theo chu kỳ riêng. Signal và Entry/Exit chỉ là bộ lọc entry; safety/daily loss là state riêng của HEDGE.",
         font=("Arial", 12, "italic"),
         text_color="#E1BEE7",
         anchor="w",
@@ -1152,7 +1152,6 @@ def open_advanced_tools_popup(app):
 
     var_hedge_enabled = ctk.BooleanVar(value=hedge_cfg.get("ENABLED", False))
     var_hedge_signal = ctk.BooleanVar(value=hedge_cfg.get("USE_SIGNAL_FILTER", False))
-    var_hedge_swing = ctk.BooleanVar(value=hedge_cfg.get("USE_SWING_FILTER", True))
     var_hedge_override = ctk.BooleanVar(value=False)
 
     def _current_hedge_symbol():
@@ -1179,9 +1178,16 @@ def open_advanced_tools_popup(app):
         except Exception:
             return hedge_cfg
 
+    hedge_preview_form_getter = None
+
     def _hedge_preview_text():
         symbol = _current_hedge_symbol()
         cfg = _effective_hedge_cfg(symbol)
+        if callable(hedge_preview_form_getter):
+            try:
+                cfg = {**cfg, **hedge_preview_form_getter()}
+            except Exception:
+                pass
         ctx = getattr(app, "latest_market_context", {}).get(symbol, {})
         gate = {"status": "WAIT", "reason": "No preview", "signal_status": "---", "swing_status": "---"}
         try:
@@ -1195,17 +1201,29 @@ def open_advanced_tools_popup(app):
             override_on = symbol in (_load_hs().get("SYMBOL_OVERRIDES") or {})
         except Exception:
             override_on = False
+        tsl_mode = str(cfg.get("HEDGE_TSL_MODE", "BE+STEP_R+SWING") or "BE+STEP_R+SWING").upper()
+        tsl_txt = "OFF"
+        if cfg.get("USE_TSL", True):
+            tsl_txt = tsl_mode
+        lot_mode = str(cfg.get("LOT_MODE", "FIXED") or "FIXED").upper()
+        lot_txt = (
+            f"FIXED {cfg.get('FIXED_LOT', 0.1)}"
+            if lot_mode == "FIXED"
+            else f"ACCOUNT_RISK {cfg.get('RISK_PERCENT_PER_PAIR', 0.5)}% cap {cfg.get('MAX_LOT_CAP', 1.0)}"
+        )
         return (
-            f"Preview {symbol}: {gate.get('status')} / {gate.get('reason')}\n"
-            f"Entry: Signal {gate.get('signal_status')} | Swing {gate.get('swing_status')} | "
-            f"Swing {group} / {tf} | tolerance {cfg.get('SWING_TOLERANCE_ATR', 0.2)} ATR\n"
-            f"Tactic: {cfg.get('TACTIC', 'BASKET')} | Lot mỗi chân: {cfg.get('FIXED_LOT', 0.1)} | "
-            f"Override symbol: {'ON' if override_on else 'OFF'}"
+            f"{symbol}  |  {gate.get('status')}  |  {gate.get('reason')}\n"
+            f"Filters: Signal {gate.get('signal_status')}:{cfg.get('HEDGE_SIGNAL_RULE', 'SANDBOX_SIGNAL')}  |  "
+            f"Entry/Exit {gate.get('entry_status', 'OFF')}:{cfg.get('HEDGE_ENTRY_RULE', 'SWING_REJECTION')} "
+            f"SL {cfg.get('HEDGE_EE_SL_RULE', 'MATCH_ENTRY')} TP {cfg.get('HEDGE_EE_TP_RULE', 'MATCH_ENTRY')} ({gate.get('entry_reason', '---')})\n"
+            f"Risk: HEDGE SL/TP {'ON' if cfg.get('USE_HEDGE_SLTP', cfg.get('USE_SANDBOX_SLTP', True)) else 'OFF'} "
+            f"SL {cfg.get('HEDGE_SL_RULE', 'BASE_SL_ATR')} TP {cfg.get('HEDGE_TP_RULE', 'RR')}  |  TSL {tsl_txt}  |  Survivor {cfg.get('SURVIVOR_PROTECT', 'BE_FEE')}\n"
+            f"Lot: {lot_txt}  |  Max pairs {cfg.get('MAX_PAIRS_PER_SYMBOL', 1)}  |  Override {'ON' if override_on else 'OFF'}"
         )
 
     def _set_hedge_lights(is_on):
         color = COL_GREEN if is_on else COL_RED
-        for attr in ("ind_hedge_light", "ind_ad_hedge_light"):
+        for attr in ("ind_hedge_light", "ind_ad_hedge_light", "ind_hedge_ready_light"):
             light = getattr(app, attr, None)
             if light and light.winfo_exists():
                 light.configure(fg_color=color)
@@ -1223,16 +1241,21 @@ def open_advanced_tools_popup(app):
             return (
                 f"Auto scan: {'ON' if cfg.get('ENABLED') else 'OFF'} | "
                 f"Watchlist: {', '.join(cfg.get('WATCHLIST') or []) or 'trống'} | "
-                f"Scan: {cfg.get('HEDGE_SCAN_INTERVAL_SECONDS', 2)}s\n"
-                f"Tactic: {cfg.get('TACTIC', 'BASKET')} | "
+                f"Scan: {cfg.get('HEDGE_SCAN_INTERVAL_SECONDS', 2)}s | Log cooldown: {cfg.get('HEDGE_LOG_COOLDOWN_SECONDS', 300)}s\n"
+                f"Mode: DUAL | "
                 f"Signal filter: {'ON' if cfg.get('USE_SIGNAL_FILTER') else 'OFF'} | "
-                f"Swing filter: {'ON' if cfg.get('USE_SWING_FILTER') else 'OFF'} "
-                f"{cfg.get('SWING_GROUP', 'G2')}({cfg.get('SWING_TIMEFRAME', '15m')}) | "
-                f"Lot: {cfg.get('FIXED_LOT', 0.1)} | Max pairs/symbol: {cfg.get('MAX_PAIRS_PER_SYMBOL', 1)}\n"
-                f"Pair TP: {cfg.get('PAIR_TP_USD', 5.0)} | Pair SL: {cfg.get('PAIR_SL_USD', 10.0)} | "
+                f"Entry/Exit filter: {'ON' if cfg.get('USE_ENTRY_EXIT_FILTER') else 'OFF'} | "
+                f"HEDGE SL/TP: {'ON' if cfg.get('USE_HEDGE_SLTP', cfg.get('USE_SANDBOX_SLTP', True)) else 'OFF'} | "
+                f"TSL: {cfg.get('HEDGE_TSL_MODE', 'BE+STEP_R+SWING') if cfg.get('USE_TSL', True) else 'OFF'} | "
+                f"Survivor: {cfg.get('SURVIVOR_PROTECT', 'BE_FEE')} | "
+                f"Lot mode: {cfg.get('LOT_MODE', 'FIXED')} | Base lot: {cfg.get('FIXED_LOT', 0.1)} | "
+                f"Account risk: {cfg.get('RISK_PERCENT_PER_PAIR', 0.5)}% | Max lot cap: {cfg.get('MAX_LOT_CAP', 1.0)} | "
+                f"Max pairs/symbol: {cfg.get('MAX_PAIRS_PER_SYMBOL', 1)}\n"
                 f"Daily loss: {cfg.get('HEDGE_MAX_DAILY_LOSS', 0.0)} | "
                 f"Cooldown close: {cfg.get('COOLDOWN_AFTER_CLOSE_SECONDS', 900)}s | "
-                f"Cooldown loss: {cfg.get('COOLDOWN_AFTER_LOSS_SECONDS', 1800)}s\n"
+                f"Cooldown loss: {cfg.get('COOLDOWN_AFTER_LOSS_SECONDS', 1800)}s | "
+                f"Spread: {'ON' if cfg.get('CHECK_SPREAD', True) else 'OFF'}<= {cfg.get('MAX_SPREAD_POINTS', 150)} | "
+                f"Ping: {'ON' if cfg.get('CHECK_PING', True) else 'OFF'}<= {cfg.get('MAX_PING_MS', 150)}ms\n"
                 f"Today PnL: {float(st.get('hedge_pnl_today', 0.0) or 0.0):+.2f} | "
                 f"Sessions: {int(st.get('hedge_sessions_today', 0) or 0)} | Last: {last_txt}"
             )
@@ -1246,6 +1269,8 @@ def open_advanced_tools_popup(app):
             cfg["ENABLED"] = var_hedge_enabled.get()
             save_hedge_settings(cfg)
             _set_hedge_lights(var_hedge_enabled.get())
+            if hasattr(app, "refresh_hedge_runtime_light"):
+                app.refresh_hedge_runtime_light()
             lbl_hedge_state.configure(
                 text=f"Auto scan: {'ON' if var_hedge_enabled.get() else 'OFF'}",
                 text_color="#CE93D8" if var_hedge_enabled.get() else "gray",
@@ -1266,7 +1291,7 @@ def open_advanced_tools_popup(app):
     )
     ctk.CTkSwitch(
         f_hedge_switch,
-        text="AUTO HEDGE SCAN",
+        text="AUTO HEDGE BOT",
         variable=var_hedge_enabled,
         progress_color="#8E24AA",
         fg_color=COL_RED,
@@ -1274,129 +1299,253 @@ def open_advanced_tools_popup(app):
         command=_toggle_hedge_enabled,
     ).pack(side="left", padx=12, pady=12)
     lbl_hedge_state.pack(side="left", padx=12)
+    _set_hedge_lights(var_hedge_enabled.get())
 
     lbl_hedge_summary = ctk.CTkLabel(
         hedge_body,
         text=_hedge_summary(),
-        font=("Consolas", 13),
+        font=("Roboto", 12),
         text_color="#E1BEE7",
         justify="left",
         anchor="w",
     )
     lbl_hedge_summary.pack(fill="x", padx=14, pady=(0, 10))
 
-    lbl_hedge_preview = ctk.CTkLabel(
+    preview_frame = ctk.CTkFrame(
         hedge_body,
-        text=_hedge_preview_text(),
-        font=("Consolas", 13, "bold"),
-        text_color="#FFFFFF",
         fg_color="#211628",
         corner_radius=8,
+        border_width=1,
+        border_color="#6A1B9A",
+    )
+    preview_frame.pack(fill="x", padx=14, pady=(0, 10))
+    ctk.CTkLabel(
+        preview_frame,
+        text="HEDGE Status Preview",
+        font=("Roboto", 13, "bold"),
+        text_color="#CE93D8",
+    ).pack(anchor="w", padx=12, pady=(10, 2))
+    lbl_hedge_preview = ctk.CTkLabel(
+        preview_frame,
+        text=_hedge_preview_text(),
+        font=("Roboto", 12),
+        text_color="#FFFFFF",
         justify="left",
         anchor="w",
-        wraplength=700,
+        wraplength=920,
     )
-    lbl_hedge_preview.pack(fill="x", padx=14, pady=(0, 10), ipady=8)
+    lbl_hedge_preview.pack(fill="x", padx=12, pady=(0, 8))
 
     ctk.CTkLabel(
-        hedge_body,
+        preview_frame,
         text=(
-            "BASKET: đóng cả cặp theo tổng PnL. LEG_OUT: chân nào âm tới ngưỡng thì đóng chân đó, "
-            "giữ chân còn lại để gỡ. Xóa chặn chỉ reset cooldown/block runtime, không đóng lệnh và không reset PnL ngày."
+            "Status chỉ để xem nhanh. Log chi tiết nằm ở tab HEDGE/HEDGE-Log; cấu hình nằm ở khối HEDGE Dual Defaults bên dưới."
         ),
-        font=("Arial", 12),
+        font=("Arial", 11, "italic"),
         text_color="#F8BBD0",
         anchor="w",
         justify="left",
-        wraplength=700,
-    ).pack(fill="x", padx=14, pady=(0, 10))
+        wraplength=920,
+    ).pack(fill="x", padx=12, pady=(0, 10))
 
-    hquick = ctk.CTkFrame(
+    hsimple = ctk.CTkFrame(
         hedge_body,
         fg_color="#242424",
         corner_radius=8,
         border_width=1,
         border_color="#6A1B9A",
     )
-    hquick.pack(fill="x", padx=14, pady=(0, 12))
-    ctk.CTkLabel(hquick, text="Cấu hình mặc định HEDGE", font=("Roboto", 13, "bold"), text_color="#CE93D8").grid(row=0, column=0, columnspan=4, sticky="w", padx=10, pady=(8, 4))
+    hsimple.pack(fill="x", padx=14, pady=(0, 12))
+    hsimple.grid_columnconfigure((1, 3), weight=1)
     ctk.CTkLabel(
-        hquick,
-        text="1) ENTRY FILTER",
-        font=("Roboto", 11, "bold"),
-        text_color="#FFFFFF",
-        fg_color="#4A148C",
-        corner_radius=6,
-    ).grid(row=1, column=0, columnspan=4, sticky="ew", padx=10, pady=(6, 4))
+        hsimple,
+        text="HEDGE Dual Config",
+        font=("Roboto", 13, "bold"),
+        text_color="#CE93D8",
+    ).grid(row=0, column=0, columnspan=4, sticky="w", padx=10, pady=(8, 4))
+    var_h_entry_filter = ctk.BooleanVar(value=bool(hedge_cfg.get("USE_ENTRY_EXIT_FILTER", False)))
+    var_h_hedge_sltp = ctk.BooleanVar(value=bool(hedge_cfg.get("USE_HEDGE_SLTP", hedge_cfg.get("USE_SANDBOX_SLTP", True))))
+    var_h_tsl = ctk.BooleanVar(value=bool(hedge_cfg.get("USE_TSL", True)))
+    def _h_section(parent, title, row, col, color="#CE93D8"):
+        frame = ctk.CTkFrame(parent, fg_color="#202020", corner_radius=8, border_width=1, border_color="#3A3A3A")
+        frame.grid(row=row, column=col, sticky="nsew", padx=10, pady=8)
+        frame.grid_columnconfigure((1, 3), weight=1)
+        ctk.CTkLabel(frame, text=title, font=("Roboto", 12, "bold"), text_color=color).grid(
+            row=0, column=0, columnspan=4, sticky="w", padx=10, pady=(8, 4)
+        )
+        return frame
 
-    def _h_entry(label, value, row, col):
-        ctk.CTkLabel(hquick, text=label).grid(row=row, column=col, sticky="w", padx=10, pady=5)
-        entry = ctk.CTkEntry(hquick, width=90, justify="center")
+    hsimple.grid_columnconfigure((0, 1), weight=1)
+    f_filters = _h_section(hsimple, "1) Filters", 1, 0, "#29B6F6")
+    f_risk = _h_section(hsimple, "2) Risk & SL/TP", 1, 1, "#CE93D8")
+    f_safety = _h_section(hsimple, "3) Safety", 2, 0, "#FFB300")
+    f_actions = _h_section(hsimple, "4) Actions", 2, 1, "#B0BEC5")
+
+    ctk.CTkCheckBox(f_filters, text="Use Signal Filter", variable=var_hedge_signal).grid(row=1, column=0, columnspan=2, sticky="w", padx=10, pady=6)
+    ctk.CTkCheckBox(f_filters, text="Use Entry/Exit Filter", variable=var_h_entry_filter).grid(row=1, column=2, columnspan=2, sticky="w", padx=10, pady=6)
+    ctk.CTkLabel(f_filters, text="Signal rule").grid(row=2, column=0, sticky="w", padx=10, pady=5)
+    cbo_h2_signal_rule = ctk.CTkOptionMenu(f_filters, values=["SANDBOX_SIGNAL"], width=170)
+    cbo_h2_signal_rule.set(str(hedge_cfg.get("HEDGE_SIGNAL_RULE", "SANDBOX_SIGNAL")).upper())
+    cbo_h2_signal_rule.grid(row=2, column=1, sticky="w", padx=10, pady=5)
+    ctk.CTkLabel(f_filters, text="Entry rule").grid(row=2, column=2, sticky="w", padx=10, pady=5)
+    cbo_h2_entry_rule = ctk.CTkOptionMenu(
+        f_filters,
+        values=["SWING_REJECTION", "SWING_STRUCTURE", "FIB_RETRACE", "PULLBACK_ZONE", "FALLBACK_R"],
+        width=190,
+    )
+    cbo_h2_entry_rule.set(str(hedge_cfg.get("HEDGE_ENTRY_RULE", "SWING_REJECTION")).upper())
+    cbo_h2_entry_rule.grid(row=2, column=3, sticky="w", padx=10, pady=5)
+    ctk.CTkLabel(f_filters, text="Entry SL").grid(row=3, column=0, sticky="w", padx=10, pady=5)
+    cbo_h2_ee_sl_rule = ctk.CTkOptionMenu(
+        f_filters,
+        values=["MATCH_ENTRY", "SWING_REJECTION", "SWING_STRUCTURE", "FIB_RETRACE", "PULLBACK_ZONE", "SANDBOX"],
+        width=170,
+    )
+    cbo_h2_ee_sl_rule.set(str(hedge_cfg.get("HEDGE_EE_SL_RULE", "MATCH_ENTRY")).upper().replace("AUTO", "MATCH_ENTRY"))
+    cbo_h2_ee_sl_rule.grid(row=3, column=1, sticky="w", padx=10, pady=5)
+    ctk.CTkLabel(f_filters, text="Entry TP").grid(row=3, column=2, sticky="w", padx=10, pady=5)
+    cbo_h2_ee_tp_rule = ctk.CTkOptionMenu(
+        f_filters,
+        values=["MATCH_ENTRY", "RR", "SWING_REJECTION", "SWING_STRUCTURE", "FIB_RETRACE", "PULLBACK_ZONE", "NO_TP"],
+        width=190,
+    )
+    cbo_h2_ee_tp_rule.set(str(hedge_cfg.get("HEDGE_EE_TP_RULE", "MATCH_ENTRY")).upper().replace("AUTO", "MATCH_ENTRY"))
+    cbo_h2_ee_tp_rule.grid(row=3, column=3, sticky="w", padx=10, pady=5)
+    ctk.CTkLabel(
+        f_filters,
+        text="Signal chạy trước; Entry/Exit là bộ lọc điểm vào nếu được bật. Rule chọn ở đây là riêng của HEDGE.",
+        font=("Arial", 11, "italic"),
+        text_color="#B0BEC5",
+        wraplength=520,
+        justify="left",
+    ).grid(row=4, column=0, columnspan=4, sticky="w", padx=10, pady=(0, 8))
+
+    def _h2_entry(parent, label, value, row, col, width=90):
+        label_widget = ctk.CTkLabel(parent, text=label)
+        label_widget.grid(row=row, column=col, sticky="w", padx=10, pady=5)
+        entry = ctk.CTkEntry(parent, width=width, justify="center")
         entry.insert(0, str(value))
         entry.grid(row=row, column=col + 1, sticky="w", padx=10, pady=5)
+        entry._label_widget = label_widget
         return entry
 
-    ctk.CTkLabel(hquick, text="Tactic").grid(row=2, column=0, sticky="w", padx=10, pady=5)
-    cbo_h_tactic = ctk.CTkOptionMenu(hquick, values=["BASKET", "LEG_OUT"], width=130)
-    cbo_h_tactic.set(str(hedge_cfg.get("TACTIC", "BASKET")).upper())
-    cbo_h_tactic.grid(row=2, column=1, sticky="w", padx=10, pady=5)
-    ctk.CTkCheckBox(hquick, text="Dùng signal filter", variable=var_hedge_signal).grid(row=2, column=2, sticky="w", padx=10, pady=5)
-    ctk.CTkCheckBox(hquick, text="Dùng swing filter", variable=var_hedge_swing).grid(row=2, column=3, sticky="w", padx=10, pady=5)
-    e_h_swing_tol = _h_entry("Swing tolerance ATR", hedge_cfg.get("SWING_TOLERANCE_ATR", 0.2), 3, 0)
-    ctk.CTkLabel(hquick, text="Nguồn swing").grid(row=3, column=2, sticky="w", padx=10, pady=5)
-    cbo_h_swing_group = ctk.CTkOptionMenu(hquick, values=["G0", "G1", "G2", "G3"], width=90)
-    cbo_h_swing_group.set(str(hedge_cfg.get("SWING_GROUP", "G2")).upper())
-    cbo_h_swing_group.grid(row=3, column=3, sticky="w", padx=10, pady=5)
-    ctk.CTkLabel(hquick, text="Khung nến HEDGE").grid(row=4, column=0, sticky="w", padx=10, pady=5)
-    cbo_h_swing_tf = ctk.CTkOptionMenu(hquick, values=["1m", "5m", "15m", "30m", "1h", "4h", "1d"], width=90)
-    cbo_h_swing_tf.set(str(hedge_cfg.get("SWING_TIMEFRAME", _hedge_timeframe_for_group(cbo_h_swing_group.get()))))
-    cbo_h_swing_tf.grid(row=4, column=1, sticky="w", padx=10, pady=5)
-    e_h_scan_interval = _h_entry("Chu kỳ quét Auto", hedge_cfg.get("HEDGE_SCAN_INTERVAL_SECONDS", 2), 4, 2)
+    ctk.CTkCheckBox(f_risk, text="HEDGE SL/TP Rule", variable=var_h_hedge_sltp).grid(row=1, column=0, columnspan=2, sticky="w", padx=10, pady=6)
+    ctk.CTkCheckBox(f_risk, text="Use TSL", variable=var_h_tsl).grid(row=1, column=2, columnspan=2, sticky="w", padx=10, pady=6)
+    ctk.CTkLabel(f_risk, text="HEDGE SL rule").grid(row=2, column=0, sticky="w", padx=10, pady=5)
+    cbo_h2_sl_rule = ctk.CTkOptionMenu(
+        f_risk,
+        values=["BASE_SL_ATR", "SWING_REJECTION", "SWING_STRUCTURE", "FIB_RETRACE", "PULLBACK_ZONE"],
+        width=190,
+    )
+    cbo_h2_sl_rule.set(str(hedge_cfg.get("HEDGE_SL_RULE", "BASE_SL_ATR")).upper())
+    cbo_h2_sl_rule.grid(row=2, column=1, sticky="w", padx=10, pady=5)
+    ctk.CTkLabel(f_risk, text="HEDGE TP rule").grid(row=2, column=2, sticky="w", padx=10, pady=5)
+    cbo_h2_tp_rule = ctk.CTkOptionMenu(
+        f_risk,
+        values=["RR", "SWING", "NO_TP"],
+        width=130,
+    )
+    cbo_h2_tp_rule.set(str(hedge_cfg.get("HEDGE_TP_RULE", "RR")).upper())
+    cbo_h2_tp_rule.grid(row=2, column=3, sticky="w", padx=10, pady=5)
+    ctk.CTkLabel(f_risk, text="Lot mode").grid(row=3, column=0, sticky="w", padx=10, pady=5)
+    cbo_h2_lot_mode = ctk.CTkOptionMenu(f_risk, values=["FIXED", "ACCOUNT_RISK"], width=140)
+    _h2_lot_mode_value = str(hedge_cfg.get("LOT_MODE", "FIXED")).upper()
+    cbo_h2_lot_mode.set("ACCOUNT_RISK" if _h2_lot_mode_value == "RISK_PERCENT" else _h2_lot_mode_value)
+    cbo_h2_lot_mode.grid(row=3, column=1, sticky="w", padx=10, pady=5)
+    ctk.CTkLabel(f_risk, text="Survivor protect").grid(row=3, column=2, sticky="w", padx=10, pady=5)
+    cbo_h2_survivor = ctk.CTkOptionMenu(f_risk, values=["BE_FEE", "BE_ONLY", "OFF"], width=130)
+    cbo_h2_survivor.set(str(hedge_cfg.get("SURVIVOR_PROTECT", "BE_FEE")).upper())
+    cbo_h2_survivor.grid(row=3, column=3, sticky="w", padx=10, pady=5)
+    ctk.CTkLabel(f_risk, text="TSL tactics", text_color="#00E676", font=("Roboto", 12, "bold")).grid(
+        row=4, column=0, sticky="w", padx=10, pady=(8, 4)
+    )
+    _h2_tsl_modes = set(str(hedge_cfg.get("HEDGE_TSL_MODE", "BE+STEP_R+SWING") or "").upper().replace(",", "+").split("+"))
+    var_h2_tsl_be = ctk.BooleanVar(value="BE" in _h2_tsl_modes)
+    var_h2_tsl_pnl = ctk.BooleanVar(value="PNL" in _h2_tsl_modes)
+    var_h2_tsl_step = ctk.BooleanVar(value="STEP_R" in _h2_tsl_modes)
+    var_h2_tsl_swing = ctk.BooleanVar(value="SWING" in _h2_tsl_modes)
+    var_h2_tsl_cash = ctk.BooleanVar(value="BE_CASH" in _h2_tsl_modes)
+    var_h2_tsl_psar = ctk.BooleanVar(value="PSAR_TRAIL" in _h2_tsl_modes)
+    _h2_tsl_checks = [
+        ("BE", var_h2_tsl_be, 0),
+        ("PNL", var_h2_tsl_pnl, 1),
+        ("STEP_R", var_h2_tsl_step, 2),
+        ("SWING", var_h2_tsl_swing, 3),
+        ("BE_CASH", var_h2_tsl_cash, 4),
+        ("PSAR_TRAIL", var_h2_tsl_psar, 5),
+    ]
+    for label, var, idx in _h2_tsl_checks:
+        ctk.CTkCheckBox(f_risk, text=label, variable=var, command=lambda: _refresh_hedge_preview()).grid(
+            row=5 + idx // 3, column=(idx % 3), columnspan=1, sticky="w", padx=10, pady=5
+        )
+    e_h2_lot = _h2_entry(f_risk, "Lot per leg", hedge_cfg.get("FIXED_LOT", 0.1), 7, 0)
+    e_h2_risk_pct = _h2_entry(f_risk, "Account risk %", hedge_cfg.get("RISK_PERCENT_PER_PAIR", 0.5), 7, 2)
+    e_h2_max_lot_cap = _h2_entry(f_risk, "Max lot cap", hedge_cfg.get("MAX_LOT_CAP", 1.0), 8, 0)
+    e_h2_max_pairs = _h2_entry(f_risk, "Max pairs/symbol", hedge_cfg.get("MAX_PAIRS_PER_SYMBOL", 1), 8, 2)
     ctk.CTkLabel(
-        hquick,
-        text="2) MONEY / TP-SL",
-        font=("Roboto", 11, "bold"),
-        text_color="#FFFFFF",
-        fg_color="#6A1B9A",
-        corner_radius=6,
-    ).grid(row=5, column=0, columnspan=4, sticky="ew", padx=10, pady=(10, 4))
-    e_h_lot = _h_entry("Lot mỗi chân", hedge_cfg.get("FIXED_LOT", 0.1), 6, 0)
-    e_h_max_pairs = _h_entry("Max pairs/symbol", hedge_cfg.get("MAX_PAIRS_PER_SYMBOL", 1), 6, 2)
-    e_h_pair_tp = _h_entry("Basket TP USD", hedge_cfg.get("PAIR_TP_USD", 5.0), 7, 0)
-    e_h_pair_sl = _h_entry("Basket SL USD", hedge_cfg.get("PAIR_SL_USD", 10.0), 7, 2)
-    e_h_leg_sl = _h_entry("Leg-out SL USD", hedge_cfg.get("LOSING_LEG_SL_USD", 5.0), 8, 0)
-    e_h_recovery = _h_entry("Recovery net target", hedge_cfg.get("RECOVERY_TARGET_USD", 2.0), 8, 2)
-    e_h_giveback = _h_entry("Recovery giveback", hedge_cfg.get("RECOVERY_GIVEBACK_USD", 2.0), 9, 0)
-    ctk.CTkLabel(
-        hquick,
-        text="BASKET TP/SL tính theo tổng PnL của cả cặp BUY+SELL. LEG_OUT SL đóng chân âm. Recovery net target = tổng PnL sau khi bù lỗ/fee đạt ngưỡng thì chốt. Giveback = đang gỡ tốt mà hồi lại quá mức thì cắt.",
-        text_color="#F8BBD0",
+        f_risk,
+        text="Hint: HEDGE SL/TP Rule dùng cùng công thức base SL/TP của sandbox/bot (swingpoint + ATR, swing TP hoặc RR TP), nhưng bật/tắt và state là riêng của HEDGE.",
         font=("Arial", 11, "italic"),
-        wraplength=680,
-        justify="left",
-    ).grid(row=10, column=0, columnspan=4, sticky="w", padx=10, pady=(0, 5))
-    ctk.CTkLabel(
-        hquick,
-        text="3) COOLDOWN / SAFETY",
-        font=("Roboto", 11, "bold"),
-        text_color="#FFFFFF",
-        fg_color="#7B1FA2",
-        corner_radius=6,
-    ).grid(row=11, column=0, columnspan=4, sticky="ew", padx=10, pady=(10, 4))
-    e_h_cooldown = _h_entry("Cooldown sau đóng", hedge_cfg.get("COOLDOWN_AFTER_CLOSE_SECONDS", 900), 12, 0)
-    e_h_loss_cooldown = _h_entry("Cooldown sau thua", hedge_cfg.get("COOLDOWN_AFTER_LOSS_SECONDS", 1800), 12, 2)
-    e_h_max_losses = _h_entry("Thua liên tiếp", hedge_cfg.get("MAX_CONSECUTIVE_LOSSES", 3), 13, 0)
-    e_h_global_cd = _h_entry("Cooldown tổng", hedge_cfg.get("GLOBAL_COOLDOWN_SECONDS", 3600), 13, 2)
-    e_h_daily_loss = _h_entry("Daily loss HEDGE", hedge_cfg.get("HEDGE_MAX_DAILY_LOSS", 0.0), 14, 0)
-    e_h_max_day = _h_entry("Session/ngày tối đa", hedge_cfg.get("MAX_SESSIONS_PER_DAY", 0), 14, 2)
-    ctk.CTkLabel(
-        hquick,
-        text="Signal filter dùng latest_signal từ signal engine. Swing/ATR dùng code lấy dữ liệu có sẵn nhưng timeframe/config là riêng HEDGE. Daily loss reset theo ngày hệ thống, counter vẫn riêng HEDGE.",
         text_color="#F8BBD0",
-        font=("Arial", 11, "italic"),
-        wraplength=680,
+        wraplength=520,
         justify="left",
-    ).grid(row=15, column=0, columnspan=4, sticky="w", padx=10, pady=(0, 5))
+    ).grid(row=9, column=0, columnspan=4, sticky="w", padx=10, pady=(4, 8))
+
+    def _compose_h2_tsl_mode():
+        if not var_h_tsl.get():
+            return "OFF"
+        modes = [label for label, var, _idx in _h2_tsl_checks if var.get()]
+        return "+".join(modes) if modes else "OFF"
+
+    def _set_entry_active(entry, active=True):
+        label_widget = getattr(entry, "_label_widget", None)
+        if active:
+            if label_widget:
+                label_widget.grid()
+                label_widget.configure(text_color="#FFFFFF")
+            entry.grid()
+            entry.configure(state="normal")
+        else:
+            if label_widget:
+                label_widget.grid_remove()
+            entry.grid_remove()
+
+    def _refresh_hedge_risk_fields(_value=None):
+        lot_mode = str(cbo_h2_lot_mode.get() or "FIXED").upper()
+        use_tsl = bool(var_h_tsl.get())
+        _set_entry_active(e_h2_lot, lot_mode == "FIXED")
+        _set_entry_active(e_h2_risk_pct, lot_mode == "ACCOUNT_RISK")
+        try:
+            _refresh_hedge_preview()
+        except Exception:
+            pass
+
+    cbo_h2_lot_mode.configure(command=_refresh_hedge_risk_fields)
+    var_h_tsl.trace_add("write", lambda *_: _refresh_hedge_risk_fields())
+    _refresh_hedge_risk_fields()
+
+    e_h2_scan_interval = _h2_entry(f_safety, "Auto scan sec", hedge_cfg.get("HEDGE_SCAN_INTERVAL_SECONDS", 2), 1, 0)
+    e_h2_cooldown = _h2_entry(f_safety, "Cooldown close sec", hedge_cfg.get("COOLDOWN_AFTER_CLOSE_SECONDS", 900), 1, 2)
+    e_h2_loss_cooldown = _h2_entry(f_safety, "Cooldown loss sec", hedge_cfg.get("COOLDOWN_AFTER_LOSS_SECONDS", 1800), 2, 0)
+    e_h2_max_losses = _h2_entry(f_safety, "Consecutive losses", hedge_cfg.get("MAX_CONSECUTIVE_LOSSES", 3), 2, 2)
+    e_h2_global_cd = _h2_entry(f_safety, "Global cooldown sec", hedge_cfg.get("GLOBAL_COOLDOWN_SECONDS", 3600), 3, 0)
+    e_h2_daily_loss = _h2_entry(f_safety, "Daily loss HEDGE", hedge_cfg.get("HEDGE_MAX_DAILY_LOSS", 0.0), 3, 2)
+    e_h2_max_day = _h2_entry(f_safety, "Max sessions/day", hedge_cfg.get("MAX_SESSIONS_PER_DAY", 0), 4, 0)
+    e_h2_log_cd = _h2_entry(f_safety, "Log cooldown sec", hedge_cfg.get("HEDGE_LOG_COOLDOWN_SECONDS", 300), 4, 2)
+    var_h2_check_spread = ctk.BooleanVar(value=bool(hedge_cfg.get("CHECK_SPREAD", True)))
+    var_h2_check_ping = ctk.BooleanVar(value=bool(hedge_cfg.get("CHECK_PING", True)))
+    ctk.CTkCheckBox(f_safety, text="Check spread", variable=var_h2_check_spread).grid(row=5, column=0, columnspan=2, sticky="w", padx=10, pady=5)
+    ctk.CTkCheckBox(f_safety, text="Check ping", variable=var_h2_check_ping).grid(row=5, column=2, columnspan=2, sticky="w", padx=10, pady=5)
+    e_h2_max_spread = _h2_entry(f_safety, "Max spread points", hedge_cfg.get("MAX_SPREAD_POINTS", 150), 6, 0)
+    e_h2_max_ping = _h2_entry(f_safety, "Max ping ms", hedge_cfg.get("MAX_PING_MS", 150), 6, 2)
+    ctk.CTkLabel(
+        f_safety,
+        text="Safety/cooldown chỉ ghi HEDGE state riêng, không reset hay sửa state BOT/GRID.",
+        font=("Arial", 11, "italic"),
+        text_color="#B0BEC5",
+        wraplength=520,
+        justify="left",
+    ).grid(row=7, column=0, columnspan=4, sticky="w", padx=10, pady=(4, 8))
 
     watchlist_frame = ctk.CTkFrame(
         hedge_body,
@@ -1437,11 +1586,8 @@ def open_advanced_tools_popup(app):
         lbl_hedge_summary.configure(text=_hedge_summary())
         lbl_hedge_preview.configure(text=_hedge_preview_text())
 
-    try:
-        cbo_h_swing_group.configure(command=lambda _v: _refresh_hedge_preview())
-        cbo_h_swing_tf.configure(command=lambda _v: lbl_hedge_preview.configure(text=_hedge_preview_text()))
-    except Exception:
-        pass
+    for _var in (var_hedge_signal, var_h_entry_filter, var_h_hedge_sltp):
+        _var.trace_add("write", lambda *_: _refresh_hedge_preview())
 
     override_frame = ctk.CTkFrame(
         hedge_body,
@@ -1489,27 +1635,48 @@ def open_advanced_tools_popup(app):
         try:
             from hedge.hedge_storage import load_hedge_settings, save_hedge_settings
             cfg = load_hedge_settings()
-            cfg["TACTIC"] = cbo_h_tactic.get()
             cfg["USE_SIGNAL_FILTER"] = var_hedge_signal.get()
-            cfg["USE_SWING_FILTER"] = var_hedge_swing.get()
-            cfg["FIXED_LOT"] = float(e_h_lot.get() or 0.1)
-            cfg["MAX_PAIRS_PER_SYMBOL"] = int(e_h_max_pairs.get() or 1)
-            cfg["PAIR_TP_USD"] = float(e_h_pair_tp.get() or 0.0)
-            cfg["PAIR_SL_USD"] = float(e_h_pair_sl.get() or 0.0)
-            cfg["LOSING_LEG_SL_USD"] = float(e_h_leg_sl.get() or 0.0)
-            cfg["RECOVERY_TARGET_USD"] = float(e_h_recovery.get() or 0.0)
-            cfg["RECOVERY_GIVEBACK_USD"] = float(e_h_giveback.get() or 0.0)
-            cfg["COOLDOWN_AFTER_CLOSE_SECONDS"] = int(float(e_h_cooldown.get() or 0))
-            cfg["COOLDOWN_AFTER_LOSS_SECONDS"] = int(float(e_h_loss_cooldown.get() or 0))
-            cfg["MAX_CONSECUTIVE_LOSSES"] = int(float(e_h_max_losses.get() or 0))
-            cfg["GLOBAL_COOLDOWN_SECONDS"] = int(float(e_h_global_cd.get() or 0))
-            cfg["HEDGE_SCAN_INTERVAL_SECONDS"] = max(1, int(float(e_h_scan_interval.get() or 2)))
-            cfg["HEDGE_MAX_DAILY_LOSS"] = float(e_h_daily_loss.get() or 0.0)
-            cfg["MAX_SESSIONS_PER_DAY"] = int(float(e_h_max_day.get() or 0))
-            cfg["SWING_TOLERANCE_ATR"] = float(e_h_swing_tol.get() or 0.2)
-            cfg["SWING_GROUP"] = cbo_h_swing_group.get()
-            cfg["SWING_TIMEFRAME"] = cbo_h_swing_tf.get()
+            cfg["HEDGE_SIGNAL_RULE"] = cbo_h2_signal_rule.get()
+            cfg["USE_ENTRY_EXIT_FILTER"] = var_h_entry_filter.get()
+            cfg["HEDGE_ENTRY_RULE"] = cbo_h2_entry_rule.get()
+            cfg["HEDGE_EE_SL_RULE"] = cbo_h2_ee_sl_rule.get()
+            cfg["HEDGE_EE_TP_RULE"] = cbo_h2_ee_tp_rule.get()
+            cfg["USE_HEDGE_SLTP"] = var_h_hedge_sltp.get()
+            cfg["HEDGE_SL_RULE"] = cbo_h2_sl_rule.get()
+            cfg["HEDGE_TP_RULE"] = cbo_h2_tp_rule.get()
+            cfg.pop("USE_SANDBOX_SLTP", None)
+            cfg["USE_TSL"] = var_h_tsl.get()
+            cfg["HEDGE_TSL_MODE"] = _compose_h2_tsl_mode()
+            cfg["SURVIVOR_PROTECT"] = cbo_h2_survivor.get()
+            cfg["LOT_MODE"] = cbo_h2_lot_mode.get()
+            cfg["FIXED_LOT"] = float(e_h2_lot.get() or 0.1)
+            cfg["RISK_PERCENT_PER_PAIR"] = float(e_h2_risk_pct.get() or 0.0)
+            cfg["MAX_LOT_CAP"] = float(e_h2_max_lot_cap.get() or 0.0)
+            cfg["MAX_PAIRS_PER_SYMBOL"] = int(float(e_h2_max_pairs.get() or 1))
+            cfg["COOLDOWN_AFTER_CLOSE_SECONDS"] = int(float(e_h2_cooldown.get() or 0))
+            cfg["COOLDOWN_AFTER_LOSS_SECONDS"] = int(float(e_h2_loss_cooldown.get() or 0))
+            cfg["MAX_CONSECUTIVE_LOSSES"] = int(float(e_h2_max_losses.get() or 0))
+            cfg["GLOBAL_COOLDOWN_SECONDS"] = int(float(e_h2_global_cd.get() or 0))
+            cfg["HEDGE_SCAN_INTERVAL_SECONDS"] = max(1, int(float(e_h2_scan_interval.get() or 2)))
+            cfg["HEDGE_LOG_COOLDOWN_SECONDS"] = max(0, int(float(e_h2_log_cd.get() or 300)))
+            cfg["CHECK_SPREAD"] = var_h2_check_spread.get()
+            cfg["MAX_SPREAD_POINTS"] = int(float(e_h2_max_spread.get() or 150))
+            cfg["CHECK_PING"] = var_h2_check_ping.get()
+            cfg["MAX_PING_MS"] = int(float(e_h2_max_ping.get() or 150))
+            cfg["HEDGE_MAX_DAILY_LOSS"] = float(e_h2_daily_loss.get() or 0.0)
+            cfg["MAX_SESSIONS_PER_DAY"] = int(float(e_h2_max_day.get() or 0))
             cfg["WATCHLIST"] = [sym for sym, var in hedge_watchlist_vars.items() if var.get()]
+            for old_key in (
+                "TACTIC", "USE_SWING_FILTER", "USE_SANDBOX_SLTP", "SWING_GROUP", "SWING_TIMEFRAME", "SWING_TOLERANCE_ATR",
+                "SL_TP_MODE", "SL_ATR_BUFFER", "TP_ATR_BUFFER", "BASKET_EXIT_MODE", "PAIR_TP_USD",
+                "PAIR_SL_USD", "BASKET_TP_R", "BASKET_SL_R", "BASKET_BUFFER_R",
+                "BASKET_TRAIL_START_R", "BASKET_TRAIL_GIVEBACK_R", "LOSING_LEG_SL_USD",
+                "RECOVERY_MODE", "RECOVERY_TARGET_USD", "RECOVERY_BUFFER_R", "RECOVERY_GIVEBACK_USD",
+                "RECOVERY_FAIL_GUARD", "RECOVERY_FAIL_PULLBACK_USD", "RECOVERY_TSL_MODE",
+                "RECOVERY_TSL_ENABLED", "RECOVERY_TSL_START_R", "RECOVERY_TSL_GIVEBACK_R",
+                "NO_MOVE_TIMEOUT_SECONDS", "NO_MOVE_MIN_MFE_USD", "MAX_HOLD_SECONDS",
+            ):
+                cfg.pop(old_key, None)
             save_hedge_settings(cfg)
             _refresh_hedge_preview()
             if hasattr(app, "update_hedge_manual_preview"):
@@ -1526,37 +1693,40 @@ def open_advanced_tools_popup(app):
         if hasattr(app, "log_message"):
             app.log_message(f"[HEDGE] Clear block: {result}", target="hedge")
 
-    def _stop_hedge_session():
-        sym = app.cbo_symbol.get() if hasattr(app, "cbo_symbol") else None
-        mgr = getattr(app, "hedge_mgr", None)
-        result = mgr.stop_session(sym) if mgr else "FAILED|NO_HEDGE_MANAGER"
-        _refresh_hedge_preview()
-        if hasattr(app, "log_message"):
-            app.log_message(f"[HEDGE] Stop session {sym}: {result}", target="hedge")
-
     def _collect_hedge_quick_values():
         return {
-            "TACTIC": cbo_h_tactic.get(),
             "USE_SIGNAL_FILTER": var_hedge_signal.get(),
-            "USE_SWING_FILTER": var_hedge_swing.get(),
-            "FIXED_LOT": float(e_h_lot.get() or 0.1),
-            "MAX_PAIRS_PER_SYMBOL": int(e_h_max_pairs.get() or 1),
-            "PAIR_TP_USD": float(e_h_pair_tp.get() or 0.0),
-            "PAIR_SL_USD": float(e_h_pair_sl.get() or 0.0),
-            "LOSING_LEG_SL_USD": float(e_h_leg_sl.get() or 0.0),
-            "RECOVERY_TARGET_USD": float(e_h_recovery.get() or 0.0),
-            "RECOVERY_GIVEBACK_USD": float(e_h_giveback.get() or 0.0),
-            "COOLDOWN_AFTER_CLOSE_SECONDS": int(float(e_h_cooldown.get() or 0)),
-            "COOLDOWN_AFTER_LOSS_SECONDS": int(float(e_h_loss_cooldown.get() or 0)),
-            "MAX_CONSECUTIVE_LOSSES": int(float(e_h_max_losses.get() or 0)),
-            "GLOBAL_COOLDOWN_SECONDS": int(float(e_h_global_cd.get() or 0)),
-            "HEDGE_SCAN_INTERVAL_SECONDS": max(1, int(float(e_h_scan_interval.get() or 2))),
-            "HEDGE_MAX_DAILY_LOSS": float(e_h_daily_loss.get() or 0.0),
-            "MAX_SESSIONS_PER_DAY": int(float(e_h_max_day.get() or 0)),
-            "SWING_TOLERANCE_ATR": float(e_h_swing_tol.get() or 0.2),
-            "SWING_GROUP": cbo_h_swing_group.get(),
-            "SWING_TIMEFRAME": cbo_h_swing_tf.get(),
+            "HEDGE_SIGNAL_RULE": cbo_h2_signal_rule.get(),
+            "USE_ENTRY_EXIT_FILTER": var_h_entry_filter.get(),
+            "HEDGE_ENTRY_RULE": cbo_h2_entry_rule.get(),
+            "HEDGE_EE_SL_RULE": cbo_h2_ee_sl_rule.get(),
+            "HEDGE_EE_TP_RULE": cbo_h2_ee_tp_rule.get(),
+            "USE_HEDGE_SLTP": var_h_hedge_sltp.get(),
+            "HEDGE_SL_RULE": cbo_h2_sl_rule.get(),
+            "HEDGE_TP_RULE": cbo_h2_tp_rule.get(),
+            "USE_TSL": var_h_tsl.get(),
+            "HEDGE_TSL_MODE": _compose_h2_tsl_mode(),
+            "SURVIVOR_PROTECT": cbo_h2_survivor.get(),
+            "LOT_MODE": cbo_h2_lot_mode.get(),
+            "FIXED_LOT": float(e_h2_lot.get() or 0.1),
+            "RISK_PERCENT_PER_PAIR": float(e_h2_risk_pct.get() or 0.0),
+            "MAX_LOT_CAP": float(e_h2_max_lot_cap.get() or 0.0),
+            "MAX_PAIRS_PER_SYMBOL": int(float(e_h2_max_pairs.get() or 1)),
+            "COOLDOWN_AFTER_CLOSE_SECONDS": int(float(e_h2_cooldown.get() or 0)),
+            "COOLDOWN_AFTER_LOSS_SECONDS": int(float(e_h2_loss_cooldown.get() or 0)),
+            "MAX_CONSECUTIVE_LOSSES": int(float(e_h2_max_losses.get() or 0)),
+            "GLOBAL_COOLDOWN_SECONDS": int(float(e_h2_global_cd.get() or 0)),
+            "HEDGE_SCAN_INTERVAL_SECONDS": max(1, int(float(e_h2_scan_interval.get() or 2))),
+            "HEDGE_LOG_COOLDOWN_SECONDS": max(0, int(float(e_h2_log_cd.get() or 300))),
+            "CHECK_SPREAD": var_h2_check_spread.get(),
+            "MAX_SPREAD_POINTS": int(float(e_h2_max_spread.get() or 150)),
+            "CHECK_PING": var_h2_check_ping.get(),
+            "MAX_PING_MS": int(float(e_h2_max_ping.get() or 150)),
+            "HEDGE_MAX_DAILY_LOSS": float(e_h2_daily_loss.get() or 0.0),
+            "MAX_SESSIONS_PER_DAY": int(float(e_h2_max_day.get() or 0)),
         }
+
+    hedge_preview_form_getter = _collect_hedge_quick_values
 
     def _save_hedge_override():
         try:
@@ -1585,8 +1755,28 @@ def open_advanced_tools_popup(app):
         if hasattr(app, "log_message"):
             app.log_message(f"[HEDGE] Override cleared for {sym}.", target="hedge")
 
-    ctk.CTkButton(hquick, text="LƯU MẶC ĐỊNH HEDGE", fg_color="#6A1B9A", hover_color="#4A148C", command=_save_hedge_quick).grid(row=16, column=0, columnspan=4, sticky="ew", padx=10, pady=(8, 10))
-    ctk.CTkButton(hquick, text="XÓA CHẶN / RESET COOLDOWN", fg_color="#455A64", hover_color="#37474F", command=_clear_hedge_block).grid(row=17, column=0, columnspan=4, sticky="ew", padx=10, pady=(0, 10))
+    ctk.CTkLabel(
+        f_actions,
+        text="Lưu cấu hình HEDGE độc lập hoặc clear block/cooldown riêng của HEDGE. Đóng lệnh thực hiện ở running table.",
+        font=("Arial", 11, "italic"),
+        text_color="#B0BEC5",
+        wraplength=520,
+        justify="left",
+    ).grid(row=1, column=0, columnspan=4, sticky="w", padx=10, pady=(0, 8))
+    ctk.CTkButton(
+        f_actions,
+        text="SAVE HEDGE DEFAULTS",
+        fg_color="#6A1B9A",
+        hover_color="#4A148C",
+        command=_save_hedge_quick,
+    ).grid(row=2, column=0, columnspan=4, sticky="ew", padx=10, pady=(0, 8))
+    ctk.CTkButton(
+        f_actions,
+        text="CLEAR HEDGE BLOCK / COOLDOWN",
+        fg_color="#455A64",
+        hover_color="#37474F",
+        command=_clear_hedge_block,
+    ).grid(row=3, column=0, columnspan=4, sticky="ew", padx=10, pady=(0, 10))
     btn_open_hedge_override = ctk.CTkButton(
         override_frame,
         text="MỞ POPUP OVERRIDE",
@@ -2759,42 +2949,24 @@ def open_edit_popup(app, ticket):
 def show_history_popup(app):
 
     top = ctk.CTkToplevel(app)
-    top.title("Lịch sử Giao dịch (Nhóm theo Phiên)")
+    top.title("Lịch sử giao dịch theo chiến thuật")
     top.geometry("1400x650")
     top.minsize(1100, 550)
     top.attributes("-topmost", True)
     top.focus_force()
 
-    # [NEW V5] Mở rộng số cột để hiển thị thêm Entry, SL, TP, Fee
     history_tabs = ctk.CTkTabview(top)
     history_tabs.pack(fill="both", expand=True)
-    tab_all_history = history_tabs.add("ALL")
+    tab_bot_history = history_tabs.add("BOT")
     tab_grid_history = history_tabs.add("GRID")
-    ctk.CTkLabel(
-        tab_grid_history,
-        text="GRID history scaffold is ready. Closed GRID trades will be filtered here after GRID execution is implemented.",
-        text_color="#80DEEA",
-        font=("Arial", 13, "italic"),
-        wraplength=780,
-    ).pack(fill="x", padx=18, pady=18)
+    tab_hedge_history = history_tabs.add("HEDGE")
+
     cols = (
-        "Time",
-        "Ticket",
-        "Symbol",
-        "Type",
-        "Vol",
-        "Entry",
-        "SL",
-        "TP",
-        "Fee",
-        "PnL ($)",
-        "MAE",
-        "MFE",
-        "Trigger",
-        "Reason",
+        "Time", "Ticket", "Symbol", "Type", "Vol", "Entry", "SL", "TP",
+        "Fee", "PnL ($)", "MAE", "MFE", "Trigger", "Reason",
     )
-    history_frame = ctk.CTkFrame(tab_all_history, fg_color="transparent")
-    history_frame.pack(fill="both", expand=True, padx=6, pady=6)
+    widths = [300, 150, 130, 130, 130, 145, 145, 145, 110, 120, 120, 120, 330, 360]
+
     style = ttk.Style()
     style.configure(
         "History.Treeview",
@@ -2811,228 +2983,182 @@ def show_history_popup(app):
         font=("Roboto", 20, "bold"),
         relief="flat",
     )
-    tr = ttk.Treeview(
-        history_frame, columns=cols, show="tree headings", style="History.Treeview"
-    )
-    yscrollbar = ttk.Scrollbar(history_frame, orient="vertical", command=tr.yview)
-    xscrollbar = ttk.Scrollbar(history_frame, orient="horizontal", command=tr.xview)
-    tr.configure(yscrollcommand=yscrollbar.set, xscrollcommand=xscrollbar.set)
-    tr.grid(row=0, column=0, sticky="nsew")
-    yscrollbar.grid(row=0, column=1, sticky="ns")
-    xscrollbar.grid(row=1, column=0, sticky="ew")
-    history_frame.grid_rowconfigure(0, weight=1)
-    history_frame.grid_columnconfigure(0, weight=1)
-    # Cột Tree (chứa Session Name)
-    tr.column("#0", width=325, minwidth=325, anchor="w", stretch=False)
-    tr.heading("#0", text="Session")
-    widths = [300, 150, 130, 130, 130, 145, 145, 145, 110, 120, 120, 120, 330, 360]
-    for c, w in zip(cols, widths):
-        tr.heading(c, text=c)
-        tr.column(c, width=w, minwidth=w, anchor="center", stretch=False)
+
+    def make_tree(parent):
+        frame = ctk.CTkFrame(parent, fg_color="transparent")
+        frame.pack(fill="both", expand=True, padx=6, pady=6)
+        tree = ttk.Treeview(frame, columns=cols, show="tree headings", style="History.Treeview")
+        yscrollbar = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
+        xscrollbar = ttk.Scrollbar(frame, orient="horizontal", command=tree.xview)
+        tree.configure(yscrollcommand=yscrollbar.set, xscrollcommand=xscrollbar.set)
+        tree.grid(row=0, column=0, sticky="nsew")
+        yscrollbar.grid(row=0, column=1, sticky="ns")
+        xscrollbar.grid(row=1, column=0, sticky="ew")
+        frame.grid_rowconfigure(0, weight=1)
+        frame.grid_columnconfigure(0, weight=1)
+        tree.column("#0", width=325, minwidth=325, anchor="w", stretch=False)
+        tree.heading("#0", text="Session")
+        for col, width in zip(cols, widths):
+            tree.heading(col, text=col)
+            tree.column(col, width=width, minwidth=width, anchor="center", stretch=False)
+        return tree
+
+    trees = {
+        "BOT": make_tree(tab_bot_history),
+        "GRID": make_tree(tab_grid_history),
+        "HEDGE": make_tree(tab_hedge_history),
+    }
+
     from core.storage_manager import MASTER_LOG_FILE
     csv_path = MASTER_LOG_FILE
 
+    def to_float(val, default=0.0):
+        try:
+            return float(str(val).replace("$", "").replace(",", "").strip())
+        except (TypeError, ValueError):
+            return default
+
+    def row_scope(row):
+        market_mode = str(row[11] if len(row) > 11 else "").upper()
+        trigger = str(row[12] if len(row) > 12 else "").upper()
+        session_id = str(row[13] if len(row) > 13 else "").upper()
+        text = f"{market_mode}|{trigger}|{session_id}"
+        if "HEDGE" in text:
+            return "HEDGE"
+        if "GRID" in text:
+            return "GRID"
+        return "BOT"
+
+    def clear_trees():
+        for tree in trees.values():
+            if tree.winfo_exists():
+                for item in tree.get_children():
+                    tree.delete(item)
+
+    def fmt_money(val):
+        return f"-${abs(val):.2f}" if val < 0 else f"${val:.2f}"
+
+    def insert_sessions(tree, sessions, current_balance):
+        sorted_sessions = sorted(sessions.keys(), reverse=True)
+        balance_map = {}
+        if current_balance is not None:
+            running_end = current_balance
+            for sid in sorted_sessions:
+                net = sum(to_float(r[9]) + to_float(r[8]) for r in sessions[sid] if len(r) >= 14)
+                start = running_end - net
+                balance_map[sid] = (start, running_end)
+                running_end = start
+
+        for sid in sorted_sessions:
+            rows = sessions[sid]
+            wins = buys = sells = total = 0
+            total_pnl = total_fee = total_mae = total_mfe = 0.0
+            for row in rows:
+                pnl = to_float(row[9])
+                fee = to_float(row[8])
+                mae = to_float(row[14]) if len(row) > 14 else 0.0
+                mfe = to_float(row[15]) if len(row) > 15 else 0.0
+                total_pnl += pnl
+                total_fee += fee
+                total_mae += mae
+                total_mfe += mfe
+                wins += 1 if pnl > 0 else 0
+                total += 1
+                buys += 1 if row[3] == "BUY" else 0
+                sells += 1 if row[3] == "SELL" else 0
+
+            winrate = (wins / total * 100) if total else 0.0
+            if sid in balance_map:
+                start, end = balance_map[sid]
+                arrow = "▲" if end - start >= 0 else "▼"
+                balance_text = f"${start:,.0f} {arrow} ${end:,.0f}"
+            else:
+                balance_text = ""
+
+            parent_id = tree.insert(
+                "", "end", text=(f"Phiên: {sid}" if sid != "LEGACY" else "Phiên cũ (Legacy)"),
+                values=(
+                    balance_text, "", "", f"B:{buys} | S:{sells}", f"W: {winrate:.1f}%", "", "", "",
+                    fmt_money(total_fee), fmt_money(total_pnl), fmt_money(total_mae), fmt_money(total_mfe), "", "",
+                ),
+            )
+            for row in reversed(rows):
+                reason = row[10]
+                if reason == "Basket_TP" and to_float(row[9]) < 0:
+                    reason = "Basket_TP_Order_Loss"
+                tree.insert(
+                    parent_id, "end", text="",
+                    values=(
+                        row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9],
+                        row[14] if len(row) > 14 else "",
+                        row[15] if len(row) > 15 else "",
+                        row[12] if len(row) > 12 else "",
+                        reason,
+                    ),
+                )
+            if sid == sorted_sessions[0]:
+                tree.item(parent_id, open=True)
+
     def load_data():
-        # Lấy balance hiện tại để tính vốn đầu/cuối phiên
         try:
             acc = app.connector.get_account_info()
             current_balance = acc["balance"] if acc else None
         except Exception:
             current_balance = None
-        if not tr.winfo_exists():
-            return
-        for i in tr.get_children():
-            tr.delete(i)
+        clear_trees()
         if not os.path.exists(csv_path):
             return
-        sessions = {}
         try:
-            with open(csv_path, mode="r", encoding="utf-8") as f:
-                reader = csv.reader(f)
+            scope_sessions = {"BOT": {}, "GRID": {}, "HEDGE": {}}
+            with open(csv_path, mode="r", encoding="utf-8") as file_obj:
+                reader = csv.reader(file_obj)
                 header = next(reader, None)
                 if not header:
                     return
-                raw_records = list(reader)
                 records_by_ticket = {}
-                for row in raw_records:
-                    if len(row) < 14:
-                        continue
-                    records_by_ticket[row[1]] = row
-                records = list(records_by_ticket.values())
-                for row in records:
-                    if len(row) < 14:
-                        continue  # Format mới có 14 cột
-                    # row format: [Time, Ticket, Symbol, Type, Vol, Entry, SL, TP, Fee, PnL, Reason, Market Mode, Trigger, Session_ID]
-                    session_id = row[13]
-                    if session_id not in sessions:
-                        sessions[session_id] = []
-                    sessions[session_id].append(row)
-            # Hiển thị Session mới nhất lên trên
-            sorted_sessions = sorted(sessions.keys(), reverse=True)
-            # Tính balance đầu/cuối từng phiên (từ mới → cũ)
-            # Phiên mới nhất: end_bal = current_balance
-            # Phiên cũ hơn: end_bal = start_bal của phiên mới hơn
-            def _to_float_local(val, default=0.0):
-                try:
-                    return float(str(val).replace("$", "").replace(",", "").strip())
-                except (TypeError, ValueError):
-                    return default
-            session_balance_map = {}  # sid -> (start_bal, end_bal)
-            if current_balance is not None:
-                running_end = current_balance
-                for sid in sorted_sessions:
-                    s_rows = sessions[sid]
-                    s_net = sum(
-                        _to_float_local(r[9]) + _to_float_local(r[8])
-                        for r in s_rows if len(r) >= 14
-                    )
-                    s_start = running_end - s_net
-                    session_balance_map[sid] = (s_start, running_end)
-                    running_end = s_start
-            for sid in sorted_sessions:
-                group_rows = sessions[sid]
-                # Tính toán Thống kê Session
-                wins = 0
-                total_trades = 0
-                buy_count = 0
-                sell_count = 0
-                total_pnl = 0.0
-                total_fee = 0.0
-                total_mae = 0.0
-                total_mfe = 0.0
-
-                def _to_float(val, default=0.0):
-                    try:
-                        return float(str(val).replace("$", "").replace(",", "").strip())
-                    except (TypeError, ValueError):
-                        return default
-                for r in group_rows:
-                    if len(r) >= 14:
-                        pnl_val = _to_float(r[9])
-                        fee_val = _to_float(r[8])
-                        mae_val = _to_float(r[14]) if len(r) > 14 else 0.0
-                        mfe_val = _to_float(r[15]) if len(r) > 15 else 0.0
-                        total_pnl += pnl_val
-                        total_fee += fee_val
-                        total_mae += mae_val
-                        total_mfe += mfe_val
-                        if pnl_val > 0:
-                            wins += 1
-                        total_trades += 1
-                        if r[3] == "BUY":
-                            buy_count += 1
-                        elif r[3] == "SELL":
-                            sell_count += 1
-                winrate = (wins / total_trades * 100) if total_trades > 0 else 0
-                # Thêm Node Cha (Session)
-                node_text = f"Phiên: {sid}" if sid != "LEGACY" else "Phiên Cũ (Legacy)"
-                # Hiển thị tóm tắt trên node cha
-                type_str = f"B:{buy_count} | S:{sell_count}"
-                win_str = f"W: {winrate:.1f}%"
-
-                def fmt_m(val):
-                    return f"-${abs(val):.2f}" if val < 0 else f"${val:.2f}"
-                fee_str = fmt_m(total_fee)
-                pnl_str = fmt_m(total_pnl)
-                mae_str = fmt_m(total_mae)
-                mfe_str = fmt_m(total_mfe)
-                # Tính chuỗi balance flow cho cột Time
-                if sid in session_balance_map:
-                    s_bal, e_bal = session_balance_map[sid]
-                    delta = e_bal - s_bal
-                    arrow = "▲" if delta >= 0 else "▼"
-                    bal_str = f"${s_bal:,.0f} {arrow} ${e_bal:,.0f}"
-                else:
-                    bal_str = ""
-                parent_id = tr.insert(
-                    "",
-                    "end",
-                    text=node_text,
-                    values=(
-                        bal_str,
-                        "",
-                        "",
-                        type_str,
-                        win_str,
-                        "",
-                        "",
-                        "",
-                        fee_str,
-                        pnl_str,
-                        mae_str,
-                        mfe_str,
-                        "",
-                        "",
-                    ),
-                )
-                # Sắp xếp các lệnh trong phiên từ mới -> cũ
-                for row in reversed(group_rows):
+                for row in reader:
                     if len(row) >= 14:
-                        display_reason = row[10]
-                        if display_reason == "Basket_TP" and _to_float(row[9]) < 0:
-                            display_reason = "Basket_TP_Order_Loss"
-                        tr.insert(
-                            parent_id,
-                            "end",
-                            text="",
-                            values=(
-                                row[0],
-                                row[1],
-                                row[2],
-                                row[3],
-                                row[4],
-                                row[5],
-                                row[6],
-                                row[7],
-                                row[8],
-                                row[9],
-                                row[14] if len(row) > 14 else "",
-                                row[15] if len(row) > 15 else "",
-                                row[12] if len(row) > 12 else "",
-                                display_reason,
-                            ),
-                        )
-                # Tự động mở rộng phiên mới nhất
-                if sid == sorted_sessions[0]:
-                    tr.item(parent_id, open=True)
-        except Exception as e:
-            pass
-    load_data()
-    # Thêm Context Menu để xóa Session
-
-    def on_right_click(event):
-        row_id = tr.identify_row(event.y)
-        if not row_id:
-            return
-        tr.selection_set(row_id)
-        # Kiểm tra xem có phải là Node cha (Session) không
-        parent_node = tr.parent(row_id)
-        if parent_node == "":  # Đây là node cha
-            session_text = tr.item(row_id, "text")
-            session_id = session_text.replace("Phiên: ", "").replace(
-                "Phiên Cũ (Legacy)", "LEGACY"
-            )
-            menu = tk.Menu(top, tearoff=0, font=("Roboto", 11))
-            menu.add_command(
-                label=f"🗑 Xóa Log Phiên [{session_id}]",
-                command=lambda: delete_session(session_id),
-            )
-            menu.post(event.x_root, event.y_root)
+                        records_by_ticket[row[1]] = row
+                for row in records_by_ticket.values():
+                    scope = row_scope(row)
+                    session_id = row[13] or "LEGACY"
+                    scope_sessions[scope].setdefault(session_id, []).append(row)
+            for scope, tree in trees.items():
+                insert_sessions(tree, scope_sessions[scope], current_balance)
+        except Exception as exc:
+            if hasattr(app, "log_message"):
+                app.log_message(f"[HISTORY] Load failed: {exc}", target="manual")
 
     def delete_session(session_id):
         if messagebox.askyesno(
             "Cảnh báo",
-            f"Bạn có chắc muốn XÓA VĨNH VIỄN toàn bộ nhật ký của Phiên [{session_id}] không?",
+            f"Bạn có chắc muốn xóa vĩnh viễn toàn bộ nhật ký của phiên [{session_id}] không?",
             parent=top,
         ):
             from core.storage_manager import delete_session_log
             delete_session_log(session_id)
-            app.log_message(
-                f"🗑️ Đã dọn dẹp log của phiên {session_id}.", target="manual"
-            )
-            load_data()  # Reload lại Treeview
-    tr.bind("<Button-3>", on_right_click)
+            if hasattr(app, "log_message"):
+                app.log_message(f"Đã dọn dẹp log của phiên {session_id}.", target="manual")
+            load_data()
 
+    def bind_tree_menu(tree):
+        def on_right_click(event):
+            row_id = tree.identify_row(event.y)
+            if not row_id:
+                return
+            tree.selection_set(row_id)
+            if tree.parent(row_id) != "":
+                return
+            session_text = tree.item(row_id, "text")
+            session_id = session_text.replace("Phiên: ", "").replace("Phiên cũ (Legacy)", "LEGACY")
+            menu = tk.Menu(top, tearoff=0, font=("Roboto", 11))
+            menu.add_command(label=f"Xóa log phiên [{session_id}]", command=lambda: delete_session(session_id))
+            menu.post(event.x_root, event.y_root)
+        tree.bind("<Button-3>", on_right_click)
+
+    for tree in trees.values():
+        bind_tree_menu(tree)
+    load_data()
 def open_minibrain_popup(app, title, mb_cfg, on_save_callback):
     """
     [NEW V5.1] Popup cài đặt Mini-Brain 1-Group độc lập cho DCA/PCA
@@ -3140,4 +3266,6 @@ def open_minibrain_popup(app, title, mb_cfg, on_save_callback):
         font=("Roboto", 13, "bold"),
         command=save_mb,
     ).pack(pady=10)
+
+
 

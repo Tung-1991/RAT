@@ -26,53 +26,44 @@ class HedgeManagerCoreTests(unittest.TestCase):
         self.manager = HedgeManager()
 
     def test_entry_gate_all_filters_off_is_ready(self):
-        settings = {"USE_SIGNAL_FILTER": False, "USE_SWING_FILTER": False, "TACTIC": "BASKET"}
+        settings = {"USE_SIGNAL_FILTER": False, "USE_ENTRY_EXIT_FILTER": False}
         gate = self.manager.evaluate_entry_gate("ETHUSD", {}, settings)
         self.assertTrue(gate["permission"])
         self.assertEqual(gate["reason"], "OK")
         self.assertEqual(gate["signal_status"], "OFF")
-        self.assertEqual(gate["swing_status"], "OFF")
+        self.assertEqual(gate["entry_status"], "OFF")
 
     def test_signal_filter_blocks_none_signal(self):
-        settings = {"USE_SIGNAL_FILTER": True, "USE_SWING_FILTER": False}
+        settings = {"USE_SIGNAL_FILTER": True, "USE_ENTRY_EXIT_FILTER": False}
         gate = self.manager.evaluate_entry_gate("ETHUSD", {"latest_signal": 0}, settings)
         self.assertFalse(gate["permission"])
         self.assertEqual(gate["reason"], "SIGNAL_NONE")
 
-    def test_swing_filter_passes_near_swing(self):
-        settings = {
-            "USE_SIGNAL_FILTER": False,
-            "USE_SWING_FILTER": True,
-            "SWING_GROUP": "G2",
-            "SWING_TOLERANCE_ATR": 0.2,
-        }
-        context = {"current_price": 100.1, "swing_low_G2": 100.0, "swing_high_G2": 110.0, "atr_G2": 1.0}
-        gate = self.manager.evaluate_entry_gate("ETHUSD", context, settings)
+    def test_entry_exit_filter_passes_ready_decision(self):
+        settings = {"USE_SIGNAL_FILTER": False, "USE_ENTRY_EXIT_FILTER": True}
+        context = {"current_price": 100.0}
+        with patch.object(self.manager, "_entry_exit_decisions", return_value={"BUY": {"status": "READY", "reason": "OK"}}):
+            gate = self.manager.evaluate_entry_gate("ETHUSD", context, settings)
         self.assertTrue(gate["permission"])
-        self.assertEqual(gate["swing_status"], "PASS")
-        self.assertEqual(gate["nearest_swing"], "LOW")
+        self.assertEqual(gate["entry_status"], "PASS")
 
-    def test_swing_filter_blocks_far_price(self):
-        settings = {
-            "USE_SIGNAL_FILTER": False,
-            "USE_SWING_FILTER": True,
-            "SWING_GROUP": "G2",
-            "SWING_TOLERANCE_ATR": 0.2,
-        }
-        context = {"current_price": 105.0, "swing_low_G2": 100.0, "swing_high_G2": 110.0, "atr_G2": 1.0}
-        gate = self.manager.evaluate_entry_gate("ETHUSD", context, settings)
+    def test_entry_exit_filter_blocks_wait_decision(self):
+        settings = {"USE_SIGNAL_FILTER": False, "USE_ENTRY_EXIT_FILTER": True}
+        context = {"current_price": 100.0}
+        with patch.object(self.manager, "_entry_exit_decisions", return_value={"BUY": {"status": "WAIT", "reason": "ZONE"}}):
+            gate = self.manager.evaluate_entry_gate("ETHUSD", context, settings)
         self.assertFalse(gate["permission"])
-        self.assertEqual(gate["reason"], "SWING_NOT_NEAR")
+        self.assertEqual(gate["reason"], "ENTRY_EXIT_NOT_READY")
 
     def test_symbol_override_replaces_global(self):
         settings = {
             "FIXED_LOT": 0.1,
-            "TACTIC": "BASKET",
-            "SYMBOL_OVERRIDES": {"BTCUSD": {"FIXED_LOT": 0.2, "TACTIC": "LEG_OUT"}},
+            "USE_TSL": True,
+            "SYMBOL_OVERRIDES": {"BTCUSD": {"FIXED_LOT": 0.2, "USE_TSL": False}},
         }
         cfg = self.manager.settings_for_symbol("BTCUSD", settings)
         self.assertEqual(cfg["FIXED_LOT"], 0.2)
-        self.assertEqual(cfg["TACTIC"], "LEG_OUT")
+        self.assertFalse(cfg["USE_TSL"])
 
     def test_second_leg_fail_closes_first_leg(self):
         state = {
@@ -87,7 +78,8 @@ class HedgeManagerCoreTests(unittest.TestCase):
         }
         settings = {
             "USE_SIGNAL_FILTER": False,
-            "USE_SWING_FILTER": False,
+            "USE_ENTRY_EXIT_FILTER": False,
+            "USE_HEDGE_SLTP": False,
             "FIXED_LOT": 0.1,
             "MAX_PAIRS_PER_SYMBOL": 1,
             "COOLDOWN_AFTER_CLOSE_SECONDS": 0,
@@ -130,7 +122,7 @@ class HedgeManagerCoreTests(unittest.TestCase):
             "hedge_sessions_today": 0,
             "hedge_daily_loss_count": 1,
         }
-        settings = {"HEDGE_MAX_DAILY_LOSS": 10.0, "USE_SIGNAL_FILTER": False, "USE_SWING_FILTER": False}
+        settings = {"HEDGE_MAX_DAILY_LOSS": 10.0, "USE_SIGNAL_FILTER": False, "USE_ENTRY_EXIT_FILTER": False}
         with patch("hedge.hedge_manager.get_today_str", return_value=""):
             self.manager._ensure_hedge_state(state)
             result = self.manager._start_pair_session("ETHUSD", {}, settings, state, source="AUTO")
@@ -152,7 +144,8 @@ class HedgeManagerCoreTests(unittest.TestCase):
             "ENABLED": True,
             "WATCHLIST": ["ETHUSD"],
             "USE_SIGNAL_FILTER": False,
-            "USE_SWING_FILTER": False,
+            "USE_ENTRY_EXIT_FILTER": False,
+            "USE_HEDGE_SLTP": False,
             "FIXED_LOT": 0.1,
             "MAX_PAIRS_PER_SYMBOL": 1,
             "COOLDOWN_AFTER_CLOSE_SECONDS": 0,
@@ -196,6 +189,50 @@ class HedgeManagerCoreTests(unittest.TestCase):
         self.assertEqual(state["hedge_pnl_today"], 0.0)
         self.assertEqual(state["hedge_sessions_today"], 0)
         self.assertEqual(state["hedge_daily_loss_count"], 0)
+
+    def test_account_risk_lot_mode_reuses_connector_lot_formula_and_cap(self):
+        calls = []
+
+        def calc_lot(symbol, risk_usd, sl_price, order_type, strict_fee_per_lot=0.0):
+            calls.append((symbol, risk_usd, sl_price, order_type, strict_fee_per_lot))
+            return (1.2, sl_price) if order_type == 0 else (0.8, sl_price)
+
+        self.manager.connector = SimpleNamespace(
+            get_account_info=lambda: {"equity": 10000.0, "balance": 9000.0},
+            calculate_lot_size=calc_lot,
+        )
+        cfg = {
+            "LOT_MODE": "ACCOUNT_RISK",
+            "FIXED_LOT": 0.1,
+            "RISK_PERCENT_PER_PAIR": 1.0,
+            "MAX_LOT_CAP": 0.5,
+            "SWING_GROUP": "G2",
+        }
+        context = {"swing_low_G2": 100.0, "swing_high_G2": 110.0, "atr_G2": 2.0}
+
+        with patch("hedge.hedge_manager.mt5.symbol_info") as symbol_info:
+            symbol_info.return_value = SimpleNamespace(volume_min=0.01, volume_max=100.0, volume_step=0.01)
+            lot, meta = self.manager._resolve_lot_size("ETHUSD", cfg, context)
+
+        self.assertEqual(lot, 0.5)
+        self.assertEqual(meta["LOT_MODE"], "ACCOUNT_RISK")
+        self.assertTrue(meta["LOT_CAP_APPLIED"])
+        self.assertEqual(meta["ACCOUNT_RISK_USD"], 100.0)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0][1], 100.0)
+        self.assertAlmostEqual(calls[0][2], 99.6)
+        self.assertAlmostEqual(calls[1][2], 110.4)
+
+    def test_entry_exit_ready_supplies_leg_sl_tp(self):
+        cfg = {"USE_HEDGE_SLTP": False}
+        context = {"current_price": 100.0}
+        decision = {"status": "READY", "entry_tactic": "FALLBACK_R", "sl": 99.0, "tp": 102.0}
+        plan = self.manager._resolve_leg_sltp("ETHUSD", "BUY", cfg, context, decision)
+
+        self.assertTrue(plan["ready"])
+        self.assertEqual(plan["sl"], 99.0)
+        self.assertEqual(plan["tp"], 102.0)
+        self.assertEqual(plan["source"], "ENTRY_EXIT:FALLBACK_R")
 
 
 if __name__ == "__main__":

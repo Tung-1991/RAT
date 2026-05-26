@@ -1,46 +1,25 @@
-# HEDGE Dual V1
+# HEDGE Dual Rules
 
-## Scope
+HEDGE Dual là module độc lập state/log, chỉ gọi lại rule có sẵn của bot.
 
-HEDGE Dual là module riêng. Không ghi vào BOT/manual/GRID state. Lệnh HEDGE dùng `hedge_magic` và comment `HEDGE_BUY` / `HEDGE_SELL`.
+## Entry
+- Nếu `USE_SIGNAL_FILTER = ON`: cần `latest_signal != 0`.
+- Nếu `USE_ENTRY_EXIT_FILTER = ON`: chạy Entry/Exit engine theo hướng signal nếu có, hoặc cả BUY/SELL nếu không dùng signal. Ít nhất một hướng phải `READY`.
+- Nếu filter tắt thì bỏ qua filter đó.
+- Dù filter thế nào vẫn phải qua hard safety, max pairs, cooldown, daily loss, ping/spread.
 
-Những phần dùng lại từ hệ thống cũ:
-- Signal engine: chỉ đọc `latest_signal`/context để lọc entry nếu bật.
-- Log UI: ghi vào tab/kênh HEDGE.
-- Daily reset date: dùng cùng mốc ngày reset của hệ thống, nhưng PnL/loss/session counter là riêng HEDGE.
+## Orders
+- Khi pass, HEDGE mở đồng thời BUY và SELL cùng lot.
+- SL/TP lấy từ Entry/Exit decision nếu direction đó `READY`.
+- Nếu thiếu SL từ Entry/Exit và `USE_HEDGE_SLTP = ON`, HEDGE tính SL/TP bằng rule riêng của HEDGE. Rule này tái dùng cùng công thức base SL/TP của sandbox/bot nhưng không dùng chung toggle/state sandbox.
+- Nếu `USE_HEDGE_SLTP = OFF`, HEDGE tôn trọng cấu hình và có thể mở lệnh không SL/TP.
 
-## Auto Scan
+## Exit
+- Không dùng basket TP/SL USD.
+- Không dùng leg-out/recovery guard.
+- Mỗi chân tự thoát bằng SL/TP/TSL.
+- Nếu một chân đóng trước, chân còn lại là survivor. `SURVIVOR_PROTECT` có thể kéo SL về `BE_FEE`, `BE_ONLY`, hoặc không can thiệp.
 
-- `ENABLED = ON`: daemon quét `WATCHLIST` của HEDGE.
-- `WATCHLIST`: danh sách symbol được phép Auto HEDGE scan/mở cặp.
-- `HEDGE_SCAN_INTERVAL_SECONDS`: chu kỳ quét riêng của HEDGE, không dùng interval BOT/GRID.
-- Manual HEDGE vẫn mở theo symbol đang chọn, không phụ thuộc watchlist.
-
-## Entry Gate
-
-- `USE_SIGNAL_FILTER = OFF`: không cần signal.
-- `USE_SIGNAL_FILTER = ON`: `latest_signal` phải khác `0`.
-- `USE_SWING_FILTER = ON`: giá phải gần swing high/low của `SWING_GROUP` + `SWING_TIMEFRAME` trong biên `SWING_TOLERANCE_ATR`.
-- Bật cả hai filter thì cả hai phải pass.
-
-## Start Pair
-
-HEDGE mở đồng thời một BUY và một SELL cùng symbol, cùng lot. Nếu mở một chân thành công nhưng chân còn lại fail, module đóng ngay chân đã mở.
-
-## Tactic
-
-- `BASKET`: nhìn tổng PnL cả cặp. Chạm `PAIR_TP_USD` thì đóng cả cặp, chạm `PAIR_SL_USD` thì đóng cả cặp.
-- `LEG_OUT`: nếu một chân âm tới `LOSING_LEG_SL_USD`, đóng chân âm và giữ chân còn lại để gỡ. Chân recovery đóng khi đạt `RECOVERY_TARGET_USD` hoặc bị nhả lợi nhuận quá `RECOVERY_GIVEBACK_USD`.
-
-## Safety
-
-HEDGE có settings/state riêng trong workspace account.
-
-- `HEDGE_MAX_DAILY_LOSS`: lỗ ngày tối đa riêng của HEDGE. `0` = tắt rule.
-- `MAX_SESSIONS_PER_DAY`: số session HEDGE tối đa/ngày. `0` = không giới hạn.
-- `COOLDOWN_AFTER_CLOSE_SECONDS`: nghỉ sau khi đóng một session bất kỳ.
-- `COOLDOWN_AFTER_LOSS_SECONDS`: nghỉ lâu hơn nếu session vừa đóng bị âm.
-- `MAX_CONSECUTIVE_LOSSES` + `GLOBAL_COOLDOWN_SECONDS`: thua liên tiếp thì bật cooldown tổng.
-- `SYMBOL_OVERRIDES`: cấu hình riêng theo symbol, ví dụ ETHUSD/BTCUSD có lot, swing group, TP/SL khác nhau.
-
-Clear block/reset cooldown không reset PnL hoặc counters hôm nay. Stop session không đóng lệnh đang mở.
+## Isolation
+- HEDGE ghi `hedge_state.json`, `hedge_settings.json` và log `hedge`/`hedge-log`.
+- Không ghi state bot/grid.

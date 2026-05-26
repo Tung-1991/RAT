@@ -15,7 +15,7 @@ class HedgeExecutor:
         if self.log_callback:
             self.log_callback(f"[HEDGE] {message}", error=error, target="hedge")
 
-    def place_hedge_leg(self, symbol, direction, lot_size, hedge_magic, session_id=None):
+    def place_hedge_leg(self, symbol, direction, lot_size, hedge_magic, session_id=None, sl_price=0.0, tp_price=0.0):
         if not self.connector or not getattr(self.connector, "_is_connected", False):
             return "HEDGE_FAIL|NO_CONNECTION"
 
@@ -28,8 +28,8 @@ class HedgeExecutor:
                 symbol=symbol,
                 order_type=order_type,
                 lot_size=lot_size,
-                sl_price=0.0,
-                tp_price=0.0,
+                sl_price=sl_price,
+                tp_price=tp_price,
             )
             if not is_valid:
                 safe_reason = str(reason).replace("|", "/")[:120]
@@ -40,8 +40,8 @@ class HedgeExecutor:
             symbol=symbol,
             order_type=order_type,
             lot_size=lot_size,
-            sl_price=0.0,
-            tp_price=0.0,
+            sl_price=sl_price,
+            tp_price=tp_price,
             magic_number=hedge_magic,
             comment=comment[:20],
         )
