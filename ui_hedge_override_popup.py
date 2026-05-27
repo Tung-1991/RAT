@@ -211,10 +211,14 @@ def open_hedge_override_popup(app, symbol=None, on_close=None):
         if not checks["USE_TSL"].get():
             return "OFF"
         selected = [label for label, var in tsl_vars.items() if var.get()]
+        if "BE_CASH" in selected and "BE" in selected:
+            selected.remove("BE")
         return "+".join(selected) if selected else "OFF"
 
     def set_tsl_mode(mode):
         parts = set(str(mode or "BE+STEP_R+SWING").upper().replace(",", "+").split("+"))
+        if "BE_CASH" in parts:
+            parts.discard("BE")
         for label, var in tsl_vars.items():
             var.set(label in parts)
 

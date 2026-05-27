@@ -2275,7 +2275,7 @@ def open_tsl_popup(app, override_symbol=None):
         justify="left",
     ).pack(anchor="w", padx=5, pady=(0, 5))
     f_cash = sec(tab_adv, "5. BE HARD CASH (Thang cuốn USD/Point/%/R)")
-    f_cash.pack(fill="x", padx=15)
+    f_cash.pack(fill="x", padx=15, pady=(0, 8))
     f_cash_r1 = ctk.CTkFrame(f_cash, fg_color="transparent")
     f_cash_r1.pack(fill="x")
     f_cash_r2 = ctk.CTkFrame(f_cash, fg_color="transparent")
@@ -2333,31 +2333,37 @@ def open_tsl_popup(app, override_symbol=None):
         wraplength=820,
     ).pack(anchor="w", padx=8, pady=(4, 0))
     f_psar = sec(tab_adv, "6. PSAR TRAILING (Đuổi chấm)")
-    f_psar.pack(fill="x", padx=15)
+    f_psar.pack(fill="x", padx=15, pady=(0, 8))
     f_psar_row1 = ctk.CTkFrame(f_psar, fg_color="transparent")
-    f_psar_row1.pack(fill="x", pady=2)
+    f_psar_row1.pack(fill="x", padx=8, pady=2)
+    f_psar_row1.grid_columnconfigure(1, weight=1)
     cbo_psar_grp = ctk.CTkOptionMenu(
         f_psar_row1, values=["G0", "G1", "G2", "G3", "DYNAMIC-G1/G2"], width=80
     )
     cbo_psar_grp.set(tsl_cfg.get("PSAR_GROUP", "G2"))
-    cbo_psar_grp.pack(side="right")
-    ctk.CTkLabel(f_psar_row1, text="Group:").pack(side="left")
+    compact_menu(cbo_psar_grp)
+    ctk.CTkLabel(f_psar_row1, text="Group:").grid(row=0, column=0, sticky="w", padx=(0, 8), pady=4)
+    cbo_psar_grp.grid(row=0, column=1, sticky="w", pady=4)
     f_psar_row2 = ctk.CTkFrame(f_psar, fg_color="transparent")
-    f_psar_row2.pack(fill="x", pady=2)
+    f_psar_row2.pack(fill="x", padx=8, pady=2)
+    f_psar_row2.grid_columnconfigure(4, weight=1)
     e_psar_step = ctk.CTkEntry(f_psar_row2, width=60)
     e_psar_step.insert(0, str(tsl_cfg.get("PSAR_STEP", 0.02)))
-    e_psar_step.pack(side="left", padx=5)
+    compact_entry(e_psar_step)
     e_psar_max = ctk.CTkEntry(f_psar_row2, width=60)
     e_psar_max.insert(0, str(tsl_cfg.get("PSAR_MAX", 0.2)))
-    e_psar_max.pack(side="right", padx=5)
-    ctk.CTkLabel(f_psar_row2, text="Step:").pack(side="left")
-    ctk.CTkLabel(f_psar_row2, text="Max:").pack(side="right")
+    compact_entry(e_psar_max)
+    ctk.CTkLabel(f_psar_row2, text="Step:").grid(row=0, column=0, sticky="w", padx=(0, 8), pady=4)
+    e_psar_step.grid(row=0, column=1, sticky="w", padx=(0, 18), pady=4)
+    ctk.CTkLabel(f_psar_row2, text="Max:").grid(row=0, column=2, sticky="w", padx=(0, 8), pady=4)
+    e_psar_max.grid(row=0, column=3, sticky="w", padx=(0, 18), pady=4)
     f_psar_row3 = ctk.CTkFrame(f_psar, fg_color="transparent")
-    f_psar_row3.pack(fill="x", pady=2)
+    f_psar_row3.pack(fill="x", padx=8, pady=2)
     e_psar_min_rr = ctk.CTkEntry(f_psar_row3, width=60)
     e_psar_min_rr.insert(0, str(tsl_cfg.get("PSAR_MIN_RR", 0.0)))
-    e_psar_min_rr.pack(side="left", padx=5)
+    compact_entry(e_psar_min_rr)
     ctk.CTkLabel(f_psar_row3, text="Min RR kích hoạt:").pack(side="left")
+    e_psar_min_rr.pack(side="left", padx=(0, 18))
     ctk.CTkLabel(
         f_psar,
         text="Min RR dung cash-R: 0.5R = loi 50% so tien risk ban dau cua lenh. Neu thieu risk USD thi fallback theo khoang gia SL.",
@@ -2366,7 +2372,7 @@ def open_tsl_popup(app, override_symbol=None):
         wraplength=760,
     ).pack(anchor="w", padx=8, pady=(0, 4))
     f_psar_row4 = ctk.CTkFrame(f_psar, fg_color="transparent")
-    f_psar_row4.pack(fill="x", pady=2)
+    f_psar_row4.pack(fill="x", padx=8, pady=2)
     var_psar_profit_only = ctk.BooleanVar(value=tsl_cfg.get("PSAR_PROFIT_ONLY", True))
     ctk.CTkCheckBox(
         f_psar_row4,
@@ -2375,13 +2381,14 @@ def open_tsl_popup(app, override_symbol=None):
         width=220,
     ).pack(side="left", padx=5)
     f_psar_row5 = ctk.CTkFrame(f_psar, fg_color="transparent")
-    f_psar_row5.pack(fill="x", pady=2)
+    f_psar_row5.pack(fill="x", padx=8, pady=(2, 8))
     e_psar_profit_buffer = ctk.CTkEntry(f_psar_row5, width=60)
     e_psar_profit_buffer.insert(0, str(tsl_cfg.get("PSAR_PROFIT_BUFFER_POINTS", 0)))
-    e_psar_profit_buffer.pack(side="left", padx=5)
-    ctk.CTkLabel(f_psar_row5, text="BE Buffer Points:").pack(side="left")
+    compact_entry(e_psar_profit_buffer)
+    ctk.CTkLabel(f_psar_row5, text="BE Buffer Points:").pack(side="left", padx=(0, 8))
+    e_psar_profit_buffer.pack(side="left", padx=(0, 18))
     f_anti = sec(tab_adv, "7. ANTI CASH")
-    f_anti.pack(fill="x", padx=15)
+    f_anti.pack(fill="x", padx=15, pady=(0, 8))
     _add_popup_hint(
         f_anti,
         "- Hard Stop: cắt lỗ cứng theo ngưỡng đã chọn.\n"
@@ -2774,6 +2781,8 @@ def open_edit_popup(app, ticket):
         "REV": "REV_C" in cur_modes,
         "A.CUT": "ANTI_CASH" in cur_modes,
     }
+    if states["CASH"]:
+        states["BE"] = False
 
     def live_edit(*args):
         try:
@@ -2959,7 +2968,15 @@ def open_edit_popup(app, ticket):
 
     def tog(k):
         states[k] = not states[k]
-        btns[k].configure(fg_color=COL_BLUE_ACCENT if states[k] else COL_GRAY_BTN)
+        if k == "CASH" and states[k]:
+            states["BE"] = False
+        elif k == "BE" and states[k]:
+            states["CASH"] = False
+        for key in ("BE", "CASH", k):
+            if key in btns:
+                btns[key].configure(
+                    fg_color=COL_BLUE_ACCENT if states[key] else COL_GRAY_BTN
+                )
         live_edit()
     # Dòng 1: TACTIC (6 nút giống hệt Panel)
     tactic_widths = {

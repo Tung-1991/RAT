@@ -1486,6 +1486,8 @@ class BotStrategyUI(ctk.CTkToplevel):
         self.bot_tactic_vars = {}
         current_tactic_str = risk_data.get("bot_tsl", "BE+STEP_R+SWING")
         current_tactics = {x.strip() for x in str(current_tactic_str).split("+") if x.strip()}
+        if "BE_CASH" in current_tactics:
+            current_tactics.discard("BE")
 
         # [NEW V4.4] Bổ sung thêm BE_CASH và PSAR_TRAIL vào danh sách chiến thuật Bot
         for t in ["BE", "PNL", "STEP_R", "SWING", "BE_CASH", "PSAR_TRAIL", "ANTI_CASH"]:
@@ -1869,6 +1871,8 @@ class BotStrategyUI(ctk.CTkToplevel):
             }
 
         selected_tactics = [k for k, v in self.bot_tactic_vars.items() if v.get()]
+        if "BE_CASH" in selected_tactics and "BE" in selected_tactics:
+            selected_tactics.remove("BE")
         bot_tsl_str = "+".join(selected_tactics) if selected_tactics else "OFF"
 
         new_risk_tsl = {

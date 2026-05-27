@@ -474,6 +474,8 @@ class BotUI(ctk.CTk):
         self.tactic_states[mode] = next_state
         if mode == "BE_CASH" and next_state:
             self.tactic_states["BE"] = False
+        elif mode == "BE" and next_state:
+            self.tactic_states["BE_CASH"] = False
         self.update_tactic_buttons_ui()
 
     def toggle_entry_exit_tactic(self, mode):
