@@ -589,6 +589,21 @@ class HedgeManager:
         session["updated_at"] = time.time()
 
         actions = []
+        session_tp = float(settings.get("HEDGE_SESSION_TP_USD", 0.0) or 0.0)
+        session_sl = float(settings.get("HEDGE_SESSION_SL_USD", 0.0) or 0.0)
+        max_hold_min = float(settings.get("HEDGE_MAX_HOLD_MINUTES", 0.0) or 0.0)
+        age_min = (time.time() - float(session.get("created_at", time.time()) or time.time())) / 60.0
+        close_reason = None
+        if session_tp > 0 and pnl >= abs(session_tp):
+            close_reason = "SESSION_TP"
+        elif session_sl > 0 and pnl <= -abs(session_sl):
+            close_reason = "SESSION_SL"
+        elif max_hold_min > 0 and age_min >= max_hold_min:
+            close_reason = "SESSION_TIMEOUT"
+        if close_reason:
+            actions.extend(self._close_session_positions(symbol, session, session_positions, close_reason, state, settings))
+            return actions
+
         if len(session_positions) == 1 and len(main_tickets) >= 2:
             action = self._protect_survivor(symbol, session, session_positions[0], settings)
             if action:
@@ -863,6 +878,17 @@ class HedgeManager:
                 deal_in = [d for d in deals if d.entry == mt5.DEAL_ENTRY_IN]
                 d_in = deal_in[0] if deal_in else None
                 real_pnl = d_out.profit + d_out.commission + d_out.swap
+                for session in (state.get("active_sessions") or {}).values():
+                    if not isinstance(session, dict):
+                        continue
+                    session_tickets = {
+                        str(session.get("buy_ticket")),
+                        str(session.get("sell_ticket")),
+                    }
+                    if str(ticket) in session_tickets and str(ticket) not in session.setdefault("closed_legs", {}):
+                        session["closed_leg_pnl"] = float(session.get("closed_leg_pnl", 0.0) or 0.0) + real_pnl
+                        session["closed_legs"][str(ticket)] = real_pnl
+                        break
                 pos_type = "BUY" if d_out.type == mt5.DEAL_TYPE_SELL else "SELL"
                 open_time_str = datetime.fromtimestamp(d_in.time).strftime("%Y-%m-%d %H:%M:%S") if d_in else ""
                 append_trade_log(

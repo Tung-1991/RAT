@@ -19,7 +19,7 @@ from core.storage_manager import get_brain_settings_for_symbol
 from core.logger_setup import setup_logging  # [NEW V4.3] Import hệ thống Log
 
 from grid.grid_manager import GridManager
-from grid.grid_storage import load_grid_settings
+from grid.grid_storage import load_grid_settings, load_grid_state
 from hedge.hedge_manager import HedgeManager
 from hedge.hedge_storage import load_hedge_settings, load_hedge_state
 
@@ -245,7 +245,12 @@ class StandaloneBotDaemon:
                     )
                 except Exception:
                     grid_interval = 5.0
-                if grid_cfg.get("ENABLED", False) and (now - self.last_grid_scan >= grid_interval):
+                grid_state = load_grid_state()
+                grid_has_sessions = any(
+                    isinstance(session, dict) and session.get("status") != "STOP_NEW"
+                    for session in (grid_state.get("active_sessions") or {}).values()
+                )
+                if (grid_cfg.get("ENABLED", False) or grid_has_sessions) and (now - self.last_grid_scan >= grid_interval):
                     grid_symbols = grid_cfg.get("WATCHLIST") or symbols
                     self.grid_manager.scan(grid_symbols, self.heartbeat_contexts)
                     self.last_grid_scan = now

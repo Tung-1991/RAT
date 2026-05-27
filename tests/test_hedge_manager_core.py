@@ -11,6 +11,9 @@ sys.modules.setdefault(
         ORDER_TYPE_BUY=0,
         ORDER_TYPE_SELL=1,
         TRADE_RETCODE_DONE=10009,
+        DEAL_ENTRY_IN=0,
+        DEAL_ENTRY_OUT=1,
+        DEAL_TYPE_SELL=1,
         terminal_info=lambda: SimpleNamespace(ping_last=0),
         symbol_info_tick=lambda symbol: None,
         symbol_info=lambda symbol: None,
@@ -233,6 +236,69 @@ class HedgeManagerCoreTests(unittest.TestCase):
         self.assertEqual(plan["sl"], 99.0)
         self.assertEqual(plan["tp"], 102.0)
         self.assertEqual(plan["source"], "ENTRY_EXIT:FALLBACK_R")
+
+    def test_sync_history_adds_closed_leg_pnl_to_active_session(self):
+        state = {
+            "active_sessions": {
+                "ETHUSD": {
+                    "buy_ticket": 101,
+                    "sell_ticket": 102,
+                    "closed_leg_pnl": 0.0,
+                }
+            },
+            "hedge_active_tickets": [101, 102],
+            "hedge_pnl_today": 0.0,
+            "hedge_daily_loss_count": 0,
+        }
+        self.manager.connector = SimpleNamespace(
+            get_all_open_positions=lambda: [
+                SimpleNamespace(ticket=102, symbol="ETHUSD", magic=55, comment="HEDGE_SELL")
+            ]
+        )
+        deals = [
+            SimpleNamespace(entry=0, time=1, price=100.0, comment="HEDGE_BUY"),
+            SimpleNamespace(entry=1, type=1, symbol="ETHUSD", volume=0.1, profit=5.0, commission=-0.2, swap=-0.1),
+        ]
+
+        with patch("hedge.hedge_manager.get_magic_numbers", return_value={"hedge_magic": 55}), \
+             patch("hedge.hedge_manager.mt5.history_deals_get", return_value=deals), \
+             patch("hedge.hedge_manager.append_trade_log"):
+            self.manager._sync_hedge_history(state)
+
+        self.assertAlmostEqual(state["active_sessions"]["ETHUSD"]["closed_leg_pnl"], 4.7)
+        self.assertEqual(state["active_sessions"]["ETHUSD"]["closed_legs"]["101"], 4.7)
+
+    def test_session_tp_closes_open_legs(self):
+        closed = []
+        self.manager.connector = SimpleNamespace(
+            get_all_open_positions=lambda: [
+                SimpleNamespace(ticket=101, symbol="ETHUSD", magic=55, comment="HEDGE_BUY", profit=7.0, swap=0.0, commission=0.0),
+                SimpleNamespace(ticket=102, symbol="ETHUSD", magic=55, comment="HEDGE_SELL", profit=4.0, swap=0.0, commission=0.0),
+            ]
+        )
+        self.manager.executor = SimpleNamespace(
+            close_position=lambda pos, reason: closed.append((pos.ticket, reason)) or f"SUCCESS|{pos.ticket}"
+        )
+        state = {"active_sessions": {"ETHUSD": {}}, "last_decision": {}, "last_decision_log_keys": {}}
+        session = {
+            "buy_ticket": 101,
+            "sell_ticket": 102,
+            "closed_leg_pnl": 0.0,
+            "created_at": 1,
+            "status": "PAIR_OPEN",
+        }
+
+        with patch("hedge.hedge_manager.get_magic_numbers", return_value={"hedge_magic": 55}):
+            actions = self.manager._manage_session(
+                "ETHUSD",
+                session,
+                {"HEDGE_SESSION_TP_USD": 10.0, "HEDGE_SESSION_SL_USD": 0.0, "HEDGE_MAX_HOLD_MINUTES": 0},
+                state,
+            )
+
+        self.assertEqual(actions, ["SUCCESS|101", "SUCCESS|102"])
+        self.assertEqual(closed, [(101, "SESSION_TP"), (102, "SESSION_TP")])
+        self.assertNotIn("ETHUSD", state["active_sessions"])
 
 
 if __name__ == "__main__":

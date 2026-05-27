@@ -668,8 +668,12 @@ class GridManager:
         return None
 
     def _has_open_level(self, positions, level_id):
-        marker = f"L:{level_id}"
-        return any(marker in str(getattr(p, "comment", "")) for p in positions)
+        safe_level = "".join(ch for ch in str(level_id) if ch.isalnum() or ch == "_")[:12]
+        markers = (f"L:{level_id}", f"GRID_{safe_level}", str(level_id))
+        return any(
+            any(marker and marker in str(getattr(p, "comment", "")) for marker in markers)
+            for p in positions
+        )
 
     def _sync_grid_history(self, state):
         current_positions = self._grid_positions()

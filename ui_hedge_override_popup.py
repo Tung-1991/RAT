@@ -81,12 +81,12 @@ def open_hedge_override_popup(app, symbol=None, on_close=None):
     }
     fields = {}
 
-    def section(parent, title, row, col, color="#CE93D8"):
+    def section(parent, title, row, col, color="#CE93D8", columnspan=1):
         frame = ctk.CTkFrame(parent, fg_color="#202020", corner_radius=8, border_width=1, border_color="#3A3A3A")
-        frame.grid(row=row, column=col, sticky="nsew", padx=10, pady=8)
-        frame.grid_columnconfigure((1, 3), weight=1)
+        frame.grid(row=row, column=col, columnspan=columnspan, sticky="new", padx=10, pady=8)
+        frame.grid_columnconfigure((1, 3, 5, 7), weight=1)
         ctk.CTkLabel(frame, text=title, font=("Roboto", 12, "bold"), text_color=color).grid(
-            row=0, column=0, columnspan=4, sticky="w", padx=10, pady=(8, 4)
+            row=0, column=0, columnspan=8, sticky="w", padx=10, pady=(8, 4)
         )
         return frame
 
@@ -99,18 +99,48 @@ def open_hedge_override_popup(app, symbol=None, on_close=None):
         fields[key] = widget
         return widget
 
+    def zone(parent, title, row, color="#90CAF9"):
+        ctk.CTkLabel(
+            parent,
+            text=title,
+            font=("Roboto", 11, "bold"),
+            text_color=color,
+        ).grid(row=row, column=0, columnspan=8, sticky="w", padx=10, pady=(10, 2))
+
     def set_entry(key, value):
         fields[key].delete(0, "end")
         fields[key].insert(0, str(value))
 
-    ctk.CTkLabel(edit, text="HEDGE Dual Override", font=("Roboto", 14, "bold"), text_color="#CE93D8").grid(
-        row=0, column=0, columnspan=2, sticky="w", padx=12, pady=(12, 8)
+    edit_header = ctk.CTkFrame(edit, fg_color="transparent")
+    edit_header.grid(row=0, column=0, columnspan=2, sticky="ew", padx=12, pady=(12, 4))
+    edit_header.grid_columnconfigure(0, weight=1)
+    ctk.CTkLabel(edit_header, text="HEDGE Dual Override", font=("Roboto", 14, "bold"), text_color="#CE93D8").grid(
+        row=0, column=0, sticky="w"
     )
+    btn_save_override = ctk.CTkButton(
+        edit_header,
+        text="SAVE SYMBOL SETTINGS",
+        fg_color="#7B1FA2",
+        hover_color="#4A148C",
+        width=180,
+        height=30,
+        state="disabled",
+    )
+    btn_save_override.grid(row=0, column=1, sticky="e", padx=(8, 0))
+    btn_reset_override = ctk.CTkButton(
+        edit_header,
+        text="RESET OVERRIDE",
+        fg_color="#B71C1C",
+        hover_color="#7F0000",
+        width=145,
+        height=30,
+        state="disabled",
+    )
+    btn_reset_override.grid(row=0, column=2, sticky="e", padx=(8, 0))
 
-    f_filters = section(edit, "1) Filters", 1, 0, "#29B6F6")
-    f_risk = section(edit, "2) Risk & SL/TP", 1, 1, "#CE93D8")
-    f_safety = section(edit, "3) Safety", 2, 0, "#FFB300")
-    f_actions = section(edit, "4) Actions", 2, 1, "#B0BEC5")
+    f_risk = section(edit, "1) Risk & SL/TP", 1, 0, "#CE93D8")
+    f_filters = section(edit, "2) Filters", 1, 1, "#29B6F6")
+    f_safety = section(edit, "3) Safety", 2, 0, "#FFB300", columnspan=2)
 
     ctk.CTkCheckBox(f_filters, text="Use Signal Filter", variable=checks["USE_SIGNAL_FILTER"]).grid(row=1, column=0, columnspan=2, sticky="w", padx=10, pady=6)
     ctk.CTkCheckBox(f_filters, text="Use Entry/Exit Filter", variable=checks["USE_ENTRY_EXIT_FILTER"]).grid(row=1, column=2, columnspan=2, sticky="w", padx=10, pady=6)
@@ -213,19 +243,26 @@ def open_hedge_override_popup(app, symbol=None, on_close=None):
     cbo_lot_mode.configure(command=refresh_risk_fields)
     checks["USE_TSL"].trace_add("write", lambda *_: refresh_risk_fields())
 
-    entry(f_safety, "Cooldown close sec", "COOLDOWN_AFTER_CLOSE_SECONDS", 1, 0)
-    entry(f_safety, "Cooldown loss sec", "COOLDOWN_AFTER_LOSS_SECONDS", 1, 2)
-    entry(f_safety, "Consecutive losses", "MAX_CONSECUTIVE_LOSSES", 2, 0)
-    entry(f_safety, "Global cooldown sec", "GLOBAL_COOLDOWN_SECONDS", 2, 2)
-    entry(f_safety, "Daily loss HEDGE", "HEDGE_MAX_DAILY_LOSS", 3, 0)
-    entry(f_safety, "Max sessions/day", "MAX_SESSIONS_PER_DAY", 3, 2)
-    entry(f_safety, "Log cooldown sec", "HEDGE_LOG_COOLDOWN_SECONDS", 4, 0)
+    zone(f_safety, "Runtime / cooldown", 1)
+    entry(f_safety, "Log cooldown sec", "HEDGE_LOG_COOLDOWN_SECONDS", 2, 0, width=72)
+    entry(f_safety, "Close cooldown sec", "COOLDOWN_AFTER_CLOSE_SECONDS", 2, 2, width=72)
+    entry(f_safety, "Loss cooldown sec", "COOLDOWN_AFTER_LOSS_SECONDS", 2, 4, width=72)
+    zone(f_safety, "Daily loss brake", 3, "#FFB300")
+    entry(f_safety, "Consecutive losses", "MAX_CONSECUTIVE_LOSSES", 4, 0, width=72)
+    entry(f_safety, "Global cooldown sec", "GLOBAL_COOLDOWN_SECONDS", 4, 2, width=72)
+    entry(f_safety, "Daily loss HEDGE", "HEDGE_MAX_DAILY_LOSS", 4, 4, width=72)
+    entry(f_safety, "Max sessions/day", "MAX_SESSIONS_PER_DAY", 4, 6, width=72)
+    zone(f_safety, "Session brake", 5, "#FFB300")
+    entry(f_safety, "Session TP USD", "HEDGE_SESSION_TP_USD", 6, 0, width=72)
+    entry(f_safety, "Session SL USD", "HEDGE_SESSION_SL_USD", 6, 2, width=72)
+    entry(f_safety, "Max hold min", "HEDGE_MAX_HOLD_MINUTES", 6, 4, width=72)
+    zone(f_safety, "Execution checks", 7)
     checks["CHECK_SPREAD"] = ctk.BooleanVar(value=True)
     checks["CHECK_PING"] = ctk.BooleanVar(value=True)
-    ctk.CTkCheckBox(f_safety, text="Check spread", variable=checks["CHECK_SPREAD"]).grid(row=4, column=2, columnspan=2, sticky="w", padx=10, pady=5)
-    ctk.CTkCheckBox(f_safety, text="Check ping", variable=checks["CHECK_PING"]).grid(row=5, column=2, columnspan=2, sticky="w", padx=10, pady=5)
-    entry(f_safety, "Max spread points", "MAX_SPREAD_POINTS", 5, 0)
-    entry(f_safety, "Max ping ms", "MAX_PING_MS", 6, 0)
+    ctk.CTkCheckBox(f_safety, text="Check spread", variable=checks["CHECK_SPREAD"]).grid(row=8, column=0, columnspan=2, sticky="w", padx=10, pady=5)
+    ctk.CTkCheckBox(f_safety, text="Check ping", variable=checks["CHECK_PING"]).grid(row=8, column=2, columnspan=2, sticky="w", padx=10, pady=5)
+    entry(f_safety, "Max spread points", "MAX_SPREAD_POINTS", 8, 4, width=72)
+    entry(f_safety, "Max ping ms", "MAX_PING_MS", 8, 6, width=72)
     ctk.CTkLabel(
         f_safety,
         text="Safety/cooldown override chỉ áp dụng cho symbol đang chọn, không reset BOT/GRID.",
@@ -233,10 +270,10 @@ def open_hedge_override_popup(app, symbol=None, on_close=None):
         font=("Arial", 11, "italic"),
         wraplength=520,
         justify="left",
-    ).grid(row=7, column=0, columnspan=4, sticky="w", padx=10, pady=(4, 8))
+    ).grid(row=9, column=0, columnspan=8, sticky="w", padx=10, pady=(4, 8))
 
-    status_label = ctk.CTkLabel(f_actions, text="", text_color="#F8BBD0", font=("Arial", 12, "italic"), wraplength=520, justify="left")
-    status_label.grid(row=1, column=0, columnspan=4, sticky="w", padx=10, pady=(0, 8))
+    status_label = ctk.CTkLabel(edit_header, text="", text_color="#F8BBD0", font=("Arial", 12, "italic"), wraplength=520, justify="left")
+    status_label.grid(row=1, column=0, columnspan=3, sticky="w", pady=(4, 0))
 
     def refresh_symbol_list():
         for child in list_frame.winfo_children():
@@ -314,6 +351,9 @@ def open_hedge_override_popup(app, symbol=None, on_close=None):
             "MAX_PING_MS": int(float(fields["MAX_PING_MS"].get() or 150)),
             "HEDGE_MAX_DAILY_LOSS": float(fields["HEDGE_MAX_DAILY_LOSS"].get() or 0.0),
             "MAX_SESSIONS_PER_DAY": int(float(fields["MAX_SESSIONS_PER_DAY"].get() or 0)),
+            "HEDGE_SESSION_TP_USD": float(fields["HEDGE_SESSION_TP_USD"].get() or 0.0),
+            "HEDGE_SESSION_SL_USD": float(fields["HEDGE_SESSION_SL_USD"].get() or 0.0),
+            "HEDGE_MAX_HOLD_MINUTES": int(float(fields["HEDGE_MAX_HOLD_MINUTES"].get() or 0)),
         }
 
     def save_override():
@@ -352,21 +392,7 @@ def open_hedge_override_popup(app, symbol=None, on_close=None):
         if on_close:
             on_close()
 
-    ctk.CTkButton(
-        f_actions,
-        text="SAVE SYMBOL OVERRIDE",
-        fg_color="#7B1FA2",
-        hover_color="#4A148C",
-        height=36,
-        command=save_override,
-    ).grid(row=2, column=0, columnspan=4, sticky="ew", padx=10, pady=(0, 8))
-    ctk.CTkButton(
-        f_actions,
-        text="RESET TO HEDGE DEFAULT",
-        fg_color="#B71C1C",
-        hover_color="#7F0000",
-        height=36,
-        command=reset_override,
-    ).grid(row=3, column=0, columnspan=4, sticky="ew", padx=10, pady=(0, 10))
+    btn_save_override.configure(command=save_override, state="normal")
+    btn_reset_override.configure(command=reset_override, state="normal")
 
     load_symbol(symbol)

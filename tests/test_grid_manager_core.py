@@ -243,6 +243,11 @@ class GridManagerCoreTests(unittest.TestCase):
         self.assertEqual(self.manager.executor.calls, 1)
         self.assertEqual(state["last_decision"]["X"]["reason"], "LEVEL_COOLDOWN")
 
+    def test_open_level_detects_executor_comment(self):
+        positions = [SimpleNamespace(comment="GRID_BUY_8")]
+
+        self.assertTrue(self.manager._has_open_level(positions, "BUY_8"))
+
 
 if __name__ == "__main__":
     unittest.main()
