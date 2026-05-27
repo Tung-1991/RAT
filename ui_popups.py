@@ -2032,10 +2032,23 @@ def open_tsl_popup(app, override_symbol=None):
                 refresh_tsl_override_overview()
 
     def sec(parent, t):
-        ctk.CTkLabel(
-            parent, text=t, font=("Roboto", 12, "bold"), text_color="#03A9F4"
-        ).pack(fill="x", padx=15, pady=(10, 2), anchor="w")
-        return ctk.CTkFrame(parent, fg_color="transparent")
+        color = "#03A9F4"
+        upper_t = str(t).upper()
+        if "BREAK" in upper_t or "BE_" in upper_t:
+            color = "#00E676"
+        elif "PNL" in upper_t:
+            color = "#FFD600"
+        elif "STEP" in upper_t:
+            color = "#29B6F6"
+        elif "CASH" in upper_t:
+            color = "#AB47BC"
+        elif "PSAR" in upper_t or "MFE" in upper_t or "HARD" in upper_t:
+            color = "#FFB300"
+        frame = ctk.CTkFrame(parent, fg_color="#202020", corner_radius=8, border_width=1, border_color=color)
+        ctk.CTkLabel(frame, text=t, font=("Roboto", 12, "bold"), text_color=color).pack(
+            fill="x", padx=12, pady=(8, 4), anchor="w"
+        )
+        return frame
 
     # ================= TAB 1: BASIC =================
     _add_popup_hint(
@@ -2531,12 +2544,13 @@ def open_tsl_popup(app, override_symbol=None):
         refresh_tsl_override_overview()
     ctk.CTkButton(
         top,
-        text="LƯU TSL LOGIC",
-        fg_color=COL_GREEN,
-        height=48,
-        font=("Roboto", 14, "bold"),
+        text="SAVE TSL LOGIC",
+        fg_color="#7B1FA2",
+        hover_color="#4A148C",
+        height=40,
+        font=("Roboto", 13, "bold"),
         command=save,
-    ).pack(pady=(8, 16), fill="x", padx=70)
+    ).pack(pady=(6, 14), fill="x", padx=70)
     if override_symbol:
 
         def reset_tsl_override():

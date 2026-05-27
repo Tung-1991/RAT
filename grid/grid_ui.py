@@ -16,6 +16,9 @@ COL_MUTED = "#B0BEC5"
 COL_READY = "#00C853"
 COL_WAIT = "#FFB300"
 COL_BLOCK = "#F44336"
+COL_HEDGE_PURPLE = "#7B1FA2"
+COL_SECTION = "#202020"
+COL_FIELD = "#303437"
 
 STATUS_TEXT = {
     "READY": "SẴN SÀNG",
@@ -67,11 +70,19 @@ def _current_symbol(app):
 
 
 def _entry(parent, label, value, row, col=0, width=110, hint=""):
-    ctk.CTkLabel(parent, text=label, anchor="w", text_color=COL_TEXT, font=("Roboto", 14)).grid(
+    ctk.CTkLabel(parent, text=label, anchor="w", text_color=COL_TEXT, font=("Roboto", 13)).grid(
         row=row, column=col, sticky="w", padx=12, pady=8
     )
     var = ctk.StringVar(value=str(value))
-    ctk.CTkEntry(textvariable=var, master=parent, width=width, justify="center", font=("Roboto", 14)).grid(
+    ctk.CTkEntry(
+        textvariable=var,
+        master=parent,
+        width=width,
+        justify="center",
+        font=("Roboto", 13),
+        fg_color=COL_FIELD,
+        border_color="#56616A",
+    ).grid(
         row=row, column=col + 1, sticky="w", padx=12, pady=8
     )
     if hint:
@@ -88,10 +99,10 @@ def _entry(parent, label, value, row, col=0, width=110, hint=""):
 
 
 def _option(parent, label, values, value, row, col=0, width=170, hint=""):
-    ctk.CTkLabel(parent, text=label, anchor="w", text_color=COL_TEXT, font=("Roboto", 14)).grid(
+    ctk.CTkLabel(parent, text=label, anchor="w", text_color=COL_TEXT, font=("Roboto", 13)).grid(
         row=row, column=col, sticky="w", padx=12, pady=8
     )
-    opt = ctk.CTkOptionMenu(parent, values=values, width=width)
+    opt = ctk.CTkOptionMenu(parent, values=values, width=width, fg_color="#1f538d", button_color="#16406D")
     opt.set(value if value in values else values[0])
     opt.grid(row=row, column=col + 1, sticky="w", padx=12, pady=8)
     if hint:
@@ -108,7 +119,7 @@ def _option(parent, label, values, value, row, col=0, width=170, hint=""):
 
 
 def _hint(parent, text):
-    box = ctk.CTkFrame(parent, fg_color="#06262B", border_width=1, border_color=COL_GRID)
+    box = ctk.CTkFrame(parent, fg_color="#102126", border_width=1, border_color=COL_GRID, corner_radius=8)
     box.pack(fill="x", padx=10, pady=10)
     ctk.CTkLabel(
         box,
@@ -119,6 +130,15 @@ def _hint(parent, text):
         text_color=COL_HINT,
         font=("Arial", 14, "italic"),
     ).pack(fill="x", padx=12, pady=10)
+
+
+def _panel(parent, title, color=COL_GRID, fill="x"):
+    frame = ctk.CTkFrame(parent, fg_color=COL_SECTION, corner_radius=8, border_width=1, border_color=color)
+    frame.pack(fill=fill, padx=10, pady=10)
+    ctk.CTkLabel(frame, text=title, text_color=color, font=("Roboto", 13, "bold")).grid(
+        row=0, column=0, columnspan=3, sticky="w", padx=12, pady=(10, 6)
+    )
+    return frame
 
 
 def _signal_summary(cfg):
@@ -262,8 +282,7 @@ def open_grid_settings_popup(app):
         "Đèn trạng thái: xanh = đủ điều kiện vào lệnh; vàng = đang chờ giá/cooldown; đỏ = bị safety hoặc thiếu dữ liệu chặn. "
         "Preview chỉ để đọc nhanh, bấm START ở panel trade mới vào lệnh manual.",
     )
-    preview = ctk.CTkFrame(tab_preview, fg_color=COL_PANEL, corner_radius=8)
-    preview.pack(fill="x", padx=10, pady=10)
+    preview = _panel(tab_preview, "GRID Status", pdata["color"])
     lbl_status = ctk.CTkLabel(preview, text=_vn_status(pdata["status"]), font=("Roboto", 26, "bold"), text_color=pdata["color"])
     lbl_status.grid(row=0, column=0, padx=14, pady=(12, 4), sticky="w")
     lbl_reason = ctk.CTkLabel(preview, text=pdata["reason_text"], font=("Roboto", 13, "bold"), text_color=pdata["color"])
@@ -281,7 +300,7 @@ def open_grid_settings_popup(app):
         ctk.CTkLabel(preview, text=k, text_color=COL_TEXT, anchor="w", width=140, font=("Roboto", 12, "bold")).grid(row=i, column=0, padx=14, pady=5, sticky="w")
         ctk.CTkLabel(preview, text=v, text_color="#E0F7FA", anchor="w").grid(row=i, column=1, padx=14, pady=5, sticky="w")
 
-    level_box = ctk.CTkFrame(tab_preview, fg_color=COL_PANEL, corner_radius=8)
+    level_box = ctk.CTkFrame(tab_preview, fg_color=COL_SECTION, corner_radius=8, border_width=1, border_color=COL_GRID)
     level_box.pack(fill="both", expand=True, padx=10, pady=(0, 10))
     ctk.CTkLabel(
         level_box,
@@ -331,8 +350,7 @@ def open_grid_settings_popup(app):
         tab_simple,
         "Simple Mode chỉ giữ các thứ cần nhớ để chạy GRID hằng ngày. Các rule sâu như signal, ping/spread, basket TP/SL vẫn nằm ở tab An toàn và Tín hiệu & Nâng cao.",
     )
-    simple = ctk.CTkFrame(tab_simple, fg_color=COL_PANEL, corner_radius=8)
-    simple.pack(fill="x", padx=10, pady=10)
+    simple = _panel(tab_simple, "Simple GRID", COL_GRID)
     simple.grid_columnconfigure(2, weight=1)
     simple_mode = _option(simple, "1. Hướng đánh:", ["NEUTRAL", "LONG", "SHORT"], cfg.get("DEFAULT_MANUAL_MODE", "NEUTRAL"), 0, hint="NEUTRAL: mua thấp bán cao. LONG: chỉ BUY vùng thấp. SHORT: chỉ SELL vùng cao.")
     simple_type = _option(simple, "2. Kiểu lưới:", ["ATR_DYNAMIC", "ARITHMETIC", "GEOMETRIC"], cfg.get("GRID_TYPE", "ATR_DYNAMIC"), 1, hint="ATR_DYNAMIC dễ dùng nhất khi test live; Arithmetic/Geometric chia lưới cố định hơn.")
@@ -362,8 +380,7 @@ def open_grid_settings_popup(app):
 
     _hint(tab_basic, "NEUTRAL: mua vùng thấp, bán vùng cao. LONG: chỉ canh BUY ở vùng thấp. SHORT: chỉ canh SELL ở vùng cao.")
     enabled = ctk.BooleanVar(value=cfg.get("ENABLED", False))
-    basic = ctk.CTkFrame(tab_basic, fg_color=COL_PANEL, corner_radius=8)
-    basic.pack(fill="x", padx=10, pady=10)
+    basic = _panel(tab_basic, "GRID Strategy", COL_GRID)
     basic.grid_columnconfigure(2, weight=1)
     ctk.CTkLabel(
         basic,
@@ -395,8 +412,7 @@ def open_grid_settings_popup(app):
     ctk.CTkButton(basic, text="LƯU CÀI ĐẶT GRID", fg_color=COL_GRID, command=lambda: save()).grid(row=11, column=0, columnspan=3, sticky="ew", padx=12, pady=(14, 10))
 
     _hint(tab_safety, "Safety của GRID độc lập với BOT. Clear block chỉ xóa trạng thái STOP_NEW/block, không reset PnL hoặc số lệnh hôm nay.")
-    safety = ctk.CTkFrame(tab_safety, fg_color=COL_PANEL, corner_radius=8)
-    safety.pack(fill="x", padx=10, pady=10)
+    safety = _panel(tab_safety, "GRID Safety", COL_WAIT)
     safety.grid_columnconfigure(2, weight=1)
     max_orders = _entry(safety, "Số lệnh GRID tối đa:", cfg.get("MAX_GRID_ORDERS", 0), 0, hint="0 = không giới hạn. Nên để 3-10 khi test.")
     max_total_lot = _entry(safety, "Tổng lot tối đa:", cfg.get("MAX_TOTAL_LOT", 0.0), 1, hint="0 = không giới hạn. Ví dụ 0.05 nghĩa là tối đa 5 lệnh x 0.01 lot.")
@@ -429,8 +445,7 @@ def open_grid_settings_popup(app):
     ctk.CTkButton(safety, text="LƯU CÀI ĐẶT GRID", fg_color=COL_GRID, command=lambda: save()).grid(row=9, column=2, sticky="ew", padx=10, pady=(12, 10))
 
     _hint(tab_adv, "Signal engine dùng chung với BOT/QUANT, nhưng GRID có config riêng. Import = copy rule hiện tại sang GRID; Clear = xóa signal GRID, GRID vẫn chạy bằng mode mặc định/chọn tay.")
-    adv = ctk.CTkFrame(tab_adv, fg_color=COL_PANEL, corner_radius=8)
-    adv.pack(fill="x", padx=10, pady=10)
+    adv = _panel(tab_adv, "GRID Signal / Advanced", "#29B6F6")
     adv.grid_columnconfigure(2, weight=1)
     signal_source = _option(adv, "Nguồn signal:", ["OFF", "CONTEXT", "IMPORTED"], cfg.get("GRID_SIGNAL_SOURCE", "OFF"), 0, hint="OFF: không dùng signal. CONTEXT: dùng signal daemon có sẵn. IMPORTED: dùng GRID_SIGNAL_CONFIG riêng.")
     none_policy = _option(adv, "Khi signal NONE:", ["NEUTRAL", "BLOCK"], cfg.get("NONE_POLICY", "NEUTRAL"), 2, hint="NEUTRAL = vẫn đánh 2 chiều; BLOCK = không mở lệnh khi signal không rõ.")

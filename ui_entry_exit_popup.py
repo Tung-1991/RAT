@@ -16,6 +16,8 @@ COL_GREEN = "#00C853"
 COL_WARN = "#FFAB00"
 COL_GRAY_BTN = "#424242"
 COL_ACCENT = "#00838F"
+COL_PANEL = "#202020"
+COL_FIELD = "#303437"
 
 ENTRY_EXIT_TACTICS = {
     "FALLBACK_R": "R",
@@ -143,7 +145,7 @@ def _save_global_cfg(cfg):
 def _hint(parent, text):
     frame = ctk.CTkFrame(
         parent,
-        fg_color="#332B00",
+        fg_color="#2A250D",
         corner_radius=6,
         border_width=1,
         border_color="#FFD600",
@@ -161,20 +163,21 @@ def _hint(parent, text):
 
 
 def _section(parent, title, color="#00B8D4"):
-    frame = ctk.CTkFrame(parent, fg_color="#2b2b2b", corner_radius=8)
+    frame = ctk.CTkFrame(parent, fg_color=COL_PANEL, corner_radius=8, border_width=1, border_color=color)
     frame.pack(fill="x", padx=10, pady=8)
     ctk.CTkLabel(frame, text=title, font=("Roboto", 13, "bold"), text_color=color).grid(
-        row=0, column=0, columnspan=4, sticky="w", padx=12, pady=(8, 6)
+        row=0, column=0, columnspan=5, sticky="w", padx=12, pady=(8, 6)
     )
+    frame.grid_columnconfigure((1, 3), weight=1)
     return frame
 
 
 def _field(frame, row, label, variable, values=None, width=130, col=0):
-    ctk.CTkLabel(frame, text=label).grid(row=row, column=col, sticky="w", padx=12, pady=5)
+    ctk.CTkLabel(frame, text=label, text_color="#FFFFFF").grid(row=row, column=col, sticky="w", padx=12, pady=5)
     if values:
-        widget = ctk.CTkOptionMenu(frame, values=values, variable=variable, width=width)
+        widget = ctk.CTkOptionMenu(frame, values=values, variable=variable, width=width, fg_color="#1f538d", button_color="#16406D")
     else:
-        widget = ctk.CTkEntry(frame, textvariable=variable, width=width, justify="center")
+        widget = ctk.CTkEntry(frame, textvariable=variable, width=width, justify="center", fg_color=COL_FIELD, border_color="#56616A")
     widget.grid(row=row, column=col + 1, sticky="w", padx=8, pady=5)
     return widget
 
@@ -339,12 +342,14 @@ def open_entry_exit_popup(app, override_symbol=None):
 
     load_into_form(cfg)
 
+    header = ctk.CTkFrame(tab_basic, fg_color="#202020", corner_radius=8, border_width=1, border_color="#00B8D4")
+    header.pack(fill="x", padx=10, pady=(4, 8))
     ctk.CTkLabel(
-        tab_basic,
+        header,
         text="THAM SỐ ENTRY / EXIT",
         font=("Roboto", 16, "bold"),
         text_color="#00B8D4",
-    ).pack(pady=(4, 0))
+    ).pack(anchor="w", padx=12, pady=10)
     _hint(
         tab_basic,
         "Popup này chỉ chỉnh tham số cho từng tactic. Bot dùng Entry nào và TP/Exit nào thì chọn ở Sandbox. Panel ngoài chỉ preview/manual nhanh.",
@@ -479,9 +484,9 @@ def open_entry_exit_popup(app, override_symbol=None):
 
     ctk.CTkButton(
         top,
-        text=f"LƯU ENTRY/EXIT CHO {override_symbol}" if override_symbol else "LƯU ENTRY/EXIT GLOBAL",
+        text=f"SAVE ENTRY/EXIT {override_symbol}" if override_symbol else "SAVE ENTRY/EXIT GLOBAL",
         command=save_cfg,
-        fg_color=COL_ACCENT,
+        fg_color="#7B1FA2",
         hover_color="#006064",
         height=38,
         font=("Roboto", 13, "bold"),

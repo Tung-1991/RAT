@@ -10,6 +10,15 @@ import config
 from tkinter import messagebox, filedialog
 from ui_indicators_config import open_indicator_config_popup
 
+COL_PANEL = "#202020"
+COL_PANEL_SOFT = "#24172B"
+COL_FIELD = "#2F3336"
+COL_PURPLE = "#8E24AA"
+COL_PURPLE_HOVER = "#7B1FA2"
+COL_BLUE = "#0288D1"
+COL_BLUE_HOVER = "#0277BD"
+COL_AMBER = "#FFB300"
+
 def _get_brain_path():
     try:
         import core.storage_manager as sm
@@ -269,6 +278,20 @@ class BotStrategyUI(ctk.CTkToplevel):
 
     def _build_ui(self):
         self.tabview = ctk.CTkTabview(self)
+        try:
+            self.tabview.configure(
+                fg_color="#181818",
+                border_width=1,
+                border_color=COL_PURPLE,
+                segmented_button_fg_color=COL_PANEL,
+                segmented_button_selected_color=COL_PURPLE,
+                segmented_button_selected_hover_color=COL_PURPLE_HOVER,
+                segmented_button_unselected_color="#2A2A2A",
+                segmented_button_unselected_hover_color="#343434",
+                text_color="#F3E5F5",
+            )
+        except Exception:
+            pass
         self.tabview.pack(fill="both", expand=True, padx=10, pady=5)
 
         # Bắt đầu vòng lặp cập nhật Preview
@@ -304,60 +327,72 @@ class BotStrategyUI(ctk.CTkToplevel):
         if not self.override_symbol:
             self._build_overwrite_tab()
 
-        btn_frame = ctk.CTkFrame(self, fg_color="transparent")
-        btn_frame.pack(fill="x", padx=10, pady=10)
+        btn_frame = ctk.CTkFrame(
+            self,
+            fg_color=COL_PANEL,
+            corner_radius=8,
+            border_width=1,
+            border_color=COL_PURPLE,
+        )
+        btn_frame.pack(fill="x", padx=10, pady=(4, 10))
 
         ctk.CTkButton(
             btn_frame,
-            text="📂 LOAD TEMPLATE",
-            fg_color="#1565C0",
-            hover_color="#0D47A1",
+            text="LOAD TEMPLATE",
+            fg_color=COL_BLUE,
+            hover_color=COL_BLUE_HOVER,
+            height=36,
+            corner_radius=7,
             command=self.load_template,
-        ).pack(side="left", padx=5)
+        ).pack(side="left", padx=(10, 5), pady=10)
 
         ctk.CTkButton(
             btn_frame,
-            text="💾 SAVE AS TEMPLATE",
+            text="SAVE TEMPLATE",
             fg_color="#455A64",
             hover_color="#37474F",
+            height=36,
+            corner_radius=7,
             command=self.save_as_template,
-        ).pack(side="left", padx=5)
+        ).pack(side="left", padx=5, pady=10)
 
         ctk.CTkButton(
             btn_frame,
-            text="🚀 LƯU & P DỤNG (HOT-RELOAD)",
-            fg_color="#00C853",
-            hover_color="#009624",
+            text="SAVE & APPLY",
+            fg_color=COL_PURPLE,
+            hover_color=COL_PURPLE_HOVER,
             font=("Roboto", 13, "bold"),
-            height=40,
+            height=38,
+            corner_radius=7,
             command=self.save_strategy,
-        ).pack(side="right", padx=5)
+        ).pack(side="right", padx=(5, 10), pady=10)
 
         if self.override_symbol:
             ctk.CTkButton(
                 btn_frame,
-                text="🗑 RESET (XÓA CON, VỀ MẸ)",
+                text="RESET OVERRIDE",
                 fg_color="#D50000",
                 hover_color="#B71C1C",
                 font=("Roboto", 13, "bold"),
-                height=40,
+                height=38,
+                corner_radius=7,
                 command=self.reset_override,
-            ).pack(side="right", padx=5)
+            ).pack(side="right", padx=5, pady=10)
 
     def _add_hint_box(self, parent, text, padx=10, pady=(10, 5)):
         hint_f = ctk.CTkFrame(
             parent,
-            fg_color="#332B00",
-            corner_radius=6,
+            fg_color="#241F12",
+            corner_radius=8,
             border_width=1,
-            border_color="#FFD600",
+            border_color=COL_AMBER,
         )
         hint_f.pack(fill="x", padx=padx, pady=pady)
         ctk.CTkLabel(
             hint_f,
             text=text,
             font=("Arial", 13, "italic"),
-            text_color="#FFD600",
+            text_color="#FFE082",
             justify="left",
             anchor="w",
             wraplength=1080,
@@ -517,7 +552,13 @@ class BotStrategyUI(ctk.CTkToplevel):
             ).pack(side="left")
 
         # Header: Master Action
-        header_f = ctk.CTkFrame(f, fg_color="#1A1A1A", corner_radius=8, border_width=1, border_color="#333")
+        header_f = ctk.CTkFrame(
+            f,
+            fg_color=COL_PANEL_SOFT,
+            corner_radius=8,
+            border_width=1,
+            border_color=COL_PURPLE,
+        )
         header_f.pack(fill="x", pady=(0, 10))
         
         self.master_action_lbl = ctk.CTkLabel(header_f, text="MASTER ACTION: WAITING", font=("Roboto", 18, "bold"), text_color="#FFF")
@@ -529,7 +570,13 @@ class BotStrategyUI(ctk.CTkToplevel):
         self.master_reason_lbl = ctk.CTkLabel(header_f, text="Trạng thái: ang ch tín hiệu...", font=("Roboto", 12), text_color="#AAA")
         self.master_reason_lbl.pack(pady=(0, 10))
 
-        entry_exit_f = ctk.CTkFrame(f, fg_color="#202020", corner_radius=8, border_width=1, border_color="#3A3A3A")
+        entry_exit_f = ctk.CTkFrame(
+            f,
+            fg_color=COL_PANEL,
+            corner_radius=8,
+            border_width=1,
+            border_color="#00B8D4",
+        )
         entry_exit_f.pack(fill="x", pady=(0, 10))
         ctk.CTkLabel(
             entry_exit_f,
@@ -552,9 +599,16 @@ class BotStrategyUI(ctk.CTkToplevel):
         grid_f.pack(fill="both", expand=True)
 
         self.preview_cards = {}
+        grp_colors = {"G0": "#AB47BC", "G1": "#00E676", "G2": "#00B0FF", "G3": "#FF3D00"}
         for i in range(4):
             grp = f"G{i}"
-            col = ctk.CTkFrame(grid_f, fg_color="#222", corner_radius=8, border_width=1, border_color="#444")
+            col = ctk.CTkFrame(
+                grid_f,
+                fg_color=COL_PANEL,
+                corner_radius=8,
+                border_width=1,
+                border_color=grp_colors.get(grp, "#555"),
+            )
             col.pack(side="left", fill="both", expand=True, padx=5)
 
             # Title
@@ -1050,7 +1104,13 @@ class BotStrategyUI(ctk.CTkToplevel):
             pady=(5, 10),
         )
 
-        tf_frame = ctk.CTkFrame(self.tab_rules, fg_color="#1E1E1E", corner_radius=8)
+        tf_frame = ctk.CTkFrame(
+            self.tab_rules,
+            fg_color=COL_PANEL,
+            corner_radius=8,
+            border_width=1,
+            border_color=COL_BLUE,
+        )
         tf_frame.pack(fill="x", padx=10, pady=10)
 
         ctk.CTkLabel(
@@ -1095,7 +1155,13 @@ class BotStrategyUI(ctk.CTkToplevel):
                 },
             )
 
-            frame = ctk.CTkFrame(scroll_rules, fg_color="#2b2b2b", corner_radius=8)
+            frame = ctk.CTkFrame(
+                scroll_rules,
+                fg_color=COL_PANEL,
+                corner_radius=8,
+                border_width=1,
+                border_color=colors[grp],
+            )
             frame.pack(fill="x", padx=10, pady=5)
 
             lbl_rule_title = ctk.CTkLabel(
@@ -1202,7 +1268,13 @@ class BotStrategyUI(ctk.CTkToplevel):
         )
 
         # --- [NEW] CỤM OPTIONS NÂNG CAO (SCALPING & STRICT RISK) ---
-        f_adv = ctk.CTkFrame(self.tab_risk, fg_color="#2b2b2b", corner_radius=8)
+        f_adv = ctk.CTkFrame(
+            self.tab_risk,
+            fg_color=COL_PANEL,
+            corner_radius=8,
+            border_width=1,
+            border_color="#00B8D4",
+        )
         f_adv.pack(fill="x", padx=20, pady=(10, 10))
         f_adv.grid_columnconfigure(0, weight=0)
         f_adv.grid_columnconfigure(1, weight=1)
@@ -1434,7 +1506,13 @@ class BotStrategyUI(ctk.CTkToplevel):
             font=("Roboto", 13, "bold"),
             text_color="#00B8D4",
         ).pack(anchor="w", padx=20, pady=(10, 0))
-        f_entry_btns = ctk.CTkFrame(self.tab_risk, fg_color="#202020", corner_radius=8)
+        f_entry_btns = ctk.CTkFrame(
+            self.tab_risk,
+            fg_color=COL_PANEL,
+            corner_radius=8,
+            border_width=1,
+            border_color="#00B8D4",
+        )
         f_entry_btns.pack(fill="x", padx=20, pady=5)
         ctk.CTkLabel(
             f_entry_btns,
@@ -1575,7 +1653,13 @@ class BotStrategyUI(ctk.CTkToplevel):
             text_color="#FFB300",
         ).pack(anchor="w", padx=20, pady=5)
 
-        f_mult = ctk.CTkFrame(self.tab_risk, fg_color="#2b2b2b", corner_radius=8)
+        f_mult = ctk.CTkFrame(
+            self.tab_risk,
+            fg_color=COL_PANEL,
+            corner_radius=8,
+            border_width=1,
+            border_color=COL_AMBER,
+        )
         f_mult.pack(fill="x", padx=20)
 
         mults = risk_data.get("mode_multipliers", {})
@@ -1606,7 +1690,13 @@ class BotStrategyUI(ctk.CTkToplevel):
         )
 
         # --- DCA FRAME ---
-        dca_frame = ctk.CTkFrame(self.tab_dca_pca, fg_color="#2b2b2b", corner_radius=8)
+        dca_frame = ctk.CTkFrame(
+            self.tab_dca_pca,
+            fg_color=COL_PANEL,
+            corner_radius=8,
+            border_width=1,
+            border_color=COL_AMBER,
+        )
         dca_frame.pack(fill="x", padx=10, pady=10)
 
         self.dca_active = ctk.BooleanVar(value=dca_cfg.get("ENABLED", False))
@@ -1663,7 +1753,13 @@ class BotStrategyUI(ctk.CTkToplevel):
         ).grid(row=2, column=0, columnspan=7, padx=10, pady=(2, 10), sticky="w")
 
         # --- PCA FRAME ---
-        pca_frame = ctk.CTkFrame(self.tab_dca_pca, fg_color="#2b2b2b", corner_radius=8)
+        pca_frame = ctk.CTkFrame(
+            self.tab_dca_pca,
+            fg_color=COL_PANEL,
+            corner_radius=8,
+            border_width=1,
+            border_color="#00C853",
+        )
         pca_frame.pack(fill="x", padx=10, pady=10)
 
         self.pca_active = ctk.BooleanVar(value=pca_cfg.get("ENABLED", False))
@@ -1720,7 +1816,13 @@ class BotStrategyUI(ctk.CTkToplevel):
         ).grid(row=2, column=0, columnspan=7, padx=10, pady=(2, 10), sticky="w")
 
         # --- COOLDOWN FRAME ---
-        cd_frame = ctk.CTkFrame(self.tab_dca_pca, fg_color="#2b2b2b", corner_radius=8)
+        cd_frame = ctk.CTkFrame(
+            self.tab_dca_pca,
+            fg_color=COL_PANEL,
+            corner_radius=8,
+            border_width=1,
+            border_color=COL_BLUE,
+        )
         cd_frame.pack(fill="x", padx=10, pady=10)
 
         ctk.CTkLabel(
