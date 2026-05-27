@@ -1967,8 +1967,8 @@ def open_tsl_popup(app, override_symbol=None):
     if override_symbol:
         title += f" - CẤU HÌNH CON: {override_symbol}"
     top.title(title)
-    top.geometry("900x780")
-    top.minsize(760, 560)
+    top.geometry("980x780")
+    top.minsize(860, 600)
     top.attributes("-topmost", True)
     top.resizable(True, True)  # Khôi phục tính năng co giãn/phóng to
     if override_symbol:
@@ -1984,6 +1984,20 @@ def open_tsl_popup(app, override_symbol=None):
 
     # [FIX V4.4] CHIA LÀM 2 TAB GỌN GÀNG THEO YÊU CẦU CỦA BOSS
     tabview = ctk.CTkTabview(top, height=620)
+    try:
+        tabview.configure(
+            fg_color="#181818",
+            border_width=1,
+            border_color="#7B1FA2",
+            segmented_button_fg_color="#2A2A2A",
+            segmented_button_selected_color="#1f538d",
+            segmented_button_selected_hover_color="#14375e",
+            segmented_button_unselected_color="#3A3A3A",
+            segmented_button_unselected_hover_color="#4A4A4A",
+            text_color="#F3E5F5",
+        )
+    except Exception:
+        pass
     tabview.pack(fill="both", expand=True, padx=10, pady=5)
     tab_basic_root = tabview.add("Basic (BE, PNL, STEP)")
     tab_adv_root = tabview.add("Advanced (CASH, PSAR)")
@@ -2045,10 +2059,58 @@ def open_tsl_popup(app, override_symbol=None):
         elif "PSAR" in upper_t or "MFE" in upper_t or "HARD" in upper_t:
             color = "#FFB300"
         frame = ctk.CTkFrame(parent, fg_color="#202020", corner_radius=8, border_width=1, border_color=color)
-        ctk.CTkLabel(frame, text=t, font=("Roboto", 12, "bold"), text_color=color).pack(
-            fill="x", padx=12, pady=(8, 4), anchor="w"
-        )
+        ctk.CTkLabel(
+            frame,
+            text=t,
+            font=("Roboto", 12, "bold"),
+            text_color=color,
+            anchor="w",
+        ).pack(fill="x", padx=14, pady=(8, 6))
         return frame
+
+    def compact_entry(entry):
+        try:
+            entry.configure(fg_color="#2F3336", border_color="#56616A", justify="center")
+        except Exception:
+            pass
+        return entry
+
+    def compact_menu(menu):
+        try:
+            menu.configure(
+                fg_color="#1f538d",
+                button_color="#14375e",
+                button_hover_color="#0D47A1",
+                text_color="#FFFFFF",
+            )
+        except Exception:
+            pass
+        return menu
+
+    def field(parent, row, col, label, widget, label_color="#FFFFFF"):
+        parent.grid_columnconfigure(col * 2, weight=0)
+        parent.grid_columnconfigure(col * 2 + 1, weight=1)
+        ctk.CTkLabel(
+            parent,
+            text=label,
+            text_color=label_color,
+            anchor="w",
+        ).grid(row=row, column=col * 2, sticky="w", padx=(12, 6), pady=6)
+        widget.grid(row=row, column=col * 2 + 1, sticky="w", padx=(0, 16), pady=6)
+        return widget
+
+    def hint_label(parent, text, wrap=820):
+        ctk.CTkLabel(
+            parent,
+            text=text,
+            text_color="#B0BEC5",
+            font=("Arial", 11, "italic"),
+            wraplength=wrap,
+            justify="left",
+            anchor="w",
+        ).grid(
+            row=99, column=0, columnspan=8, sticky="ew", padx=12, pady=(4, 10)
+        )
 
     # ================= TAB 1: BASIC =================
     _add_popup_hint(
@@ -2058,10 +2120,10 @@ def open_tsl_popup(app, override_symbol=None):
         "- Chỉ tactic được bật ở lệnh/Bot TSL mới dùng các tham số này.",
         padx=15,
         pady=(10, 5),
-        wraplength=400,
+        wraplength=820,
     )
     f_be = sec(tab_basic, "1. BREAK-EVEN SL (BE_SL)")
-    f_be.pack(fill="x", padx=15)
+    f_be.pack(fill="x", padx=15, pady=(8, 8))
     f_be_r1 = ctk.CTkFrame(f_be, fg_color="transparent")
     f_be_r1.pack(fill="x")
     f_be_r2 = ctk.CTkFrame(f_be, fg_color="transparent")
@@ -2099,45 +2161,76 @@ def open_tsl_popup(app, override_symbol=None):
         font=("Arial", 11, "italic"),
         wraplength=620,
     ).pack(side="left", padx=5)
+    try:
+        for row_frame in (f_be_r1, f_be_r2, f_be_r3):
+            row_frame.pack_forget()
+            for child in row_frame.winfo_children():
+                child.pack_forget()
+        f_be_r1.pack(fill="x", padx=8)
+        f_be_r2.pack(fill="x", padx=8)
+        f_be_r3.pack(fill="x", padx=12, pady=(0, 10))
+        compact_menu(cbo_be_sl_unit)
+        compact_entry(e_be_sl_loss_trigger)
+        compact_entry(e_be_sl_loss_step)
+        compact_entry(e_be_sl_guard_buffer)
+        compact_entry(e_be_sl_reentry_lock)
+        field(f_be_r1, 0, 0, "BE Loss Guard", cbo_be_sl_unit, "#00B8D4")
+        field(f_be_r1, 0, 1, "Loss Trig", e_be_sl_loss_trigger)
+        field(f_be_r1, 0, 2, "Step", e_be_sl_loss_step)
+        field(f_be_r1, 0, 3, "Guard Buf", e_be_sl_guard_buffer)
+        field(f_be_r2, 0, 0, "Re-entry Lock(s)", e_be_sl_reentry_lock)
+        ctk.CTkLabel(
+            f_be_r3,
+            text="RECOVERY_GUARD: âm tới Loss Trig thì arm; hồi lên đủ Step thì đặt virtual guard dưới mức hồi tốt nhất theo Guard Buf. Hồi tiếp thì guard nâng lên; thủng guard thì bot close và khóa vào lại.",
+            text_color="#B0BEC5",
+            font=("Arial", 11, "italic"),
+            wraplength=820,
+            justify="left",
+            anchor="w",
+        ).grid(row=0, column=0, sticky="ew")
+    except Exception:
+        pass
     f_pnl = sec(tab_basic, "2. KHÓA LÃI PNL (LEVELS)")
-    f_pnl.pack(fill="both", expand=True, padx=15)
-    scroll_pnl = ctk.CTkScrollableFrame(f_pnl, height=100)
-    scroll_pnl.pack(fill="both", expand=True)
+    f_pnl.pack(fill="x", padx=15, pady=(0, 8))
+    scroll_pnl = ctk.CTkScrollableFrame(f_pnl, height=125, fg_color="#181818")
+    scroll_pnl.pack(fill="x", padx=10, pady=(0, 6))
+    scroll_pnl.grid_columnconfigure(0, weight=1)
     pnl_entries = []
 
     def add_p(v1=0.0, v2=0.0):
         r = ctk.CTkFrame(scroll_pnl, fg_color="transparent")
         r.pack(fill="x", pady=2)
-        e1, e2 = ctk.CTkEntry(r, width=60), ctk.CTkEntry(r, width=60)
+        e1, e2 = compact_entry(ctk.CTkEntry(r, width=70)), compact_entry(ctk.CTkEntry(r, width=70))
         e1.insert(0, str(v1))
-        e1.pack(side="left")
-        ctk.CTkLabel(r, text="% Win -> Lock %").pack(side="left", padx=5)
+        e1.pack(side="left", padx=(6, 8), pady=3)
+        ctk.CTkLabel(r, text="% Win -> Lock %", width=130, anchor="w").pack(side="left", padx=5)
         e2.insert(0, str(v2))
-        e2.pack(side="right")
+        e2.pack(side="left", padx=(8, 6), pady=3)
         pnl_entries.append((r, e1, e2))
     for lvl in tsl_cfg.get("PNL_LEVELS", []):
         add_p(lvl[0], lvl[1])
     f_pbtns = ctk.CTkFrame(f_pnl, fg_color="transparent")
-    f_pbtns.pack(fill="x")
-    ctk.CTkButton(f_pbtns, text="+", width=40, command=lambda: add_p(0.0, 0.0)).pack(
+    f_pbtns.pack(fill="x", padx=10, pady=(0, 10))
+    ctk.CTkButton(f_pbtns, text="+", width=44, height=28, command=lambda: add_p(0.0, 0.0)).pack(
         side="left", padx=5
     )
     ctk.CTkButton(
         f_pbtns,
         text="-",
         width=40,
+        height=28,
         command=lambda: pnl_entries.pop()[0].destroy() if pnl_entries else None,
-    ).pack(side="right", padx=5)
+    ).pack(side="left", padx=5)
     f_step = sec(tab_basic, "3. STEP R (TRAIL)")
-    f_step.pack(fill="x", padx=15)
-    e_sz = ctk.CTkEntry(f_step, width=50)
+    f_step.pack(fill="x", padx=15, pady=(0, 8))
+    f_step_row = ctk.CTkFrame(f_step, fg_color="transparent")
+    f_step_row.pack(fill="x", padx=8, pady=(0, 10))
+    e_sz = compact_entry(ctk.CTkEntry(f_step_row, width=70))
     e_sz.insert(0, str(tsl_cfg.get("STEP_R_SIZE", 1.0)))
-    e_sz.pack(side="left", padx=5)
-    e_rt = ctk.CTkEntry(f_step, width=50)
+    field(f_step_row, 0, 0, "Size(R)", e_sz)
+    e_rt = compact_entry(ctk.CTkEntry(f_step_row, width=70))
     e_rt.insert(0, str(tsl_cfg.get("STEP_R_RATIO", 0.8)))
-    e_rt.pack(side="right", padx=5)
-    ctk.CTkLabel(f_step, text="Size(R):").pack(side="left")
-    ctk.CTkLabel(f_step, text="Lock(0-1):").pack(side="right", padx=5)
+    field(f_step_row, 0, 1, "Lock(0-1)", e_rt)
 
     # ================= TAB 2: ADVANCED =================
     _add_popup_hint(
@@ -2149,7 +2242,7 @@ def open_tsl_popup(app, override_symbol=None):
         "- Hard Stop là cầu dao lỗ; MFE Giveback chống trả lại lợi nhuận.",
         padx=15,
         pady=(10, 5),
-        wraplength=400,
+        wraplength=820,
     )
     f_swing_man = sec(tab_adv, "4. MANUAL SWING (Bám nến)")
     f_swing_man.pack(fill="x", padx=15)
@@ -2237,7 +2330,7 @@ def open_tsl_popup(app, override_symbol=None):
         text="SOFT LOCK: khóa = target - buffer; Min Lock là sàn khóa tối thiểu nếu kết quả còn dương.",
         text_color="#B0BEC5",
         font=("Arial", 11, "italic"),
-        wraplength=440,
+        wraplength=820,
     ).pack(anchor="w", padx=8, pady=(4, 0))
     f_psar = sec(tab_adv, "6. PSAR TRAILING (Đuổi chấm)")
     f_psar.pack(fill="x", padx=15)
