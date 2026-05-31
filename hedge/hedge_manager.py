@@ -604,12 +604,19 @@ class HedgeManager:
             actions.extend(self._close_session_positions(symbol, session, session_positions, close_reason, state, settings))
             return actions
 
-        if len(session_positions) == 1 and len(main_tickets) >= 2:
-            action = self._protect_survivor(symbol, session, session_positions[0], settings)
+        survivor_active = len(session_positions) == 1 and len(main_tickets) >= 2
+        if survivor_active:
+            survivor = session_positions[0]
+            survivor_ticket = str(getattr(survivor, "ticket", ""))
+            if session.get("survivor_armed_ticket") != survivor_ticket:
+                session["survivor_armed_ticket"] = survivor_ticket
+                session["survivor_armed_at"] = time.time()
+                self.log(f"SURVIVOR_ARMED {symbol} #{survivor_ticket}")
+            action = self._protect_survivor(symbol, session, survivor, settings)
             if action:
                 actions.append(action)
 
-        if bool(session.get("use_tsl", settings.get("USE_TSL", True))):
+        if survivor_active and bool(session.get("use_tsl", settings.get("USE_TSL", True))):
             for pos in session_positions:
                 action = self._apply_hedge_tsl(symbol, session, pos, settings, state, context or {})
                 if action:

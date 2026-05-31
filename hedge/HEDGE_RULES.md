@@ -1,25 +1,26 @@
 # HEDGE Dual Rules
 
-HEDGE Dual là module độc lập state/log, chỉ gọi lại rule có sẵn của bot.
+HEDGE Dual owns its own state/log and reuses existing bot rules only where needed.
 
 ## Entry
-- Nếu `USE_SIGNAL_FILTER = ON`: cần `latest_signal != 0`.
-- Nếu `USE_ENTRY_EXIT_FILTER = ON`: chạy Entry/Exit engine theo hướng signal nếu có, hoặc cả BUY/SELL nếu không dùng signal. Ít nhất một hướng phải `READY`.
-- Nếu filter tắt thì bỏ qua filter đó.
-- Dù filter thế nào vẫn phải qua hard safety, max pairs, cooldown, daily loss, ping/spread.
+- If `USE_SIGNAL_FILTER = ON`, `latest_signal` must be non-zero.
+- If `USE_ENTRY_EXIT_FILTER = ON`, HEDGE runs Entry/Exit as an entry filter.
+- If filters are OFF, HEDGE skips those filters.
+- Every entry still must pass hard safety, max pairs, cooldown, daily loss, ping, and spread checks.
 
 ## Orders
-- Khi pass, HEDGE mở đồng thời BUY và SELL cùng lot.
-- SL/TP lấy từ Entry/Exit decision nếu direction đó `READY`.
-- Nếu thiếu SL từ Entry/Exit và `USE_HEDGE_SLTP = ON`, HEDGE tính SL/TP bằng rule riêng của HEDGE. Rule này tái dùng cùng công thức base SL/TP của sandbox/bot nhưng không dùng chung toggle/state sandbox.
-- Nếu `USE_HEDGE_SLTP = OFF`, HEDGE tôn trọng cấu hình và có thể mở lệnh không SL/TP.
+- When allowed, HEDGE opens BUY and SELL at the same time with the same lot.
+- Each leg can have its own SL/TP.
+- If Entry/Exit does not provide SL and `USE_HEDGE_SLTP = ON`, HEDGE calculates SL/TP by its own HEDGE rules.
+- If `USE_HEDGE_SLTP = OFF`, HEDGE may open without SL/TP.
 
 ## Exit
-- Không dùng basket TP/SL USD.
-- Không dùng leg-out/recovery guard.
-- Mỗi chân tự thoát bằng SL/TP/TSL.
-- Nếu một chân đóng trước, chân còn lại là survivor. `SURVIVOR_PROTECT` có thể kéo SL về `BE_FEE`, `BE_ONLY`, hoặc không can thiệp.
+- While both BUY and SELL are open, HEDGE does not run TSL on individual legs.
+- Each leg may still close by its own SL/TP.
+- After one leg closes, the remaining leg is armed for protection and TSL.
+- `SURVIVOR_PROTECT` runs before TSL to protect against immediate reversal.
+- If price keeps moving in the profitable direction, TSL manages the remaining leg.
 
 ## Isolation
-- HEDGE ghi `hedge_state.json`, `hedge_settings.json` và log `hedge`/`hedge-log`.
-- Không ghi state bot/grid.
+- HEDGE writes `hedge_state.json`, `hedge_settings.json`, and hedge logs.
+- HEDGE must not write BOT/GRID runtime state.

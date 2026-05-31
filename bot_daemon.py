@@ -285,24 +285,27 @@ class StandaloneBotDaemon:
                 break
 
             is_open, closed_reason = is_symbol_trade_window_open(sym)
-            if not is_open:
-                self.heartbeat_contexts.pop(sym, None)
-                signal_debug_state[sym] = f"[PAUSE] {closed_reason}"
-                continue
-
             dfs, context = data_engine.fetch_data_v4(sym)
             if dfs is None or context is None:
-                signal_debug_state[sym] = "Đang tải dữ liệu MT5..."
+                signal_debug_state[sym] = f"[PAUSE] {closed_reason}" if not is_open else "Đang tải dữ liệu MT5..."
                 continue
 
             # [FIX CORE]: Luôn chạy hàm generate_signal_v4 để tính toán và lưu Trend, Mode vào biến context
             # Đảm bảo UI luôn nhận được cấu trúc thị trường mới nhất ngay cả khi Bot đang tắt (Manual Mode)
             signal = signal_generator.generate_signal_v4(dfs, context, symbol=sym)
             context["latest_signal"] = signal # [NEW V4.4] Phục vụ logic REV_C
+            context["market_open"] = bool(is_open)
+            context["market_closed_reason"] = "" if is_open else closed_reason
+            if not is_open:
+                context["block_reason"] = f"MARKET_CLOSED: {closed_reason}"
 
             # --- [V4.2.1] Gói toàn bộ context vào Heartbeat ---
             self.heartbeat_contexts[sym] = context.copy()
             self.heartbeat_contexts[sym].update({"timestamp": time.time()})
+
+            if not is_open:
+                signal_debug_state[sym] = f"[PAUSE/PREVIEW] {closed_reason}"
+                continue
 
             # [FIX] Luôn gửi tín hiệu vào hàng chờ (để SignalListener hiển thị Thinking Logs)
             if signal == 1:

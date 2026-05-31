@@ -142,12 +142,14 @@ class BotUI(ctk.CTk):
         self.latest_market_context = {}
         self.latest_entry_exit_decisions = {}
         self.group_status_tracker = {}
+        self.manual_preview_models = {}
 
         self.brain_status = "CHỜ KẾT NỐI..."
         self.brain_wakeup_time = 0
         self.brain_active_symbols = []
 
         self.daemon_process = None
+        self.daemon_output_file = None
         self.log_cooldown_cache = {}
 
         # [MODIFIED V6.9.4] Kết nối MT5 TRƯỚC để lấy ID -> Setup Workspace -> Mới Load Setting
@@ -237,7 +239,18 @@ class BotUI(ctk.CTk):
 
     def start_daemon_process(self):
         try:
-            self.daemon_process = subprocess.Popen([sys.executable, "bot_daemon.py"])
+            os.makedirs(os.path.join("data", "logs"), exist_ok=True)
+            self.daemon_output_file = open(
+                os.path.join("data", "logs", "daemon_stdout.log"),
+                "a",
+                encoding="utf-8",
+                buffering=1,
+            )
+            self.daemon_process = subprocess.Popen(
+                [sys.executable, "bot_daemon.py"],
+                stdout=self.daemon_output_file,
+                stderr=subprocess.STDOUT,
+            )
             self.log_message("🚀 Đã kích hoạt Bot Daemon ngầm.", target="bot")
         except Exception as e:
             self.log_message(f"❌ Lỗi kích hoạt Daemon: {e}", error=True, target="bot")
@@ -290,6 +303,12 @@ class BotUI(ctk.CTk):
         if self.daemon_process:
             self.daemon_process.terminate()
             self.daemon_process.wait()
+        daemon_output = getattr(self, "daemon_output_file", None)
+        if daemon_output:
+            try:
+                daemon_output.close()
+            except Exception:
+                pass
         try:
             mt5.shutdown()
         except:
@@ -526,9 +545,12 @@ class BotUI(ctk.CTk):
 
     def on_symbol_change(self, new_symbol):
         config.UI_ACTIVE_SYMBOL = new_symbol
+        if hasattr(self, "var_preview_symbol"):
+            self.var_preview_symbol.set(new_symbol)
         self._save_brain_live_config()
         self.lbl_dashboard_price.configure(text="Đang nạp...", text_color="gray")
         self.update_grid_manual_preview()
+        self.refresh_manual_preview_tab()
         threading.Thread(target=lambda: mt5.symbol_select(new_symbol, True)).start()
 
     def on_direction_change(self, value):
@@ -570,6 +592,7 @@ class BotUI(ctk.CTk):
     def on_grid_mode_change(self, value):
         self.var_grid_manual_mode.set(value)
         self.update_grid_manual_preview()
+        self.refresh_manual_preview_tab()
         if self.var_manual_trade_mode.get() == "GRID":
             sym = self.cbo_symbol.get()
             self.btn_action.configure(
@@ -580,6 +603,7 @@ class BotUI(ctk.CTk):
 
     def on_manual_trade_mode_change(self, value):
         self.var_manual_trade_mode.set(value)
+        self.refresh_manual_preview_tab()
         if hasattr(self, "btn_mode_normal") and hasattr(self, "btn_mode_grid"):
             normal_on = value == "NORMAL"
             grid_on = value == "GRID"
@@ -726,6 +750,267 @@ class BotUI(ctk.CTk):
                 self.ind_hedge_ready_light.configure(fg_color="#F44336")
             self.lbl_hedge_manual_preview.configure(text=f"HEDGE Preview error: {e}")
 
+    def _preview_tf_group(self, symbol, context):
+        raw = ""
+        if hasattr(self, "var_preview_tf"):
+            raw = str(self.var_preview_tf.get() or "Auto")
+        if raw.startswith("G"):
+            return raw.split(" ", 1)[0]
+        mode = str((context or {}).get("market_mode", "ANY") or "ANY").upper()
+        return "G1" if mode in ("TREND", "BREAKOUT") else "G2"
+
+    def _fmt_price(self, value):
+        try:
+            value = float(value)
+            if value <= 0:
+                return "--"
+            return f"{value:.2f}"
+        except Exception:
+            return "--"
+
+    def _preview_color_for_status(self, status, direction=None):
+        status = str(status or "").upper()
+        direction = str(direction or "").upper()
+        if status == "READY":
+            return COL_GREEN if direction != "SELL" else COL_RED
+        if status == "BLOCK":
+            return COL_RED
+        if status == "WAIT":
+            return COL_WARN
+        return "#78909C"
+
+    def _manual_preview_from_direction(self, key, title, symbol, group, source, direction, status, reason, context):
+        price = float((context or {}).get("current_price", 0.0) or 0.0)
+        if price <= 0:
+            try:
+                tick = mt5.symbol_info_tick(symbol)
+                if tick:
+                    price = float(tick.ask if direction == "BUY" else tick.bid)
+            except Exception:
+                price = 0.0
+
+        sh = float((context or {}).get(f"swing_high_{group}", (context or {}).get("swing_high", 0.0)) or 0.0)
+        sl = float((context or {}).get(f"swing_low_{group}", (context or {}).get("swing_low", 0.0)) or 0.0)
+        atr = float((context or {}).get(f"atr_{group}", (context or {}).get("atr", 0.0)) or 0.0)
+        buffer = atr * float(getattr(config, "sl_atr_multiplier", 0.2) or 0.2)
+
+        sl_price = 0.0
+        tp1 = tp2 = tp3 = 0.0
+        if price > 0 and atr > 0:
+            if direction == "BUY":
+                sl_price = (sl - buffer) if sl > 0 else price - atr
+                risk = max(price - sl_price, atr * 0.5)
+                tp1, tp2, tp3 = price + risk, price + risk * 2, price + risk * 3
+            elif direction == "SELL":
+                sl_price = (sh + buffer) if sh > 0 else price + atr
+                risk = max(sl_price - price, atr * 0.5)
+                tp1, tp2, tp3 = price - risk, price - risk * 2, price - risk * 3
+
+        tf_label = getattr(config, f"{group}_TIMEFRAME", group)
+        entry = self._fmt_price(price)
+        if price > 0 and atr > 0:
+            pad = atr * 0.15
+            entry = (
+                f"{self._fmt_price(price - pad)}-{self._fmt_price(price + pad)}"
+                if direction in ("BUY", "SELL")
+                else self._fmt_price(price)
+            )
+
+        rr_text = "--"
+        if price > 0 and sl_price > 0 and tp1 > 0:
+            risk = abs(price - sl_price)
+            reward = abs(tp1 - price)
+            if risk > 0:
+                rr_text = f"{reward / risk:.1f}R / 2.0R / 3.0R"
+
+        can_apply = direction in ("BUY", "SELL") and sl_price > 0 and tp1 > 0 and status == "READY"
+        return {
+            "key": key,
+            "title": title,
+            "symbol": symbol,
+            "group": group,
+            "timeframe": tf_label,
+            "source": source,
+            "direction": direction,
+            "bias": "LONG" if direction == "BUY" else "SHORT" if direction == "SELL" else "WAIT",
+            "status": status,
+            "reason": reason,
+            "entry": entry,
+            "sl": sl_price,
+            "tp1": tp1,
+            "tp2": tp2,
+            "tp3": tp3,
+            "rr": rr_text,
+            "can_apply": can_apply,
+            "apply_direction": direction if direction in ("BUY", "SELL") else "",
+            "apply_sl": sl_price,
+            "apply_tp": tp1,
+        }
+
+    def build_manual_preview_models(self):
+        symbol = self.cbo_symbol.get()
+        if hasattr(self, "var_preview_symbol"):
+            symbol = self.var_preview_symbol.get() or symbol
+        context = getattr(self, "latest_market_context", {}).get(symbol, {}) or {}
+        group = self._preview_tf_group(symbol, context)
+        latest_signal = int(context.get("latest_signal", 0) or 0)
+        trend = str(context.get(f"trend_{group}", context.get("trend", "NONE")) or "NONE").upper()
+        signal_dir = "BUY" if latest_signal == 1 else "SELL" if latest_signal == -1 else ""
+        trend_dir = "BUY" if trend == "UP" else "SELL" if trend == "DOWN" else ""
+
+        signal_model = self._manual_preview_from_direction(
+            "signal",
+            "SIGNAL FALLBACK",
+            symbol,
+            group,
+            "SIGNAL",
+            signal_dir,
+            "READY" if signal_dir else "WAIT",
+            (
+                f"latest_signal={latest_signal} | {signal_dir} | TP1/2/3 = 1R/2R/3R theo SL"
+                if signal_dir
+                else f"WAIT SIGNAL | latest_signal=0 | trend_{group}={trend} | Chua tinh SL/TP vi chua co LONG/SHORT"
+            ),
+            context,
+        )
+
+        module_model = None
+        mode = self.var_manual_trade_mode.get() if hasattr(self, "var_manual_trade_mode") else "NORMAL"
+        if mode == "HEDGE":
+            try:
+                from hedge.hedge_storage import load_hedge_settings
+
+                gate = self.hedge_mgr.evaluate_entry_gate(symbol, context, load_hedge_settings())
+                direction = gate.get("signal_direction") or signal_dir or trend_dir
+                module_model = self._manual_preview_from_direction(
+                    "module",
+                    "HEDGE SETUP",
+                    symbol,
+                    group,
+                    "HEDGE",
+                    direction,
+                    "READY" if gate.get("permission") and direction else "WAIT",
+                    f"{gate.get('status', 'WAIT')}: {gate.get('reason', '---')} | E/E={gate.get('entry_status', 'OFF')}",
+                    context,
+                )
+            except Exception as exc:
+                module_model = self._manual_preview_from_direction(
+                    "module", "HEDGE SETUP", symbol, group, "HEDGE", "", "BLOCK", str(exc), context
+                )
+        else:
+            try:
+                from grid.grid_storage import load_grid_settings, load_grid_state
+
+                cfg = load_grid_settings()
+                state = load_grid_state()
+                gate = (state.get("last_preview") or {}).get(symbol, {})
+                grid_mode = self.var_grid_manual_mode.get() if hasattr(self, "var_grid_manual_mode") else cfg.get("DEFAULT_MANUAL_MODE", "NEUTRAL")
+                direction = ""
+                if str(grid_mode).upper() == "LONG":
+                    direction = "BUY"
+                elif str(grid_mode).upper() == "SHORT":
+                    direction = "SELL"
+                else:
+                    direction = signal_dir or trend_dir
+                status = "READY" if direction and str(gate.get("permission", True)) != "False" else "WAIT"
+                reason = gate.get("reason") or f"mode={grid_mode} | type={cfg.get('GRID_TYPE', 'ATR_DYNAMIC')}"
+                module_model = self._manual_preview_from_direction(
+                    "module", "GRID SETUP", symbol, group, "GRID", direction, status, reason, context
+                )
+            except Exception as exc:
+                module_model = self._manual_preview_from_direction(
+                    "module", "GRID SETUP", symbol, group, "GRID", "", "BLOCK", str(exc), context
+                )
+
+        primary = dict(signal_model)
+        primary["key"] = "primary"
+        primary["title"] = "PRIMARY SIGNAL SETUP"
+
+        self.manual_preview_models = {
+            "primary": primary,
+            "module": module_model,
+            "signal": signal_model,
+        }
+        return self.manual_preview_models
+
+    def refresh_manual_preview_tab(self):
+        if not hasattr(self, "preview_cards"):
+            return
+        try:
+            models = self.build_manual_preview_models()
+            if hasattr(self, "lbl_preview_sync"):
+                self.lbl_preview_sync.configure(
+                    text=datetime.now().strftime("SYNC %H:%M:%S"),
+                    text_color="#26C6DA",
+                )
+            if hasattr(self, "lbl_preview_ee_status") and hasattr(self, "lbl_entry_exit_preview"):
+                self.lbl_preview_ee_status.configure(
+                    text=self.lbl_entry_exit_preview.cget("text"),
+                    text_color=self.lbl_entry_exit_preview.cget("text_color"),
+                )
+            if hasattr(self, "lbl_preview_tsl_status") and hasattr(self, "lbl_tsl_preview"):
+                self.lbl_preview_tsl_status.configure(
+                    text=self.lbl_tsl_preview.cget("text"),
+                    text_color=self.lbl_tsl_preview.cget("text_color"),
+                )
+            for key, widgets in self.preview_cards.items():
+                model = models.get(key, {})
+                status = model.get("status", "WAIT")
+                direction = model.get("apply_direction") or model.get("direction")
+                color = self._preview_color_for_status(status, direction)
+                bias = model.get("bias", "WAIT")
+                widgets["frame"].configure(border_color=color)
+                widgets["title"].configure(text=model.get("title", key.upper()), text_color=color)
+                widgets["badge"].configure(text=f"{bias} | {status}", text_color=color)
+                widgets["meta"].configure(
+                    text=f"{model.get('symbol', '--')} | {model.get('timeframe', '--')} | {model.get('source', '--')}"
+                )
+                levels = widgets.get("levels", {})
+                if isinstance(levels, dict):
+                    if "entry" in levels:
+                        levels["entry"].configure(text=model.get("entry", "--"))
+                    if "sl" in levels:
+                        levels["sl"].configure(text=self._fmt_price(model.get("sl")))
+                    if "tp1" in levels:
+                        levels["tp1"].configure(text=f"{self._fmt_price(model.get('tp1'))} (1R)")
+                    if "tp2" in levels:
+                        levels["tp2"].configure(text=f"{self._fmt_price(model.get('tp2'))} (2R)")
+                    if "tp3" in levels:
+                        levels["tp3"].configure(text=f"{self._fmt_price(model.get('tp3'))} (3R)")
+                widgets["reason"].configure(text=f"Reason: {model.get('reason', '---')}")
+                apply_text = "APPLY"
+                if direction == "BUY":
+                    apply_text = "APPLY LONG"
+                elif direction == "SELL":
+                    apply_text = "APPLY SHORT"
+                widgets["apply"].configure(
+                    text=apply_text,
+                    state="normal" if model.get("can_apply") else "disabled",
+                    fg_color=color if model.get("can_apply") else "#37474F",
+                    hover_color=color if model.get("can_apply") else "#37474F",
+                )
+        except Exception as exc:
+            if hasattr(self, "lbl_preview_sync"):
+                self.lbl_preview_sync.configure(text=f"PREVIEW ERROR: {exc}", text_color=COL_RED)
+
+    def apply_manual_preview_setup(self, key):
+        model = getattr(self, "manual_preview_models", {}).get(key)
+        if not model:
+            model = self.build_manual_preview_models().get(key)
+        if not model or not model.get("can_apply"):
+            return
+        direction = model.get("apply_direction")
+        if direction in ("BUY", "SELL"):
+            self.on_direction_change(direction)
+        if model.get("apply_tp", 0) > 0:
+            self.var_manual_tp.set(f"{float(model['apply_tp']):.2f}")
+        if model.get("apply_sl", 0) > 0:
+            self.var_manual_sl.set(f"{float(model['apply_sl']):.2f}")
+        self.log_message(
+            f"[PREVIEW] Applied {model.get('source')} {model.get('symbol')} {direction} TP={self.var_manual_tp.get()} SL={self.var_manual_sl.get()}",
+            target="manual",
+        )
+
     # ==========================================
     # CÁC HÀM MỞ POPUP & GIAO DIỆN PHỤ
     # ==========================================
@@ -777,11 +1062,14 @@ class BotUI(ctk.CTk):
         
         while self.running:
             # Wait until workspace is ready
+            log_candidates = [os.path.join("data", "logs", "daemon_system_events.log")]
             try:
                 import core.storage_manager as storage_manager
-                log_path = os.path.join(storage_manager._active_account_dir, "daemon_system_events.log") if hasattr(storage_manager, '_active_account_dir') and storage_manager._active_account_dir else os.path.join("data", "logs", "daemon_system_events.log")
+                if getattr(storage_manager, "_active_account_dir", None):
+                    log_candidates.append(os.path.join(storage_manager._active_account_dir, "daemon_system_events.log"))
             except:
-                log_path = os.path.join("data", "logs", "daemon_system_events.log")
+                pass
+            log_path = next((p for p in log_candidates if os.path.exists(p)), log_candidates[0])
                 
             if not os.path.exists(log_path):
                 time.sleep(2)
@@ -803,7 +1091,15 @@ class BotUI(ctk.CTk):
     def _process_daemon_line(self, line: str):
         line = line.strip()
         if not line: return
-        
+        msg = line.split("] - ")[-1] if "] - " in line else line
+
+        if "[HEDGE]" in msg or "HEDGE_" in msg:
+            self.log_message(f"[DAEMON] {msg}", target="hedge")
+            return
+        if "[GRID]" in msg or "GRID_" in msg:
+            self.log_message(f"[DAEMON] {msg}", target="grid")
+            return
+
         # Nhận diện các sự kiện quan trọng (Vào lệnh, Chốt lệnh, Watermark)
         if "B�P C�" in line or "WATERMARK" in line or "ĐÓNG LỆNH" in line or "REVERSE TACTIC" in line:
             # Cắt bớt phần timestamp của daemon nếu có
@@ -1419,6 +1715,8 @@ class BotUI(ctk.CTk):
                 else:
                     self.lbl_tsl_preview.configure(text="TSL: Đang theo dõi...")
 
+        self.refresh_manual_preview_tab()
+
         existing_items = self.tree.get_children()
         current_tickets_on_chart = []
         child_to_parent = self.trade_mgr.state.get("child_to_parent", {})
@@ -1800,7 +2098,7 @@ class BotUI(ctk.CTk):
                 target = "grid"
             else:
                 target = "grid-log"
-        elif target == "hedge" and any(k in msg for k in ["OPEN", "CLOSE", "SUCCESS", "FAIL", "PAIR_OPENED"]):
+        elif target == "hedge" and any(k in msg for k in ["OPEN", "CLOSE", "Closed", "SUCCESS", "FAIL", "PAIR_OPENED", "SURVIVOR_ARMED"]):
             target = "hedge"
         elif target == "hedge":
             target = "hedge-log"
@@ -1809,6 +2107,8 @@ class BotUI(ctk.CTk):
 
     def _log_target_from_tab_name(self, tab_name):
         tab_name = str(tab_name or "").replace(" *", "")
+        if "Preview" in tab_name:
+            return "preview"
         if "Bot-Log" in tab_name:
             return "bot-log"
         if "GRID-Log" in tab_name:
@@ -1973,6 +2273,12 @@ class BotUI(ctk.CTk):
                     self.daemon_process.wait(timeout=5)
                 except Exception:
                     pass
+                daemon_output = getattr(self, "daemon_output_file", None)
+                if daemon_output:
+                    try:
+                        daemon_output.close()
+                    except Exception:
+                        pass
                 self.start_daemon_process()
             self.log_message("🔄 Đã xóa Cache và tạo Phiên/Group mới.", target="bot")
 

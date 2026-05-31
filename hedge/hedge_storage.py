@@ -4,6 +4,9 @@
 import copy
 import json
 import os
+import tempfile
+import threading
+import time
 from typing import Any, Dict
 
 from .hedge_config import (
@@ -12,6 +15,8 @@ from .hedge_config import (
     HEDGE_SETTINGS_FILE,
     HEDGE_STATE_FILE,
 )
+
+_write_lock = threading.RLock()
 
 
 def _account_dir() -> str:
@@ -54,11 +59,35 @@ def _load_json(path: str, defaults: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _save_json(path: str, data: Dict[str, Any]) -> None:
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp_path = f"{path}.tmp"
-    with open(tmp_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=4, ensure_ascii=False)
-    os.replace(tmp_path, path)
+    directory = os.path.dirname(path)
+    os.makedirs(directory, exist_ok=True)
+    with _write_lock:
+        fd, tmp_path = tempfile.mkstemp(
+            prefix=f".{os.path.basename(path)}.",
+            suffix=".tmp",
+            dir=directory,
+            text=True,
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=4, ensure_ascii=False)
+                f.flush()
+                os.fsync(f.fileno())
+            last_error = None
+            for attempt in range(5):
+                try:
+                    os.replace(tmp_path, path)
+                    return
+                except PermissionError as e:
+                    last_error = e
+                    time.sleep(0.05 * (attempt + 1))
+            raise last_error
+        finally:
+            try:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+            except Exception:
+                pass
 
 
 def load_hedge_settings() -> Dict[str, Any]:

@@ -893,6 +893,7 @@ def open_advanced_tools_popup(app):
     top.title("Advanced Tools")
     top.geometry("1080x720")
     top.minsize(980, 620)
+    top.resizable(True, True)
     try:
         top.transient(app)
         top.lift()
@@ -900,8 +901,37 @@ def open_advanced_tools_popup(app):
     except Exception:
         pass
     top.focus_force()
+    top._advanced_tools_zoomed = False
+
+    def _toggle_advanced_tools_fullscreen():
+        try:
+            if getattr(top, "_advanced_tools_zoomed", False):
+                top.state("normal")
+                top.geometry("1080x720")
+                top._advanced_tools_zoomed = False
+                btn_fullscreen.configure(text="FULLSCREEN")
+            else:
+                top.state("zoomed")
+                top._advanced_tools_zoomed = True
+                btn_fullscreen.configure(text="RESTORE")
+        except Exception:
+            try:
+                top.attributes("-fullscreen", not bool(top.attributes("-fullscreen")))
+            except Exception:
+                pass
+
+    toolbar = ctk.CTkFrame(top, fg_color="transparent")
+    toolbar.pack(fill="x", padx=12, pady=(8, 0))
+    btn_fullscreen = ctk.CTkButton(
+        toolbar,
+        text="FULLSCREEN",
+        width=120,
+        fg_color="#455A64",
+        command=_toggle_advanced_tools_fullscreen,
+    )
+    btn_fullscreen.pack(side="right")
     tabs = ctk.CTkTabview(top)
-    tabs.pack(fill="both", expand=True, padx=12, pady=12)
+    tabs.pack(fill="both", expand=True, padx=12, pady=(8, 12))
     tab_grid = tabs.add("GRID")
     tab_hedge = tabs.add("HEDGE")
     tab_backtest = tabs.add("BACKTEST")
