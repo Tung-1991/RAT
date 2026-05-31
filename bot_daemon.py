@@ -177,7 +177,7 @@ class StandaloneBotDaemon:
     def run(self):
         self.running = True
         logger.info(
-            "Bot Daemon V4.2.1 (Decoupled Threads & Dynamic Trend) đã khởi động."
+            "RAT6.0 Daemon started."
         )
         last_signal_scan = 0
 

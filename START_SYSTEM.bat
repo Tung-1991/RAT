@@ -1,8 +1,8 @@
 @echo off
-title KAISER TRADING SYSTEM - TOTAL RECOVERY
+title RAT6.0 - TOTAL RECOVERY
 color 0B
 echo ======================================================
-echo    KAISER TRADING SYSTEM - TOTAL RECOVERY ACTIVE
+echo    RAT6.0 - TOTAL RECOVERY ACTIVE
 echo ======================================================
 echo.
 

@@ -92,7 +92,7 @@ main_logger.addFilter(Suppress10025Filter())
 class BotUI(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("RiceAutoTrading - Master Control V6.9.3 (Kaiser Edition)")
+        self.title("RAT6.0 - Master Control (Kaiser Edition)")
         self.geometry("1650x950")
 
         self.var_auto_trade = tk.BooleanVar(value=False)
@@ -232,7 +232,7 @@ class BotUI(ctk.CTk):
         self.signal_listener.start()
 
         self.log_message(
-            "Hệ thống V6.9.3 (Đã tích hợp Sandbox V3.0 & Fix UI Sync) sẵn sàng."
+            "RAT6.0 ready."
         )
 
     def start_daemon_process(self):
