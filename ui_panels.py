@@ -169,7 +169,7 @@ def setup_left_panel(app, parent):
         f_mode_row,
         text="⚙",
         width=30,
-        height=28,
+        height=26,
         fg_color="#444",
         hover_color="#666",
         command=app.open_preset_config_popup,
@@ -298,7 +298,7 @@ def setup_left_panel(app, parent):
         f_ad_cluster,
         text="⚙ AD",
         width=34,
-        height=28,
+        height=26,
         font=("Roboto", 11, "bold"),
         fg_color="#00838F",
         hover_color="#006064",
@@ -351,7 +351,7 @@ def setup_left_panel(app, parent):
         f_entry,
         text="\u2699 E/E",
         width=54,
-        height=28,
+        height=26,
         fg_color="#424242",
         hover_color="#616161",
         command=app.open_entry_exit_popup,
@@ -963,7 +963,7 @@ def setup_right_panel(app, parent):
         scrollbar_button_color="#164B52",
         scrollbar_button_hover_color="#1D626B",
     )
-    preview_body.pack(fill="both", expand=True, padx=6, pady=6)
+    preview_body.pack(fill="both", expand=True, padx=4, pady=4)
 
     preview_panel = ctk.CTkFrame(
         preview_body,
@@ -977,7 +977,7 @@ def setup_right_panel(app, parent):
     preview_panel.grid_columnconfigure(1, minsize=132)
 
     preview_head = ctk.CTkFrame(preview_panel, fg_color="transparent")
-    preview_head.grid(row=0, column=0, columnspan=2, sticky="ew", padx=14, pady=(12, 4))
+    preview_head.grid(row=0, column=0, columnspan=2, sticky="ew", padx=10, pady=(8, 2))
     preview_head.grid_columnconfigure(2, weight=1)
 
     lbl_title = ctk.CTkLabel(
@@ -1049,7 +1049,7 @@ def setup_right_panel(app, parent):
         "DYNAMIC",
     ]
     selector_row = ctk.CTkFrame(preview_panel, fg_color="#102326", corner_radius=6)
-    selector_row.grid(row=1, column=0, columnspan=2, sticky="ew", padx=14, pady=(2, 8))
+    selector_row.grid(row=1, column=0, columnspan=2, sticky="ew", padx=10, pady=(2, 5))
     selector_row.grid_columnconfigure(1, weight=1)
     selector_row.grid_columnconfigure(3, weight=1)
     ctk.CTkLabel(
@@ -1059,17 +1059,17 @@ def setup_right_panel(app, parent):
         text_color="#FFB3AD",
         width=34,
         anchor="w",
-    ).grid(row=0, column=0, padx=(10, 4), pady=8, sticky="w")
+    ).grid(row=0, column=0, padx=(8, 4), pady=5, sticky="w")
     app.cbo_preview_sl_mode = ctk.CTkOptionMenu(
         selector_row,
         values=["Percent", "SL Sandbox", "Swing Retest", "Swing Struct", "FIB", "Pullback"],
         variable=app.var_preview_sl_mode,
         width=132,
-        height=30,
+        height=28,
         font=("Roboto", 12, "bold"),
         command=app.on_preview_sl_mode_change,
     )
-    app.cbo_preview_sl_mode.grid(row=0, column=1, padx=(0, 10), pady=8, sticky="ew")
+    app.cbo_preview_sl_mode.grid(row=0, column=1, padx=(0, 8), pady=5, sticky="ew")
     ctk.CTkLabel(
         selector_row,
         text="TP",
@@ -1077,17 +1077,17 @@ def setup_right_panel(app, parent):
         text_color="#9AFFC4",
         width=34,
         anchor="w",
-    ).grid(row=0, column=2, padx=(0, 4), pady=8, sticky="w")
+    ).grid(row=0, column=2, padx=(0, 4), pady=5, sticky="w")
     app.cbo_preview_tp_mode = ctk.CTkOptionMenu(
         selector_row,
         values=["OFF", "RR", "Swing Retest", "Swing Struct", "FIB", "Pullback"],
         variable=app.var_preview_tp_mode,
         width=132,
-        height=30,
+        height=28,
         font=("Roboto", 12, "bold"),
         command=app.on_preview_tp_mode_change,
     )
-    app.cbo_preview_tp_mode.grid(row=0, column=3, padx=(0, 10), pady=8, sticky="ew")
+    app.cbo_preview_tp_mode.grid(row=0, column=3, padx=(0, 8), pady=5, sticky="ew")
     ctk.CTkLabel(
         selector_row,
         text="TF",
@@ -1095,18 +1095,18 @@ def setup_right_panel(app, parent):
         text_color="#B2EBF2",
         width=34,
         anchor="w",
-    ).grid(row=0, column=4, padx=(0, 4), pady=8, sticky="w")
+    ).grid(row=0, column=4, padx=(0, 4), pady=5, sticky="w")
     app.var_preview_tp_group = app.var_preview_sl_group
     app.cbo_preview_sl_group = ctk.CTkOptionMenu(
         selector_row,
         values=tf_values,
         variable=app.var_preview_sl_group,
         width=112,
-        height=30,
+        height=28,
         font=("Roboto", 12, "bold"),
         command=app.on_preview_group_change,
     )
-    app.cbo_preview_sl_group.grid(row=0, column=5, padx=(0, 10), pady=8, sticky="e")
+    app.cbo_preview_sl_group.grid(row=0, column=5, padx=(0, 8), pady=5, sticky="e")
     app.cbo_preview_tp_group = app.cbo_preview_sl_group
 
     app.chk_preview_trade_after_apply = ctk.CTkCheckBox(
@@ -1129,7 +1129,7 @@ def setup_right_panel(app, parent):
         text_color="#78909C",
         anchor="w",
     )
-    lbl_meta.grid(row=2, column=0, columnspan=2, sticky="ew", padx=14, pady=(0, 8))
+    lbl_meta.grid(row=2, column=0, columnspan=2, sticky="ew", padx=10, pady=(0, 4))
 
     def _preview_line(parent, row, title, color, wrap=1200):
         ctk.CTkLabel(
@@ -1138,8 +1138,8 @@ def setup_right_panel(app, parent):
             font=("Roboto", 11, "bold"),
             text_color=color,
             anchor="w",
-            width=96,
-        ).grid(row=row, column=0, sticky="w", padx=(0, 8), pady=4)
+            width=74,
+        ).grid(row=row, column=0, sticky="w", padx=(0, 6), pady=0)
         val = ctk.CTkLabel(
             parent,
             text="--",
@@ -1148,12 +1148,13 @@ def setup_right_panel(app, parent):
             anchor="w",
             justify="left",
             wraplength=wrap,
+            height=16,
         )
-        val.grid(row=row, column=1, sticky="ew", padx=(0, 6), pady=4)
+        val.grid(row=row, column=1, sticky="ew", padx=(0, 4), pady=0)
         return val
 
     levels = ctk.CTkFrame(preview_panel, fg_color="transparent")
-    levels.grid(row=3, column=0, columnspan=2, sticky="ew", padx=14, pady=(0, 6))
+    levels.grid(row=3, column=0, columnspan=2, sticky="ew", padx=10, pady=(0, 0))
     levels.grid_columnconfigure(1, weight=1)
     level_widgets = {}
     target_widgets = {}
@@ -1166,10 +1167,10 @@ def setup_right_panel(app, parent):
         font=("Roboto", 11, "bold"),
         text_color="#B2EBF2",
         anchor="w",
-        width=96,
-    ).grid(row=1, column=0, sticky="w", padx=(0, 8), pady=4)
+        width=74,
+    ).grid(row=1, column=0, sticky="w", padx=(0, 6), pady=0)
     sltp_line = ctk.CTkFrame(levels, fg_color="transparent")
-    sltp_line.grid(row=1, column=1, sticky="ew", padx=(0, 6), pady=4)
+    sltp_line.grid(row=1, column=1, sticky="ew", padx=(0, 4), pady=0)
     sltp_line.grid_columnconfigure(1, weight=1)
     level_widgets["sl"] = ctk.CTkLabel(
         sltp_line,
@@ -1190,8 +1191,9 @@ def setup_right_panel(app, parent):
     )
     level_widgets["tp_main"].grid(row=0, column=1, sticky="ew")
     level_widgets["rr"] = level_widgets["tp_main"]
-    level_widgets["tsl"] = _preview_line(levels, 2, "TSL", "#9AFFC4", wrap=900)
-    level_widgets["ee_detail"] = _preview_line(levels, 3, "E/E", "#FFD600", wrap=780)
+    level_widgets["stats"] = _preview_line(levels, 2, "Risk", "#FFD600", wrap=900)
+    level_widgets["tsl"] = _preview_line(levels, 3, "TSL", "#9AFFC4", wrap=900)
+    level_widgets["ee_detail"] = _preview_line(levels, 4, "E/E", "#FFD600", wrap=780)
 
     chips = ctk.CTkFrame(preview_panel, fg_color="transparent")
     chips.grid(row=4, column=0, columnspan=2, sticky="ew", padx=14, pady=(0, 8))

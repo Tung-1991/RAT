@@ -34,56 +34,60 @@ class DataEngine:
         if df is None or df.empty: 
             return df
         try:
+            def needs(name):
+                cfg = inds_config.get(name, {}) or {}
+                return bool(cfg.get("active") or cfg.get("is_trend"))
+
             # ADX
-            if inds_config.get("adx", {}).get("active"):
+            if needs("adx"):
                 p = int(inds_config["adx"].get("params", {}).get("period", 14))
                 df.ta.adx(length=p, append=True)
             
             # EMA Cơ bản
-            if inds_config.get("ema", {}).get("active"):
+            if needs("ema"):
                 p = int(inds_config["ema"].get("params", {}).get("period", 50))
                 df.ta.ema(length=p, append=True)
             
             # EMA Cross (Cần 2 đường EMA)
-            if inds_config.get("ema_cross", {}).get("active"):
+            if needs("ema_cross"):
                 f = int(inds_config["ema_cross"].get("params", {}).get("fast", 9))
                 s = int(inds_config["ema_cross"].get("params", {}).get("slow", 21))
                 df.ta.ema(length=f, append=True)
                 df.ta.ema(length=s, append=True)
             
             # RSI
-            if inds_config.get("rsi", {}).get("active"):
+            if needs("rsi"):
                 p = int(inds_config["rsi"].get("params", {}).get("period", 14))
                 df.ta.rsi(length=p, append=True)
             
             # MACD
-            if inds_config.get("macd", {}).get("active"):
+            if needs("macd"):
                 f = int(inds_config["macd"].get("params", {}).get("fast", 12))
                 s = int(inds_config["macd"].get("params", {}).get("slow", 26))
                 sig = int(inds_config["macd"].get("params", {}).get("signal", 9))
                 df.ta.macd(fast=f, slow=s, signal=sig, append=True)
             
             # Bollinger Bands
-            if inds_config.get("bollinger_bands", {}).get("active"):
+            if needs("bollinger_bands"):
                 p = int(inds_config["bollinger_bands"].get("params", {}).get("period", 20))
                 std = float(inds_config["bollinger_bands"].get("params", {}).get("std_dev", 2.0))
                 df.ta.bbands(length=p, std=std, append=True)
             
             # Supertrend
-            if inds_config.get("supertrend", {}).get("active"):
+            if needs("supertrend"):
                 p = int(inds_config["supertrend"].get("params", {}).get("period", 10))
                 m = float(inds_config["supertrend"].get("params", {}).get("multiplier", 3.0))
                 df.ta.supertrend(length=p, multiplier=m, append=True)
             
             # Stochastic
-            if inds_config.get("stochastic", {}).get("active"):
+            if needs("stochastic"):
                 k = int(inds_config["stochastic"].get("params", {}).get("k", 14))
                 d = int(inds_config["stochastic"].get("params", {}).get("d", 3))
                 sm = int(inds_config["stochastic"].get("params", {}).get("smooth", 3))
                 df.ta.stoch(k=k, d=d, smooth_k=sm, append=True)
             
             # Parabolic SAR
-            if inds_config.get("psar", {}).get("active") or (tsl_config and "PSAR_STEP" in tsl_config):
+            if needs("psar") or (tsl_config and "PSAR_STEP" in tsl_config):
                 # Ưu tiên thông số từ TSL Config nếu có
                 step = 0.02
                 max_step = 0.2
@@ -97,7 +101,7 @@ class DataEngine:
                 df.ta.psar(af0=step, af=step, max_af=max_step, append=True)
 
             # Pivot Points (Standard Floor)
-            if inds_config.get("pivot_points", {}).get("active"):
+            if needs("pivot_points"):
                 prev_h = df['high'].shift(1)
                 prev_l = df['low'].shift(1)
                 prev_c = df['close'].shift(1)
@@ -106,13 +110,13 @@ class DataEngine:
                 df['S1'] = (2 * df['PP']) - prev_h
 
             # ATR
-            if inds_config.get("atr", {}).get("active"):
+            if needs("atr"):
                 p = int(inds_config["atr"].get("params", {}).get("period", 14))
                 df.ta.atr(length=p, append=True)
             
             # Nến Nhật
-            is_candle_active = inds_config.get("candle", {}).get("active")
-            is_mc_active = inds_config.get("multi_candle", {}).get("active")
+            is_candle_active = needs("candle")
+            is_mc_active = needs("multi_candle")
             if is_candle_active or is_mc_active:
                 O, H, L, C = df['open'], df['high'], df['low'], df['close']
                 body = (C - O).abs()
@@ -250,6 +254,18 @@ class DataEngine:
             context[f"swing_high_{grp}"] = float(sh)
             context[f"swing_low_{grp}"] = float(sl)
             context[f"atr_{grp}"] = float(atr)
+            try:
+                ema20 = df_grp["close"].ewm(span=20, adjust=False).mean().iloc[-1]
+                context[f"ema20_{grp}"] = float(ema20)
+                context[f"EMA_20_{grp}"] = float(ema20)
+            except Exception:
+                pass
+            try:
+                bb_mid = df_grp["close"].rolling(window=20).mean().iloc[-1]
+                if not pd.isna(bb_mid):
+                    context[f"bb_mid_{grp}"] = float(bb_mid)
+            except Exception:
+                pass
             write_structure_context(
                 context,
                 grp,
@@ -321,3 +337,4 @@ class DataEngine:
         return df_entry, df_trend, context
 
 data_engine = DataEngine()
+

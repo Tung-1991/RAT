@@ -618,7 +618,10 @@ class BotStrategyUI(ctk.CTkToplevel):
 
             # B/S/N summary
             lbl_summary = ctk.CTkLabel(col, text="B: 0 | S: 0 | N: 0", font=("Roboto", 12, "bold"), text_color="#FFF")
-            lbl_summary.pack(pady=5)
+            lbl_summary.pack(pady=(4, 1))
+
+            lbl_trend = ctk.CTkLabel(col, text="Trend: NONE | --", font=("Consolas", 11, "bold"), text_color="#FFD600")
+            lbl_trend.pack(pady=(0, 3))
 
             lbl_prev = ctk.CTkLabel(col, text="Trước: --", font=("Roboto", 11), text_color="#BDBDBD")
             lbl_prev.pack(pady=(0, 5))
@@ -630,6 +633,7 @@ class BotStrategyUI(ctk.CTkToplevel):
             self.preview_cards[grp] = {
                 "title": lbl_title,
                 "summary": lbl_summary,
+                "trend": lbl_trend,
                 "prev": lbl_prev,
                 "scroll_f": scroll_f,
                 "frame": col,
@@ -690,6 +694,17 @@ class BotStrategyUI(ctk.CTkToplevel):
                 title_text = f"{self._group_label(grp)}: {texts.get(status_val, 'WAIT')} - {current_duration}\n{rule_hint}"
                 card["title"].configure(text=title_text, fg_color=colors.get(status_val, "#333"))
                 card["summary"].configure(text=f"B: {data.get('B', 0)}  |  S: {data.get('S', 0)}  |  N: {data.get('N', 0)}")
+                trend_state = str(context.get(f"trend_{grp}", "NONE") or "NONE").upper()
+                trend_names = []
+                for ind_name, cfg in (self.brain_data.get("indicators", {}) or {}).items():
+                    groups = cfg.get("groups", [cfg.get("group", "G2")])
+                    if cfg.get("is_trend", False) and grp in groups:
+                        trend_names.append(ind_name.upper())
+                trend_color = "#00E676" if trend_state == "UP" else "#FF5252" if trend_state == "DOWN" else "#FFD600"
+                card["trend"].configure(
+                    text=f"Trend: {trend_state} | {','.join(trend_names) if trend_names else '--'}",
+                    text_color=trend_color,
+                )
                 card["prev"].configure(text=prev_duration)
                 
                 inds_list = data.get("inds", [])

@@ -1098,6 +1098,8 @@ class BotUI(ctk.CTk):
             if technical_decision.get("status") in ("READY", "WAIT"):
                 return technical_decision
             if "PULLBACK_ZONE" in non_r or len(non_r) == 1:
+                if technical_decision.get("status") == "ERROR" and technical_decision.get("entry_tactic") in (None, "", "OFF"):
+                    technical_decision["entry_tactic"] = non_r[0]
                 return technical_decision
         return evaluate_entry_exit(symbol, direction, price, context, ee_cfg)
 
@@ -1153,7 +1155,7 @@ class BotUI(ctk.CTk):
         elif sl_mode == "SANDBOX":
             brain = self.trade_mgr._get_brain_settings(symbol)
             risk_tsl = brain.get("risk_tsl", {}) or {}
-            sandbox_group = str(risk_tsl.get("base_sl", getattr(config, "BOT_BASE_SL", "G2")) or "G2")
+            sandbox_group = str(sl_group or risk_tsl.get("base_sl", getattr(config, "BOT_BASE_SL", "G2")) or "G2")
             if "DYNAMIC" in sandbox_group:
                 sandbox_group = "G1" if market_mode in ("TREND", "BREAKOUT") else "G2"
             sandbox_atr = self._safe_float(context.get(f"atr_{sandbox_group}", context.get("atr_entry", 0.0)))
@@ -1244,8 +1246,12 @@ class BotUI(ctk.CTk):
                 tp_mult = float(params.get("MANUAL_SWING_TP_ATR_MULT", params.get("MANUAL_SWING_SL_ATR_MULT", getattr(config, "sl_atr_multiplier", 0.2))) or 0.2)
                 buffer = tp_atr * tp_mult
                 tp_price = tp_high - buffer if direction == "BUY" else tp_low + buffer
+                step = abs(tp_price - price)
+                tp_targets = [
+                    price + step * idx if direction == "BUY" else price - step * idx
+                    for idx in (1, 2, 3)
+                ] if step > 0 else [tp_price, None, None]
                 tp_source = f"MANUAL_{'SWING_STRUCTURE' if tp_mode == 'SWING_STRUCTURE' else 'SWING_RETEST'}:{tp_group}"
-                tp_targets[0] = tp_price
             else:
                 rr = float(params.get("TP_RR_RATIO", 1.5) or 1.5)
                 tp_targets = _rr_ladder(rr)
@@ -1350,8 +1356,10 @@ class BotUI(ctk.CTk):
             "manual_sl_mode": sl_mode,
             "manual_tp_mode": tp_mode,
             "risk_usd": risk_usd,
+            "risk_pct": risk_pct,
             "reward_usd": reward_usd,
             "rr": rr_actual,
+            "equity": equity,
             "commission": commission,
             "spread_cost": spread_cost,
             "timeframe": getattr(config, f"{sl_group}_TIMEFRAME", sl_group),
@@ -1550,7 +1558,10 @@ class BotUI(ctk.CTk):
             atr = self._safe_float(context.get(f"atr_{group}", context.get("atr_entry", 0.0)))
             mult = self._safe_float(pull.get("tp_atr_multiplier", 1.5), 1.5)
             if price > 0 and atr > 0:
-                targets.append(price + atr * mult if direction == "BUY" else price - atr * mult)
+                targets.extend(
+                    price + atr * mult * idx if direction == "BUY" else price - atr * mult * idx
+                    for idx in (1, 2, 3)
+                )
             source = f"PULL {mult:g}ATR ({len(targets)} lv)"
         elif exit_tactic in ("SWING_REJECTION", "SWING_STRUCTURE") or tp_source == "SWING":
             group = self._resolve_preview_group_name(ee_cfg.get("sl_source_group", "G2"), context)
@@ -1559,14 +1570,25 @@ class BotUI(ctk.CTk):
             atr = self._safe_float(context.get(f"atr_{group}", 0.0))
             buffer = atr * self._safe_float((ee_cfg.get("swing_rejection", {}) or {}).get("sl_atr_buffer", 0.2), 0.2)
             if sh > 0 and sl > 0:
-                targets.append(sh - buffer if direction == "BUY" else sl + buffer)
+                first = sh - buffer if direction == "BUY" else sl + buffer
+                step = abs(first - price)
+                if step > 0:
+                    targets.extend(
+                        price + step * idx if direction == "BUY" else price - step * idx
+                        for idx in (1, 2, 3)
+                    )
+                else:
+                    targets.append(first)
             source = f"SWING {group} ({len(targets)} lv)"
         elif exit_tactic in ("FALLBACK_R", "R", "AUTO") or tp_source in ("R", "--"):
             rr = self._safe_float((ee_cfg.get("default_exit", {}) or {}).get("tp_rr_ratio", 1.5), 1.5)
             sl = self._safe_float(setup.get("sl", 0.0))
             dist = abs(price - sl) if price > 0 and sl > 0 else 0.0
             if dist > 0:
-                targets.append(price + dist * rr if direction == "BUY" else price - dist * rr)
+                targets.extend(
+                    price + dist * rr * idx if direction == "BUY" else price - dist * rr * idx
+                    for idx in (1, 2, 3)
+                )
             source = f"{rr:g}R ({len(targets)} lv)"
         else:
             tp = self._safe_float((ee_decision or {}).get("tp", 0.0))
@@ -1672,6 +1694,9 @@ class BotUI(ctk.CTk):
         manual_tp_group = setup.get("manual_tp_group", "--")
         manual_sl_label = self._group_tf_label(manual_sl_group)
         manual_tp_label = self._group_tf_label(manual_tp_group)
+        setup["trend"] = trend
+        setup["market_mode"] = market_mode
+        setup["manual_mode"] = mode
         setup["entry_signal"] = f"{signal_text} | Trend {self._group_tf_label(group)} {trend}"
         setup["sl_rule"] = f"{self._fmt_price(setup.get('sl'))} | {setup.get('sl_source_label', '--')} {manual_sl_label}"
         setup["exit_rule"] = (
@@ -1750,9 +1775,11 @@ class BotUI(ctk.CTk):
                 setup = model.get("setup", {}) or {}
                 atr_group = self._group_tf_label(setup.get("manual_sl_group", setup.get("group", "--")))
                 atr_txt = self._fmt_price(setup.get("atr"))
+                trend_raw = str(setup.get("trend", "") or "").upper()
+                meta_color = "#FF5252" if trend_raw == "DOWN" else "#00E676" if trend_raw == "UP" else "#FFD600" if trend_raw in ("NONE", "FLAT", "SIDEWAY") else "#B2EBF2"
                 widgets["meta"].configure(
-                    text=f"{model.get('symbol', '--')} | {model.get('timeframe', '--')} | ATR {atr_group}={atr_txt} | {model.get('source', '--')}",
-                    text_color="#B2EBF2",
+                    text=f"{model.get('symbol', '--')} | {model.get('timeframe', '--')} | ATR {atr_group}={atr_txt} | {setup.get('market_mode', '--')} | {trend_raw or '--'}",
+                    text_color=meta_color,
                 )
                 def _set_preview_text(widget, text):
                     if isinstance(widget, (tuple, list)) and len(widget) >= 2:
@@ -1768,6 +1795,8 @@ class BotUI(ctk.CTk):
                         zone_txt = zone if zone != "--" else "Market"
                         entry_txt = f"{model.get('entry_signal', '--')} | Price {model.get('entry_price', '--')} | Zone {zone_txt}"
                         _set_preview_text(levels["entry_signal"], entry_txt)
+                        if hasattr(levels["entry_signal"], "configure"):
+                            levels["entry_signal"].configure(text_color=meta_color)
                         tp_parts = []
                         for idx, target_key in enumerate(("tp1", "tp2", "tp3"), start=1):
                             val = model.get(target_key)
@@ -1776,13 +1805,23 @@ class BotUI(ctk.CTk):
                             tp_parts = ["TP OFF"]
                         _set_preview_text(levels["sl"], f"SL {self._fmt_price(model.get('sl'))}")
                         _set_preview_text(levels["tp_main"], " | ".join(tp_parts))
-                        _set_preview_text(levels["tsl"], model.get("tsl_rule", "--"))
+                        if "stats" in levels:
+                            lot = float(setup.get("lot", 0.0) or 0.0)
+                            risk_usd = float(setup.get("risk_usd", 0.0) or 0.0)
+                            reward_usd = float(setup.get("reward_usd", 0.0) or 0.0)
+                            equity = float(setup.get("equity", 0.0) or 0.0)
+                            pnl_pct = (reward_usd / equity * 100.0) if equity > 0 else 0.0
+                            risk_pct = float(setup.get("risk_pct", 0.0) or 0.0)
+                            _set_preview_text(levels["stats"], f"Lot {lot:.2f} | Risk ${risk_usd:.2f} ({risk_pct:g}%) | Reward@TP1 ${reward_usd:.2f} | PnL {pnl_pct:.2f}%")
+                        tsl_txt = str(model.get("tsl_rule", "--") or "--").replace(" trigger ", " @").replace("WIN ", "")
+                        _set_preview_text(levels["tsl"], tsl_txt)
                         ee_reason = str(model.get("setup", {}).get("ee_reason", "") or "")
                         ee_txt = gate or "Entry filter OFF"
                         if "MISSING E/E DATA" in ee_reason.upper() and "FALLBACK R" in ee_reason.upper():
                             ee_reason = ""
                         if ee_reason and ee_reason not in ee_txt:
                             ee_txt = f"{ee_txt} | {ee_reason}"
+                        ee_txt = ee_txt.replace("Giá đã vào vùng ", "In ").replace("GiÃ¡ Ä‘Ã£ vÃ o vÃ¹ng ", "In ")
                         _set_preview_text(levels["ee_detail"], ee_txt)
                     else:
                         if "entry_signal" in levels:
