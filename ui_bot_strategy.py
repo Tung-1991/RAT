@@ -34,26 +34,27 @@ def _get_template_dir():
         return "data/templates"
 
 EE_EXIT_LABELS = {
-    "AUTO": "AUTO - TP theo Entry",
+    "AUTO": "TP theo Entry thắng",
     "NO_TP": "OFF - không đặt TP",
-    "FALLBACK_R": "R TP",
-    "SWING_REJECTION": "SWING RETEST TP",
-    "SWING_STRUCTURE": "SWING STRUCT TP",
-    "FIB_RETRACE": "FIB TP",
-    "PULLBACK_ZONE": "PULLBACK TP",
+    "FALLBACK_R": "TP theo RR",
+    "SWING_REJECTION": "TP Swing Retest",
+    "SWING_STRUCTURE": "TP Swing Struct",
+    "FIB_RETRACE": "TP theo FIB",
+    "PULLBACK_ZONE": "TP theo Pullback",
 }
 EE_EXIT_VALUES = {v: k for k, v in EE_EXIT_LABELS.items()}
 
 EE_SL_LABELS = {
-    "SANDBOX": "SANDBOX - dùng Bot Base SL",
-    "AUTO": "AUTO - SL theo Entry",
-    "SWING_REJECTION": "SWING RETEST - E/E SL",
-    "SWING_STRUCTURE": "SWING STRUCT SL",
-    "FIB_RETRACE": "FIB SL",
-    "PULLBACK_ZONE": "PULLBACK SL",
-    "FALLBACK_R": "R / không override",
+    "SANDBOX": "SL Sandbox (không override)",
+    "AUTO": "SL theo Entry thắng",
+    "SWING_REJECTION": "SL Swing Retest (SwingPoint + ATR)",
+    "SWING_STRUCTURE": "SL Swing Struct (HL/LH + ATR)",
+    "FIB_RETRACE": "SL FIB (+ ATR buffer)",
+    "PULLBACK_ZONE": "SL Pullback (+ ATR buffer)",
+    "FALLBACK_R": "OFF - SL Sandbox",
 }
 EE_SL_VALUES = {v: k for k, v in EE_SL_LABELS.items()}
+EE_SL_PICK_OPTIONS = [v for k, v in EE_SL_LABELS.items() if k != "FALLBACK_R"]
 
 EE_MISSING_LABELS = {
     "FALLBACK_R": "Thiếu dữ liệu -> dùng R",
@@ -1469,7 +1470,7 @@ class BotStrategyUI(ctk.CTkToplevel):
         ).pack(side="left", padx=15)
         ctk.CTkLabel(
             f_sl_mult,
-            text="Buffer cộng thêm quanh swing của Bot Base SL.",
+            text="Buffer cộng thêm quanh SL Sandbox.",
             font=("Roboto", 11, "italic"),
             text_color="#B0BEC5",
         ).pack(side="left", padx=(0, 10))
@@ -1601,17 +1602,17 @@ class BotStrategyUI(ctk.CTkToplevel):
             anchor="w",
         ).pack(side="left", padx=(0, 8))
         self.bot_entry_exit_sl_var = ctk.StringVar(
-            value=EE_SL_LABELS.get(entry_exit_data.get("sl_mode", "SANDBOX"), "SANDBOX - dùng Bot Base SL")
+            value=EE_SL_LABELS.get(entry_exit_data.get("sl_mode", "SANDBOX"), "SL Sandbox (không override)")
         )
         ctk.CTkOptionMenu(
             f_sl_pick,
-            values=list(EE_SL_VALUES.keys()),
+            values=EE_SL_PICK_OPTIONS,
             variable=self.bot_entry_exit_sl_var,
-            width=190,
+            width=260,
         ).pack(side="left", padx=(0, 12))
         ctk.CTkLabel(
             f_sl_pick,
-            text="SANDBOX = SL gốc phía trên. AUTO = đi theo entry vừa khớp. SWING/FIB/PULLBACK = ép SL theo tactic đó.",
+            text="Entry thắng = mode đầu tiên READY theo thứ tự Retest > Struct > FIB > Pullback > R. SL Sandbox = E/E chỉ lọc entry, SL vẫn dùng rule sandbox gốc.",
             font=("Roboto", 11, "italic"),
             text_color="#B0BEC5",
             wraplength=820,
@@ -1628,17 +1629,17 @@ class BotStrategyUI(ctk.CTkToplevel):
             anchor="w",
         ).pack(side="left", padx=(0, 8))
         self.bot_entry_exit_var = ctk.StringVar(
-            value=EE_EXIT_LABELS.get(entry_exit_data.get("exit_tactic", "AUTO"), "AUTO - TP theo Entry")
+            value=EE_EXIT_LABELS.get(entry_exit_data.get("exit_tactic", "AUTO"), "TP theo Entry thắng")
         )
         ctk.CTkOptionMenu(
             f_exit_pick,
             values=list(EE_EXIT_VALUES.keys()),
             variable=self.bot_entry_exit_var,
-            width=170,
+            width=210,
         ).pack(side="left", padx=(0, 12))
         ctk.CTkLabel(
             f_exit_pick,
-            text="AUTO = TP theo entry vừa khớp. OFF = không đặt TP, chỉ còn SL/TSL/manual quản lý thoát.",
+            text="TP theo Entry thắng = entry thắng bằng rule nào thì TP theo rule đó; nếu entry thắng là R thì TP theo RR. OFF = không đặt TP.",
             font=("Roboto", 11, "italic"),
             text_color="#B0BEC5",
             wraplength=820,

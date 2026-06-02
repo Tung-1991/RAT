@@ -1900,7 +1900,7 @@ def open_preset_config_popup(app):
     data = config.PRESETS.get(p_name, {})
     top = ctk.CTkToplevel(app)
     top.title(f"Preset: {p_name}")
-    top.geometry("430x700")
+    top.geometry("540x780")
     top.attributes("-topmost", True)
     # top.transient(app)
     acc = app.connector.get_account_info()
@@ -1911,18 +1911,18 @@ def open_preset_config_popup(app):
     _add_popup_hint(
         top,
         "- Preset này dùng cho lệnh manual theo preset đang chọn.\n"
-        "- Risk % + SL % quyết định lot; TP RR tính lời/lỗ theo R.\n"
-        "- SwingPoint nếu bật sẽ ưu tiên cấu trúc giá thay cho % cố định.",
+        "- Manual input ngoài panel luôn ưu tiên hơn preset.\n"
+        "- Preset chỉ định rule riêng cho SL và TP manual: Percent/RR hoặc SwingPoint.",
         padx=20,
         pady=(0, 10),
-        wraplength=370,
+        wraplength=470,
     )
     ctk.CTkLabel(top, text="Risk Per Trade (%):").pack()
     e_risk = ctk.CTkEntry(top, justify="center")
     e_risk.insert(0, str(data.get("RISK_PERCENT", 0.3)))
     e_risk.pack()
     lbl_h_risk = ctk.CTkLabel(
-        top, text="~ -$0.00", text_color="gray", font=("Roboto", 11)
+        top, text="~ -$0.00", text_color="#CFD8DC", font=("Roboto", 11)
     )
     lbl_h_risk.pack(pady=(0, 5))
     ctk.CTkLabel(top, text="Stop Loss (%):").pack()
@@ -1930,7 +1930,7 @@ def open_preset_config_popup(app):
     e_sl.insert(0, str(data.get("SL_PERCENT", 0.5)))
     e_sl.pack()
     lbl_h_sl = ctk.CTkLabel(
-        top, text="~ Price: 0.00", text_color="gray", font=("Roboto", 11)
+        top, text="~ Price: 0.00", text_color="#CFD8DC", font=("Roboto", 11)
     )
     lbl_h_sl.pack(pady=(0, 5))
     ctk.CTkLabel(top, text="Take Profit (RR):").pack()
@@ -1938,7 +1938,7 @@ def open_preset_config_popup(app):
     e_tp.insert(0, str(data.get("TP_RR_RATIO", 2.0)))
     e_tp.pack()
     lbl_h_tp = ctk.CTkLabel(
-        top, text="~ +$0.00", text_color="gray", font=("Roboto", 11)
+        top, text="~ +$0.00", text_color="#CFD8DC", font=("Roboto", 11)
     )
     lbl_h_tp.pack(pady=(0, 10))
 
@@ -1946,67 +1946,134 @@ def open_preset_config_popup(app):
     var_strict = ctk.BooleanVar(value=data.get("STRICT_RISK", False))
     chk_strict = ctk.CTkCheckBox(
         top,
-        text="Strict Risk (Trừ phí Spread/Comm vào Lot)",
+        text="Strict Risk: lot đã trừ spread/comm",
         variable=var_strict,
-        text_color="#F44336",
+        text_color="#FF6E66",
         font=("Roboto", 12, "bold"),
     )
     chk_strict.pack(pady=(5, 10))
 
-    # --- THÊM MỚI TỪ ĐÂY ---
-    var_swing_sl = ctk.BooleanVar(value=data.get("USE_SWING_SL", False))
-    var_manual_sl_group = tk.StringVar(value=data.get("MANUAL_SWING_SL_GROUP", "G2"))
-    chk_swing_sl = ctk.CTkCheckBox(
+    # --- Manual SL/TP rules ---
+    sl_mode_default = str(data.get("MANUAL_SL_MODE") or ("SWING" if data.get("USE_SWING_SL", False) else "PERCENT")).upper()
+    tp_mode_default = str(data.get("MANUAL_TP_MODE") or ("SWING" if data.get("USE_SWING_TP", False) else "RR")).upper()
+    _manual_mode_display = {
+        "PERCENT": "Percent",
+        "SANDBOX": "SL Sandbox",
+        "RR": "RR",
+        "OFF": "OFF",
+        "NO_TP": "OFF",
+        "SWING": "Swing Retest",
+        "SWING_REJECTION": "Swing Retest",
+        "SWING_RETEST": "Swing Retest",
+        "SWING_STRUCTURE": "Swing Struct",
+        "SWING_STRUCT": "Swing Struct",
+        "FIB": "FIB",
+        "PULLBACK": "Pullback",
+        "PULLBACK_ZONE": "Pullback",
+    }
+    var_manual_sl_mode = tk.StringVar(value=_manual_mode_display.get(sl_mode_default, "Percent"))
+    var_manual_tp_mode = tk.StringVar(value=_manual_mode_display.get(tp_mode_default, "RR"))
+    var_swing_sl = ctk.BooleanVar(value="SWING" in sl_mode_default)
+    var_manual_sl_group = tk.StringVar(value=data.get("MANUAL_SL_GROUP", data.get("MANUAL_SWING_SL_GROUP", "G2")))
+    var_manual_sl_buffer = tk.StringVar(value=str(data.get("MANUAL_SWING_SL_ATR_MULT", getattr(config, "sl_atr_multiplier", 0.2))))
+    var_swing_tp = ctk.BooleanVar(value="SWING" in tp_mode_default)
+    var_manual_tp_group = tk.StringVar(value=data.get("MANUAL_TP_GROUP", data.get("MANUAL_SWING_TP_GROUP", data.get("MANUAL_SWING_SL_GROUP", "G2"))))
+
+    f_sl_rule = ctk.CTkFrame(
         top,
-        text="Dùng SL theo cấu trúc SwingPoint",
-        variable=var_swing_sl,
-        text_color="#29B6F6",
-        font=("Roboto", 12, "bold"),
+        fg_color="#142124",
+        corner_radius=8,
+        border_width=1,
+        border_color="#37565C",
     )
-    chk_swing_sl.pack(pady=(0, 4))
-    f_manual_sl_group = ctk.CTkFrame(top, fg_color="transparent")
-    f_manual_sl_group.pack(fill="x", padx=80, pady=(0, 10))
+    f_sl_rule.pack(fill="x", padx=20, pady=(0, 10))
+    ctk.CTkLabel(
+        f_sl_rule,
+        text="Manual SL Rule",
+        font=("Roboto", 13, "bold"),
+        text_color="#FFB3AD",
+    ).pack(anchor="w", padx=14, pady=(10, 4))
+    f_manual_sl_group = ctk.CTkFrame(f_sl_rule, fg_color="transparent")
+    f_manual_sl_group.pack(fill="x", padx=14, pady=(0, 12))
     ctk.CTkLabel(
         f_manual_sl_group,
-        text="Manual SL Group:",
-        width=130,
+        text="Mode:",
+        width=82,
         anchor="w",
-        text_color="#B0BEC5",
+        text_color="#D9EEF2",
+    ).pack(side="left")
+    ctk.CTkOptionMenu(
+        f_manual_sl_group,
+        values=["Percent", "SL Sandbox", "Swing Retest", "Swing Struct", "FIB", "Pullback"],
+        variable=var_manual_sl_mode,
+        width=140,
+        command=lambda v: var_swing_sl.set("Swing" in v),
+    ).pack(side="left", padx=(0, 8))
+    ctk.CTkLabel(
+        f_manual_sl_group,
+        text="Group:",
+        width=54,
+        anchor="w",
+        text_color="#D9EEF2",
     ).pack(side="left")
     ctk.CTkOptionMenu(
         f_manual_sl_group,
         values=["G0", "G1", "G2", "G3", "DYNAMIC"],
         variable=var_manual_sl_group,
-        width=110,
+        width=90,
+    ).pack(side="left", padx=(0, 8))
+    ctk.CTkLabel(
+        f_manual_sl_group,
+        text="Buffer:",
+        width=58,
+        anchor="w",
+        text_color="#D9EEF2",
     ).pack(side="left")
-    var_swing_tp = ctk.BooleanVar(value=data.get("USE_SWING_TP", False))
-    var_manual_tp_group = tk.StringVar(value=data.get("MANUAL_SWING_TP_GROUP", data.get("MANUAL_SWING_SL_GROUP", "G2")))
-    chk_swing_tp = ctk.CTkCheckBox(
+    ctk.CTkEntry(f_manual_sl_group, textvariable=var_manual_sl_buffer, width=58, justify="center").pack(side="left")
+
+    f_tp_rule = ctk.CTkFrame(
         top,
-        text="Dùng TP theo cấu trúc SwingPoint",
-        variable=var_swing_tp,
-        text_color="#66BB6A",
-        font=("Roboto", 12, "bold"),
+        fg_color="#142124",
+        corner_radius=8,
+        border_width=1,
+        border_color="#37565C",
     )
-    chk_swing_tp.pack(pady=(0, 4))
-    f_manual_tp_group = ctk.CTkFrame(top, fg_color="transparent")
-    f_manual_tp_group.pack(fill="x", padx=80, pady=(0, 10))
+    f_tp_rule.pack(fill="x", padx=20, pady=(0, 12))
+    ctk.CTkLabel(
+        f_tp_rule,
+        text="Manual Exit Target Rule",
+        font=("Roboto", 13, "bold"),
+        text_color="#9AFFC4",
+    ).pack(anchor="w", padx=14, pady=(10, 4))
+    f_manual_tp_group = ctk.CTkFrame(f_tp_rule, fg_color="transparent")
+    f_manual_tp_group.pack(fill="x", padx=14, pady=(0, 12))
     ctk.CTkLabel(
         f_manual_tp_group,
-        text="Manual TP Group:",
-        width=130,
+        text="Mode:",
+        width=82,
         anchor="w",
-        text_color="#B0BEC5",
+        text_color="#D9EEF2",
+    ).pack(side="left")
+    ctk.CTkOptionMenu(
+        f_manual_tp_group,
+        values=["OFF", "RR", "Swing Retest", "Swing Struct", "FIB", "Pullback"],
+        variable=var_manual_tp_mode,
+        width=140,
+        command=lambda v: var_swing_tp.set("Swing" in v),
+    ).pack(side="left", padx=(0, 8))
+    ctk.CTkLabel(
+        f_manual_tp_group,
+        text="Group:",
+        width=54,
+        anchor="w",
+        text_color="#D9EEF2",
     ).pack(side="left")
     ctk.CTkOptionMenu(
         f_manual_tp_group,
         values=["G0", "G1", "G2", "G3", "DYNAMIC"],
         variable=var_manual_tp_group,
-        width=110,
-    ).pack(side="left")
-
-    # --- KẾT THÚC THÊM MỚI ---
-
+        width=90,
+    ).pack(side="left", padx=(0, 8))
     def live(*args):
         try:
             r, s, t = (
@@ -2020,7 +2087,7 @@ def open_preset_config_popup(app):
             )
             lbl_h_sl.configure(
                 text=f"(~ Đặt SL quanh {cp * (1 - s / 100):.2f} cho BUY)",
-                text_color="gray",
+                text_color="#CFD8DC",
             )
             lbl_h_tp.configure(
                 text=f"(~ Lãi ${risk_usd * t:.2f} nếu chạm TP)", text_color="#66BB6A"
@@ -2033,19 +2100,49 @@ def open_preset_config_popup(app):
     live()
 
     def save_preset():
+        sl_raw = str(var_manual_sl_mode.get() or "Percent").upper()
+        tp_raw = str(var_manual_tp_mode.get() or "RR").upper()
+        sl_mode = (
+            "SWING_STRUCTURE" if "STRUCT" in sl_raw
+            else "SWING_REJECTION" if "RETEST" in sl_raw
+            else "SANDBOX" if "SANDBOX" in sl_raw
+            else "FIB" if "FIB" in sl_raw
+            else "PULLBACK" if "PULL" in sl_raw
+            else "PERCENT"
+        )
+        tp_mode = (
+            "OFF" if "OFF" in tp_raw
+            else "SWING_STRUCTURE" if "STRUCT" in tp_raw
+            else "SWING_REJECTION" if "RETEST" in tp_raw
+            else "FIB" if "FIB" in tp_raw
+            else "PULLBACK" if "PULL" in tp_raw
+            else "RR"
+        )
         config.PRESETS[p_name].update(
             {
                 "RISK_PERCENT": float(e_risk.get()),
                 "SL_PERCENT": float(e_sl.get()),
                 "TP_RR_RATIO": float(e_tp.get()),
                 "STRICT_RISK": var_strict.get(),
-                "USE_SWING_SL": var_swing_sl.get(),  # Lưu biến mới
-                "USE_SWING_TP": var_swing_tp.get(),
+                "MANUAL_SL_MODE": sl_mode,
+                "MANUAL_TP_MODE": tp_mode,
+                "USE_SWING_SL": sl_mode in ("SWING_REJECTION", "SWING_STRUCTURE"),
+                "USE_SWING_TP": tp_mode in ("SWING_REJECTION", "SWING_STRUCTURE"),
+                "MANUAL_SL_GROUP": var_manual_sl_group.get() or "G2",
+                "MANUAL_TP_GROUP": var_manual_tp_group.get() or "G2",
                 "MANUAL_SWING_SL_GROUP": var_manual_sl_group.get() or "G2",
                 "MANUAL_SWING_TP_GROUP": var_manual_tp_group.get() or "G2",
+                "MANUAL_SWING_SL_ATR_MULT": float(var_manual_sl_buffer.get() or 0.2),
             }
         )
         app.save_settings()
+        if hasattr(app, "var_preview_sl_group"):
+            display = var_manual_sl_group.get() or "G2"
+            app.var_preview_sl_group.set(display)
+        if hasattr(app, "var_preview_tp_group"):
+            display = var_manual_tp_group.get() or "G2"
+            app.var_preview_tp_group.set(display)
+        app.refresh_manual_preview_tab()
         top.destroy()
     ctk.CTkButton(top, text="LƯU PRESET", command=save_preset, fg_color=COL_GREEN).pack(
         pady=20, fill="x", padx=30

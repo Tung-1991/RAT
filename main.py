@@ -568,6 +568,19 @@ class BotUI(ctk.CTk):
         self.refresh_manual_preview_tab()
         threading.Thread(target=lambda: mt5.symbol_select(new_symbol, True)).start()
 
+    def on_preset_change(self, value):
+        try:
+            config.DEFAULT_PRESET = value
+        except Exception:
+            pass
+        self.refresh_manual_preview_tab()
+
+    def on_manual_input_change(self, *_):
+        try:
+            self.refresh_manual_preview_tab()
+        except Exception:
+            pass
+
     def on_direction_change(self, value):
         self.var_direction.set(value)
         if hasattr(self, "btn_dir_buy") and hasattr(self, "btn_dir_sell"):
@@ -620,6 +633,8 @@ class BotUI(ctk.CTk):
         preset = self.cbo_preset.get()
         group = self._preview_group_value()
         preset_cfg = config.PRESETS.setdefault(preset, {})
+        preset_cfg["MANUAL_SL_GROUP"] = group
+        preset_cfg["MANUAL_TP_GROUP"] = group
         preset_cfg["MANUAL_SWING_SL_GROUP"] = group
         preset_cfg["MANUAL_SWING_TP_GROUP"] = group
         try:
@@ -630,6 +645,60 @@ class BotUI(ctk.CTk):
 
     def on_preview_manual_sl_group_change(self, value):
         self.on_preview_group_change(value)
+
+    def _preview_group_from_value(self, value, default="G2"):
+        raw = str(value or default)
+        if raw.startswith("G"):
+            return raw.split(" ", 1)[0]
+        if "DYNAMIC" in raw.upper():
+            return "DYNAMIC"
+        return default
+
+    def on_preview_sl_group_change(self, value):
+        preset = self.cbo_preset.get()
+        group = self._preview_group_from_value(value)
+        preset_cfg = config.PRESETS.setdefault(preset, {})
+        preset_cfg["MANUAL_SL_GROUP"] = group
+        preset_cfg["MANUAL_SWING_SL_GROUP"] = group
+        try:
+            self.save_settings()
+        except Exception as exc:
+            self.log_message(f"Save preview SL group error: {exc}", error=True, target="manual")
+        self.refresh_manual_preview_tab()
+
+    def on_preview_tp_group_change(self, value):
+        preset = self.cbo_preset.get()
+        group = self._preview_group_from_value(value)
+        preset_cfg = config.PRESETS.setdefault(preset, {})
+        preset_cfg["MANUAL_TP_GROUP"] = group
+        preset_cfg["MANUAL_SWING_TP_GROUP"] = group
+        try:
+            self.save_settings()
+        except Exception as exc:
+            self.log_message(f"Save preview TP group error: {exc}", error=True, target="manual")
+        self.refresh_manual_preview_tab()
+
+    def on_preview_sl_mode_change(self, value):
+        preset_cfg = config.PRESETS.setdefault(self.cbo_preset.get(), {})
+        mode = self._manual_mode_value(value, "PERCENT")
+        preset_cfg["MANUAL_SL_MODE"] = mode
+        preset_cfg["USE_SWING_SL"] = mode in ("SWING_REJECTION", "SWING_STRUCTURE")
+        try:
+            self.save_settings()
+        except Exception as exc:
+            self.log_message(f"Save preview SL mode error: {exc}", error=True, target="manual")
+        self.refresh_manual_preview_tab()
+
+    def on_preview_tp_mode_change(self, value):
+        preset_cfg = config.PRESETS.setdefault(self.cbo_preset.get(), {})
+        mode = self._manual_mode_value(value, "RR")
+        preset_cfg["MANUAL_TP_MODE"] = mode
+        preset_cfg["USE_SWING_TP"] = mode in ("SWING_REJECTION", "SWING_STRUCTURE")
+        try:
+            self.save_settings()
+        except Exception as exc:
+            self.log_message(f"Save preview TP mode error: {exc}", error=True, target="manual")
+        self.refresh_manual_preview_tab()
 
     def on_manual_trade_mode_change(self, value):
         self.var_manual_trade_mode.set(value)
@@ -838,6 +907,200 @@ class BotUI(ctk.CTk):
             return "G1" if mode in ("TREND", "BREAKOUT") else "G2"
         return group
 
+    def _manual_rule_mode(self, params, mode_key, legacy_key, default):
+        mode = str((params or {}).get(mode_key, "") or "").upper()
+        if mode:
+            if "SANDBOX" in mode:
+                return "SANDBOX"
+            if mode in ("SWING_REJECTION", "SWING_RETEST", "RETEST"):
+                return "SWING_REJECTION"
+            if mode in ("SWING_STRUCTURE", "SWING_STRUCT", "STRUCT"):
+                return "SWING_STRUCTURE"
+            if "FIB" in mode:
+                return "FIB"
+            if "PULL" in mode:
+                return "PULLBACK"
+            if "SWING" in mode:
+                return "SWING_REJECTION"
+            if "RR" in mode:
+                return "RR"
+            if "OFF" in mode or "NO_TP" in mode:
+                return "OFF"
+            if "PERCENT" in mode:
+                return "PERCENT"
+            return default
+        return "SWING_REJECTION" if bool((params or {}).get(legacy_key, False)) else default
+
+    def _manual_mode_display(self, mode, kind="SL"):
+        mode = str(mode or "").upper()
+        mapping = {
+            "PERCENT": "Percent",
+            "SANDBOX": "SL Sandbox",
+            "RR": "RR",
+            "OFF": "OFF",
+            "NO_TP": "OFF",
+            "SWING": "Swing Retest",
+            "SWING_REJECTION": "Swing Retest",
+            "SWING_RETEST": "Swing Retest",
+            "RETEST": "Swing Retest",
+            "SWING_STRUCTURE": "Swing Struct",
+            "SWING_STRUCT": "Swing Struct",
+            "STRUCT": "Swing Struct",
+            "FIB": "FIB",
+            "FIB_RETRACE": "FIB",
+            "PULLBACK": "Pullback",
+            "PULLBACK_ZONE": "Pullback",
+            "PULL": "Pullback",
+        }
+        return mapping.get(mode, "Percent" if kind == "SL" else "RR")
+
+    def _manual_mode_value(self, value, default):
+        mode = str(value or default).upper()
+        if "STRUCT" in mode:
+            return "SWING_STRUCTURE"
+        if "SANDBOX" in mode:
+            return "SANDBOX"
+        if "RETEST" in mode:
+            return "SWING_REJECTION"
+        if "FIB" in mode:
+            return "FIB"
+        if "PULL" in mode:
+            return "PULLBACK"
+        if "SWING" in mode:
+            return "SWING_REJECTION"
+        if "PERCENT" in mode:
+            return "PERCENT"
+        if mode == "R" or "RR" in mode:
+            return "RR"
+        if "OFF" in mode or "NO_TP" in mode:
+            return "OFF"
+        return default
+
+    def _manual_source_label(self, source):
+        raw = str(source or "--")
+        upper = raw.upper()
+        if upper == "MANUAL_SL":
+            return "Manual Input"
+        if upper == "MANUAL_TP":
+            return "Manual Input"
+        if upper.startswith("SANDBOX") or upper.startswith("MANUAL_SANDBOX"):
+            return "SL Sandbox"
+        if "SWING_RETEST" in upper or "SWING_REJECTION" in upper:
+            return "Swing Retest"
+        if "SWING_STRUCTURE" in upper:
+            return "Swing Struct"
+        if upper.startswith("MANUAL_SWING"):
+            return "Swing Retest"
+        if upper.startswith("MANUAL_FIB"):
+            return "FIB"
+        if upper.startswith("MANUAL_PULLBACK"):
+            return "Pullback"
+        if upper == "PERCENT":
+            return "Percent"
+        if upper == "OFF" or upper == "NO_TP":
+            return "OFF"
+        if upper == "RR" or upper.endswith("R"):
+            return "RR"
+        return raw
+
+    def _pullback_zone_from_context(self, direction, context, group, params):
+        atr = self._safe_float((context or {}).get(f"atr_{group}", (context or {}).get("atr_entry", 0.0)))
+        if atr <= 0:
+            return None, atr, "PULLBACK"
+        source = str((params or {}).get("MANUAL_PULLBACK_SOURCE", "EMA20") or "EMA20").upper()
+        if source == "SWING":
+            high = self._safe_float((context or {}).get(f"swing_high_{group}", 0.0))
+            low = self._safe_float((context or {}).get(f"swing_low_{group}", 0.0))
+            mid = low if direction == "BUY" else high
+        elif source == "BB_MID":
+            mid = self._safe_float((context or {}).get(f"bb_mid_{group}", (context or {}).get("bb_mid", 0.0)))
+        else:
+            mid = self._safe_float(
+                (context or {}).get(f"ema20_{group}", (context or {}).get("ema20", (context or {}).get(f"EMA_20_{group}", 0.0)))
+            )
+            source = "EMA20"
+        if mid <= 0:
+            return None, atr, f"PULLBACK_{source}"
+        width = atr * self._safe_float((params or {}).get("MANUAL_PULLBACK_ATR_WIDTH", 0.5), 0.5)
+        return (mid - width, mid + width), atr, f"PULLBACK_{source}"
+
+    def _fmt_zone(self, zone):
+        try:
+            if not zone or len(zone) < 2:
+                return "--"
+            lo, hi = float(zone[0]), float(zone[1])
+            if lo <= 0 or hi <= 0:
+                return "--"
+            return f"{lo:.2f}-{hi:.2f}"
+        except Exception:
+            return "--"
+
+    def _format_ee_gate(self, decision, current_price=0.0):
+        status = str((decision or {}).get("status", "OFF") or "OFF").upper()
+        tactic = str((decision or {}).get("entry_tactic", "OFF") or "OFF").upper()
+        short = {
+            "FALLBACK_R": "R",
+            "SWING_REJECTION": "RETEST",
+            "SWING_STRUCTURE": "STRUCT",
+            "FIB_RETRACE": "FIB",
+            "PULLBACK_ZONE": "PULL",
+            "MULTI_WAIT": "MULTI",
+            "OFF": "OFF",
+        }.get(tactic, tactic)
+        zone = decision.get("entry_zone") if isinstance(decision, dict) else None
+        zone_txt = self._fmt_zone(zone)
+        if zone_txt != "--":
+            return f"{status} {short} | Zone {zone_txt}"
+        reason = str((decision or {}).get("reason", "") or "")
+        if tactic == "FALLBACK_R" and "MISSING E/E DATA" in reason.upper():
+            reason = ""
+        reason = (
+            reason.replace("Missing pullback source", "Missing")
+            .replace("Missing ATR", "Missing ATR")
+            .replace("Fallback R entry", "")
+        ).strip()
+        return f"{status} {short}" + (f" | {reason}" if reason else "")
+
+    def _entry_zone_decision(self, decision):
+        if not isinstance(decision, dict):
+            return {}
+        if self._fmt_zone(decision.get("entry_zone")) != "--":
+            return decision
+        waits = decision.get("wait_decisions") or []
+        order = ["SWING_REJECTION", "SWING_STRUCTURE", "FIB_RETRACE", "PULLBACK_ZONE", "FALLBACK_R"]
+        for tactic in order:
+            for item in waits:
+                if item.get("entry_tactic") == tactic and self._fmt_zone(item.get("entry_zone")) != "--":
+                    return item
+        return decision
+
+    def _manual_preview_entry_exit_cfg(self, base_cfg):
+        cfg = dict(base_cfg or {})
+        active = [k for k, v in getattr(self, "entry_exit_tactic_states", {}).items() if v]
+        if active:
+            cfg["enabled"] = True
+            cfg["active_tactics"] = active
+            cfg["entry_tactics"] = active
+        return cfg
+
+    def _preview_entry_exit_decision(self, symbol, direction, price, context, ee_cfg):
+        from core.entry_exit_engine import evaluate_entry_exit
+
+        active = list((ee_cfg or {}).get("entry_tactics") or (ee_cfg or {}).get("active_tactics") or [])
+        non_r = [mode for mode in active if mode != "FALLBACK_R"]
+        if non_r:
+            technical_cfg = dict(ee_cfg or {})
+            technical_cfg["active_tactics"] = non_r
+            technical_cfg["entry_tactics"] = non_r
+            technical_cfg["enabled"] = True
+            technical_cfg["missing_data_policy"] = "ERROR"
+            technical_decision = evaluate_entry_exit(symbol, direction, price, context, technical_cfg)
+            if technical_decision.get("status") in ("READY", "WAIT"):
+                return technical_decision
+            if "PULLBACK_ZONE" in non_r or len(non_r) == 1:
+                return technical_decision
+        return evaluate_entry_exit(symbol, direction, price, context, ee_cfg)
+
     def _group_tf_label(self, group):
         group = str(group or "--")
         tf = getattr(config, f"{group}_TIMEFRAME", group)
@@ -867,24 +1130,86 @@ class BotUI(ctk.CTk):
         market_mode = str(context.get("market_mode", "ANY") or "ANY").upper()
 
         sl_source = "PERCENT"
-        sl_group = self._resolve_manual_preset_group(params, "MANUAL_SWING_SL_GROUP", context)
-        tp_group = self._resolve_manual_preset_group(params, "MANUAL_SWING_TP_GROUP", context)
+        if "MANUAL_SL_GROUP" not in params and "MANUAL_SWING_SL_GROUP" in params:
+            params = dict(params)
+            params["MANUAL_SL_GROUP"] = params.get("MANUAL_SWING_SL_GROUP")
+        if "MANUAL_TP_GROUP" not in params and "MANUAL_SWING_TP_GROUP" in params:
+            params = dict(params)
+            params["MANUAL_TP_GROUP"] = params.get("MANUAL_SWING_TP_GROUP")
+        sl_group = self._resolve_manual_preset_group(params, "MANUAL_SL_GROUP", context)
+        tp_group = self._resolve_manual_preset_group(params, "MANUAL_TP_GROUP", context)
         atr_key = f"atr_{sl_group}"
         swing_low_key = f"swing_low_{sl_group}"
         swing_high_key = f"swing_high_{sl_group}"
         atr_val = self._safe_float(context.get(atr_key, context.get("atr", 0.0)))
         swing_low = self._safe_float(context.get(swing_low_key, 0.0))
         swing_high = self._safe_float(context.get(swing_high_key, 0.0))
-        use_swing_sl = bool(params.get("USE_SWING_SL", False))
+        sl_mode = self._manual_rule_mode(params, "MANUAL_SL_MODE", "USE_SWING_SL", "PERCENT")
+        tp_mode = self._manual_rule_mode(params, "MANUAL_TP_MODE", "USE_SWING_TP", "RR")
 
         if manual_sl > 0:
             sl_price = manual_sl
             sl_source = "MANUAL_SL"
-        elif use_swing_sl and atr_val > 0 and swing_low > 0 and swing_high > 0:
+        elif sl_mode == "SANDBOX":
+            brain = self.trade_mgr._get_brain_settings(symbol)
+            risk_tsl = brain.get("risk_tsl", {}) or {}
+            sandbox_group = str(risk_tsl.get("base_sl", getattr(config, "BOT_BASE_SL", "G2")) or "G2")
+            if "DYNAMIC" in sandbox_group:
+                sandbox_group = "G1" if market_mode in ("TREND", "BREAKOUT") else "G2"
+            sandbox_atr = self._safe_float(context.get(f"atr_{sandbox_group}", context.get("atr_entry", 0.0)))
+            sandbox_low = self._safe_float(context.get(f"swing_low_{sandbox_group}", 0.0))
+            sandbox_high = self._safe_float(context.get(f"swing_high_{sandbox_group}", 0.0))
+            sandbox_mult = self._safe_float(risk_tsl.get("sl_atr_multiplier", getattr(config, "sl_atr_multiplier", 0.2)), 0.2)
+            if sandbox_atr > 0 and sandbox_low > 0 and sandbox_high > 0:
+                buffer = sandbox_atr * sandbox_mult
+                sl_price = sandbox_low - buffer if direction == "BUY" else sandbox_high + buffer
+                sl_source = f"SANDBOX:{sandbox_group}"
+                sl_group = sandbox_group
+                atr_val = sandbox_atr
+            else:
+                sl_dist = price * (float(params.get("SL_PERCENT", 0.5) or 0.5) / 100.0)
+                sl_price = price - sl_dist if direction == "BUY" else price + sl_dist
+                sl_source = "PERCENT"
+        elif sl_mode == "SWING_REJECTION" and atr_val > 0 and swing_low > 0 and swing_high > 0:
             sl_mult = float(params.get("MANUAL_SWING_SL_ATR_MULT", getattr(config, "sl_atr_multiplier", 0.2)) or 0.2)
             buffer = atr_val * sl_mult
             sl_price = swing_low - buffer if direction == "BUY" else swing_high + buffer
-            sl_source = f"MANUAL_SWING:{sl_group}"
+            sl_source = f"MANUAL_SWING_RETEST:{sl_group}"
+        elif sl_mode == "SWING_STRUCTURE" and atr_val > 0:
+            try:
+                from core.market_structure import structure_from_context
+                ms = structure_from_context(context, sl_group)
+            except Exception:
+                ms = {}
+            sl_mult = float(params.get("MANUAL_SWING_SL_ATR_MULT", getattr(config, "sl_atr_multiplier", 0.2)) or 0.2)
+            buffer = atr_val * sl_mult
+            if direction == "BUY" and self._safe_float(ms.get("hl")) > 0:
+                sl_price = self._safe_float(ms.get("hl")) - buffer
+                sl_source = f"MANUAL_SWING_STRUCTURE:{sl_group}"
+            elif direction == "SELL" and self._safe_float(ms.get("lh")) > 0:
+                sl_price = self._safe_float(ms.get("lh")) + buffer
+                sl_source = f"MANUAL_SWING_STRUCTURE:{sl_group}"
+            elif swing_low > 0 and swing_high > 0:
+                sl_price = swing_low - buffer if direction == "BUY" else swing_high + buffer
+                sl_source = f"MANUAL_SWING_RETEST:{sl_group}"
+            else:
+                sl_dist = price * (float(params.get("SL_PERCENT", 0.5) or 0.5) / 100.0)
+                sl_price = price - sl_dist if direction == "BUY" else price + sl_dist
+                sl_source = "PERCENT"
+        elif sl_mode == "FIB" and atr_val > 0 and swing_low > 0 and swing_high > 0:
+            tol = atr_val * float(params.get("MANUAL_FIB_SL_ATR_MULT", params.get("MANUAL_SWING_SL_ATR_MULT", 0.2)) or 0.2)
+            sl_price = swing_low - tol if direction == "BUY" else swing_high + tol
+            sl_source = f"MANUAL_FIB:{sl_group}"
+        elif sl_mode == "PULLBACK":
+            zone, pull_atr, pull_src = self._pullback_zone_from_context(direction, context, sl_group, params)
+            if zone and pull_atr > 0:
+                buffer = pull_atr * float(params.get("MANUAL_PULLBACK_SL_ATR_MULT", params.get("MANUAL_SWING_SL_ATR_MULT", 0.2)) or 0.2)
+                sl_price = zone[0] - buffer if direction == "BUY" else zone[1] + buffer
+                sl_source = f"MANUAL_{pull_src}:{sl_group}"
+            else:
+                sl_dist = price * (float(params.get("SL_PERCENT", 0.5) or 0.5) / 100.0)
+                sl_price = price - sl_dist if direction == "BUY" else price + sl_dist
+                sl_source = "PERCENT"
         else:
             sl_dist = price * (float(params.get("SL_PERCENT", 0.5) or 0.5) / 100.0)
             sl_price = price - sl_dist if direction == "BUY" else price + sl_dist
@@ -894,11 +1219,21 @@ class BotUI(ctk.CTk):
             return {"ready": False, "reason": "INVALID_SL_DISTANCE"}
 
         tp_source = "RR"
-        use_swing_tp = bool(params.get("USE_SWING_TP", False))
+        tp_targets = [None, None, None]
+        def _rr_ladder(rr_value):
+            rr_value = float(rr_value or 1.5)
+            return [
+                price + sl_distance * rr_value * idx if direction == "BUY" else price - sl_distance * rr_value * idx
+                for idx in (1, 2, 3)
+            ]
         if manual_tp > 0:
             tp_price = manual_tp
             tp_source = "MANUAL_TP"
-        elif use_swing_tp:
+            tp_targets[0] = tp_price
+        elif tp_mode == "OFF":
+            tp_price = 0.0
+            tp_source = "OFF"
+        elif tp_mode in ("SWING_REJECTION", "SWING_STRUCTURE"):
             tp_atr_key = f"atr_{tp_group}"
             tp_low_key = f"swing_low_{tp_group}"
             tp_high_key = f"swing_high_{tp_group}"
@@ -909,14 +1244,50 @@ class BotUI(ctk.CTk):
                 tp_mult = float(params.get("MANUAL_SWING_TP_ATR_MULT", params.get("MANUAL_SWING_SL_ATR_MULT", getattr(config, "sl_atr_multiplier", 0.2))) or 0.2)
                 buffer = tp_atr * tp_mult
                 tp_price = tp_high - buffer if direction == "BUY" else tp_low + buffer
-                tp_source = f"MANUAL_SWING:{tp_group}"
+                tp_source = f"MANUAL_{'SWING_STRUCTURE' if tp_mode == 'SWING_STRUCTURE' else 'SWING_RETEST'}:{tp_group}"
+                tp_targets[0] = tp_price
             else:
                 rr = float(params.get("TP_RR_RATIO", 1.5) or 1.5)
-                tp_price = price + sl_distance * rr if direction == "BUY" else price - sl_distance * rr
+                tp_targets = _rr_ladder(rr)
+                tp_price = tp_targets[0]
+                tp_source = f"{rr:g}R"
+        elif tp_mode == "FIB":
+            tp_atr_key = f"atr_{tp_group}"
+            tp_low_key = f"swing_low_{tp_group}"
+            tp_high_key = f"swing_high_{tp_group}"
+            tp_low = self._safe_float(context.get(tp_low_key, 0.0))
+            tp_high = self._safe_float(context.get(tp_high_key, 0.0))
+            leg = abs(tp_high - tp_low)
+            if tp_low > 0 and tp_high > 0 and leg > 0:
+                levels = self._parse_preview_levels(params.get("MANUAL_FIB_TP_LEVELS", "1.272,1.618,2.0"))
+                vals = [tp_low + leg * lvl if direction == "BUY" else tp_high - leg * lvl for lvl in levels[:3]]
+                tp_targets = vals + [None] * max(0, 3 - len(vals))
+                tp_price = tp_targets[0]
+                tp_source = f"MANUAL_FIB:{tp_group}"
+            else:
+                rr = float(params.get("TP_RR_RATIO", 1.5) or 1.5)
+                tp_targets = _rr_ladder(rr)
+                tp_price = tp_targets[0]
+                tp_source = f"{rr:g}R"
+        elif tp_mode == "PULLBACK":
+            zone, pull_atr, pull_src = self._pullback_zone_from_context(direction, context, tp_group, params)
+            mult = float(params.get("MANUAL_PULLBACK_TP_ATR_MULT", 1.5) or 1.5)
+            if pull_atr > 0:
+                tp_targets = [
+                    price + pull_atr * mult * idx if direction == "BUY" else price - pull_atr * mult * idx
+                    for idx in (1, 2, 3)
+                ]
+                tp_price = tp_targets[0]
+                tp_source = f"MANUAL_{pull_src}:{tp_group}"
+            else:
+                rr = float(params.get("TP_RR_RATIO", 1.5) or 1.5)
+                tp_targets = _rr_ladder(rr)
+                tp_price = tp_targets[0]
                 tp_source = f"{rr:g}R"
         else:
             rr = float(params.get("TP_RR_RATIO", 1.5) or 1.5)
-            tp_price = price + sl_distance * rr if direction == "BUY" else price - sl_distance * rr
+            tp_targets = _rr_ladder(rr)
+            tp_price = tp_targets[0]
             tp_source = f"{rr:g}R"
 
         order_type = mt5.ORDER_TYPE_BUY if direction == "BUY" else mt5.ORDER_TYPE_SELL
@@ -974,6 +1345,10 @@ class BotUI(ctk.CTk):
             "lot_source": lot_source + cap_note,
             "sl_source": sl_source,
             "tp_source": tp_source,
+            "sl_source_label": self._manual_source_label(sl_source),
+            "tp_source_label": self._manual_source_label(tp_source),
+            "manual_sl_mode": sl_mode,
+            "manual_tp_mode": tp_mode,
             "risk_usd": risk_usd,
             "reward_usd": reward_usd,
             "rr": rr_actual,
@@ -983,6 +1358,9 @@ class BotUI(ctk.CTk):
             "group": sl_group,
             "manual_sl_group": sl_group,
             "manual_tp_group": tp_group,
+            "tp_targets": tp_targets[:3],
+            "manual_sl_buffer": float(params.get("MANUAL_SWING_SL_ATR_MULT", getattr(config, "sl_atr_multiplier", 0.2)) or 0.2),
+            "manual_tp_buffer": float(params.get("MANUAL_SWING_TP_ATR_MULT", params.get("MANUAL_SWING_SL_ATR_MULT", getattr(config, "sl_atr_multiplier", 0.2))) or 0.2),
             "atr_key": atr_key,
             "swing_low_key": swing_low_key,
             "swing_high_key": swing_high_key,
@@ -994,8 +1372,9 @@ class BotUI(ctk.CTk):
 
     def _make_preview_model(self, key, title, status, reason, setup, source, can_apply=False):
         direction = (setup or {}).get("direction", "")
-        tp_targets = (setup or {}).get("tp_targets", [None, None, None])
-        tp_targets = list(tp_targets)[:3] + [None] * max(0, 3 - len(tp_targets))
+        visible_targets = self._preview_target_values(setup)
+        tp_targets = visible_targets[:3] + [None] * max(0, 3 - len(visible_targets))
+        show_tp_ladder = len(visible_targets) > 1
         return {
             "key": key,
             "title": title,
@@ -1006,13 +1385,23 @@ class BotUI(ctk.CTk):
             "bias": "LONG" if direction == "BUY" else "SHORT" if direction == "SELL" else "WAIT",
             "status": status,
             "reason": reason,
+            "entry_signal": (setup or {}).get("entry_signal", "--"),
+            "entry_price": self._fmt_price((setup or {}).get("price")),
             "entry": self._fmt_price((setup or {}).get("price")),
+            "ee_gate": (setup or {}).get("ee_gate", "--"),
+            "entry_zone": (setup or {}).get("entry_zone", "--"),
+            "sl_rule": (setup or {}).get("sl_rule", "--"),
+            "exit_rule": (setup or {}).get("exit_rule", "--"),
+            "tsl_rule": (setup or {}).get("tsl_rule", "--"),
             "sl": (setup or {}).get("sl", 0.0),
             "tp_main": (setup or {}).get("tp", 0.0),
             "tp1": tp_targets[0],
             "tp2": tp_targets[1],
             "tp3": tp_targets[2],
+            "show_tp_ladder": show_tp_ladder,
             "tp_source": (setup or {}).get("tp_source", "--"),
+            "sl_source_label": (setup or {}).get("sl_source_label", "--"),
+            "tp_source_label": (setup or {}).get("tp_source_label", "--"),
             "ee_status": (setup or {}).get("ee_status", "--"),
             "chips": (setup or {}).get("chips", []),
             "can_apply": bool(can_apply),
@@ -1110,14 +1499,17 @@ class BotUI(ctk.CTk):
             detail.append(f"DEF: {'+'.join(defs)} xử lý theo điều kiện vị thế")
 
         line1 = f"TSL: {' + '.join(modes)}"
-        line2 = " | ".join(detail) if detail else "Đang chờ đủ dữ liệu rule."
+        winner = next((d for d in detail if "thi" not in d.lower() and "missing" not in d.lower()), detail[0] if detail else "")
+        line2 = f"WIN {winner}" if winner else "Waiting rule data"
         return line1, line2
 
-    def _parse_preview_levels(self, raw):
+    def _parse_preview_levels(self, raw, default=None):
+        default = default or []
         try:
-            return [float(x.strip()) for x in str(raw or "").split(",") if x.strip()]
+            vals = [float(x.strip()) for x in str(raw or "").split(",") if x.strip()]
+            return vals or default
         except Exception:
-            return []
+            return default
 
     def _resolve_preview_group_name(self, group, context):
         group = str(group or "G2")
@@ -1189,20 +1581,41 @@ class BotUI(ctk.CTk):
     def _chip_color(self, kind, text):
         raw = str(text or "").upper()
         if kind == "danger" or "ERROR" in raw or "INVALID" in raw:
-            return "#4A1116", "#FF5252", "#FF8A80"
+            return "#4A1116", "#FF5252", "#FFB3AD"
         if kind == "warn" or "WAIT" in raw or "MISSING" in raw or "THIẾU" in raw or "FALLBACK" in raw:
-            return "#3A300A", "#FFD600", "#FFE082"
+            return "#40350D", "#FFD600", "#FFF0A3"
         if kind == "good" or "READY" in raw or "OK" in raw:
-            return "#06301A", "#00E676", "#69F0AE"
+            return "#07351D", "#00E676", "#9AFFC4"
         if kind == "tp":
-            return "#062B23", "#00E676", "#69F0AE"
+            return "#062F27", "#00E676", "#9AFFD2"
         if kind == "sl":
-            return "#351015", "#FF5252", "#FF8A80"
-        return "#102326", "#26C6DA", "#B2EBF2"
+            return "#3A1117", "#FF5252", "#FFB3AD"
+        return "#132326", "#37565C", "#D9EEF2"
 
     def _make_preview_chip(self, label, value, kind="info"):
         fg, border, text_color = self._chip_color(kind, value)
         return {"label": label, "value": value, "fg": fg, "border": border, "text_color": text_color}
+
+    def _preview_target_values(self, setup):
+        targets = []
+        for val in list((setup or {}).get("tp_targets") or [])[:3]:
+            num = self._safe_float(val, 0.0)
+            if num > 0:
+                targets.append(num)
+        return targets
+
+    def _preview_rule_notes(self, setup):
+        setup = setup or {}
+        notes = []
+        sl_mode = str(setup.get("manual_sl_mode", "") or "").upper()
+        tp_mode = str(setup.get("manual_tp_mode", "") or "").upper()
+        sl_source = str(setup.get("sl_source", "") or "").upper()
+        tp_source = str(setup.get("tp_source", "") or "").upper()
+        if sl_mode not in ("", "PERCENT") and sl_source == "PERCENT":
+            notes.append(self._make_preview_chip("SL Fallback", "Missing rule data, using Percent", "warn"))
+        if tp_mode not in ("", "RR") and (tp_source == "RR" or tp_source.endswith("R")):
+            notes.append(self._make_preview_chip("Exit Fallback", "Missing target data, using RR", "warn"))
+        return notes
 
     def build_manual_preview_models(self):
         symbol = self.cbo_symbol.get()
@@ -1221,17 +1634,11 @@ class BotUI(ctk.CTk):
         status = "READY" if setup.get("ready") and mode == "NORMAL" else "BLOCK" if mode != "NORMAL" else "WAIT"
         mode_note = "NORMAL manual only" if mode != "NORMAL" else setup.get("reason", "OK")
         brain = self.trade_mgr._get_brain_settings(symbol)
-        ee_cfg = dict(brain.get("entry_exit", {}) or {})
-        active_ee = list(ee_cfg.get("entry_tactics") or ee_cfg.get("active_tactics") or [])
-        non_r_ee = [k for k in active_ee if k != "FALLBACK_R"]
-        if len(non_r_ee) == 1:
-            ee_cfg["exit_tactic"] = non_r_ee[0]
-        elif active_ee and str(ee_cfg.get("exit_tactic", "AUTO")).upper() not in set(active_ee + ["AUTO", "NO_TP", "OFF"]):
-            ee_cfg["exit_tactic"] = "AUTO"
+        ee_cfg = self._manual_preview_entry_exit_cfg(brain.get("entry_exit", {}) or {})
         try:
-            from core.entry_exit_engine import evaluate_entry_exit, format_decision
+            from core.entry_exit_engine import format_decision
 
-            ee_decision = evaluate_entry_exit(symbol, direction, setup.get("price", 0.0), context, ee_cfg)
+            ee_decision = self._preview_entry_exit_decision(symbol, direction, setup.get("price", 0.0), context, ee_cfg)
             ee_txt = format_decision(ee_decision)
             self.latest_entry_exit_decisions[symbol] = ee_decision
         except Exception as exc:
@@ -1239,26 +1646,18 @@ class BotUI(ctk.CTk):
             ee_txt = f"E/E: ERROR {exc}"
         pull_note = self._explain_pullback_data(context, ee_cfg)
         tsl_line1, tsl_line2 = self._build_tsl_preview_lines(setup, context)
-        tp_targets, tp_ladder_source = self._resolve_ee_tp_ladder(setup, context, ee_cfg, ee_decision)
-        ee_tp = self._safe_float((ee_decision or {}).get("tp", 0.0))
-        if not (ee_decision or {}).get("tp_disabled") and ee_tp > 0:
-            setup["tp"] = ee_tp
-            setup["tp_source"] = (ee_decision or {}).get("tp_source") or setup.get("tp_source", "--")
-            c_size = self._safe_float(getattr(mt5.symbol_info(symbol), "trade_contract_size", 1.0), 1.0)
-            price = self._safe_float(setup.get("price", 0.0))
-            lot = self._safe_float(setup.get("lot", 0.0))
-            risk = self._safe_float(setup.get("risk_usd", 0.0))
-            reward = abs(setup["tp"] - price) * lot * c_size if price > 0 and lot > 0 else 0.0
-            setup["reward_usd"] = reward
-            setup["rr"] = reward / risk if risk > 0 else 0.0
-        elif (ee_decision or {}).get("tp_disabled"):
-            setup["tp"] = 0.0
-            setup["tp_source"] = "OFF"
-            setup["reward_usd"] = 0.0
-            setup["rr"] = 0.0
+        tp_targets = list(setup.get("tp_targets") or [setup.get("tp"), None, None])
+        tp_targets = tp_targets[:3] + [None] * max(0, 3 - len(tp_targets))
+        tp_ladder_source = setup.get("tp_source_label", setup.get("tp_source", "--"))
         setup["tp_targets"] = tp_targets
         setup["tp_ladder_source"] = tp_ladder_source
+        zone_decision = self._entry_zone_decision(ee_decision)
         setup["ee_status"] = (ee_decision or {}).get("status", "OFF")
+        setup["ee_gate"] = self._format_ee_gate(zone_decision or ee_decision, setup.get("price", 0.0))
+        setup["entry_zone"] = self._fmt_zone((zone_decision or {}).get("entry_zone"))
+        if setup["entry_zone"] == "--" and str((zone_decision or ee_decision or {}).get("entry_tactic", "")).upper() == "FALLBACK_R":
+            setup["entry_zone"] = "Market"
+        setup["ee_reason"] = (ee_decision or {}).get("reason", "")
         signal_text = "NONE" if latest_signal == 0 else "BUY" if latest_signal > 0 else "SELL"
         trend_bias = "BUY" if trend == "UP" else "SELL" if trend == "DOWN" else "NONE"
         if trend_bias == "NONE":
@@ -1270,25 +1669,32 @@ class BotUI(ctk.CTk):
         ee_kind = "danger" if setup["ee_status"] == "ERROR" else "warn" if setup["ee_status"] in ("WAIT", "OFF") or "fallback" in ee_txt.lower() else "good"
         tsl_kind = "warn" if "thiếu" in tsl_line2.lower() or "missing" in tsl_line2.lower() else "good"
         manual_sl_group = setup.get("manual_sl_group", setup.get("group", "--"))
+        manual_tp_group = setup.get("manual_tp_group", "--")
         manual_sl_label = self._group_tf_label(manual_sl_group)
+        manual_tp_label = self._group_tf_label(manual_tp_group)
+        setup["entry_signal"] = f"{signal_text} | Trend {self._group_tf_label(group)} {trend}"
+        setup["sl_rule"] = f"{self._fmt_price(setup.get('sl'))} | {setup.get('sl_source_label', '--')} {manual_sl_label}"
+        setup["exit_rule"] = (
+            "OFF"
+            if setup.get("tp_source") == "OFF"
+            else f"{self._fmt_price(setup.get('tp'))} | {setup.get('tp_source_label', '--')} {manual_tp_label}"
+        )
+        setup["tsl_rule"] = f"{tsl_line1.replace('TSL: ', '')} | {tsl_line2}"
         setup["chips"] = [
-            self._make_preview_chip("Trend", f"Signal {signal_text} | Trend {self._group_tf_label(group)} {trend} | {market_mode}", trend_kind),
-            self._make_preview_chip("E/E", ee_txt.replace("E/E: ", ""), ee_kind),
-            self._make_preview_chip("SL", f"{setup.get('sl_source', '--')} | Manual SL {manual_sl_label}", "sl"),
-            self._make_preview_chip("TP", f"{setup.get('tp_source', '--')} / {tp_ladder_source}", "tp"),
+            self._make_preview_chip("Trend", f"Signal {signal_text} | {self._group_tf_label(group)} {trend} | {market_mode}", trend_kind),
+            self._make_preview_chip("ATR", f"SL {manual_sl_label}={self._fmt_price(setup.get('atr'))} | TP {manual_tp_label}", "info"),
             self._make_preview_chip("TSL", tsl_line1.replace("TSL: ", ""), tsl_kind),
-            self._make_preview_chip("Cost", f"spread ${setup.get('spread_cost', 0.0):.2f} | comm ${setup.get('commission', 0.0):.2f}", "info"),
-            self._make_preview_chip("TSL Detail", tsl_line2, tsl_kind),
-            self._make_preview_chip("Data", f"Manual SL ATR: {manual_sl_label} {setup.get('atr_key', 'atr')}={self._fmt_price(setup.get('atr'))}", "info"),
-            self._make_preview_chip("Entry", f"{mode_note} | Lot {setup.get('lot_source', '--')} | RR {setup.get('rr', 0.0):.2f}", "good" if mode_note == "OK" else "warn"),
-            self._make_preview_chip("Swing", f"H={setup.get('swing_high_key', '--')} | L={setup.get('swing_low_key', '--')}", "info"),
+            self._make_preview_chip("Entry Filter", setup.get("ee_gate", ee_txt.replace("E/E: ", "")), ee_kind),
         ]
         if pull_note:
-            setup["chips"][9] = self._make_preview_chip("E/E Data", pull_note.strip(" |"), "warn")
+            setup["chips"][-1] = self._make_preview_chip("Entry Data", pull_note.replace("Pullback thiáº¿u data", "Missing pullback data").strip(" |"), "warn")
+        fallback_notes = self._preview_rule_notes(setup)
+        if fallback_notes:
+            setup["chips"] = (fallback_notes + setup["chips"])[:4]
         primary_reason = ""
         primary = self._make_preview_model(
             "primary",
-            "TRADE PREVIEW",
+            "MANUAL PREVIEW",
             status,
             primary_reason,
             setup,
@@ -1305,12 +1711,33 @@ class BotUI(ctk.CTk):
         if not hasattr(self, "preview_cards"):
             return
         try:
+            preset_cfg = config.PRESETS.get(self.cbo_preset.get(), {})
+            tf_display = {
+                "G0": f"G0 ({getattr(config, 'G0_TIMEFRAME', '1d')})",
+                "G1": f"G1 ({getattr(config, 'G1_TIMEFRAME', '1h')})",
+                "G2": f"G2 ({getattr(config, 'G2_TIMEFRAME', '15m')})",
+                "G3": f"G3 ({getattr(config, 'G3_TIMEFRAME', '15m')})",
+                "DYNAMIC": "DYNAMIC",
+            }
+            if hasattr(self, "var_preview_sl_group"):
+                sl_group = str(preset_cfg.get("MANUAL_SL_GROUP", preset_cfg.get("MANUAL_SWING_SL_GROUP", "G2")) or "G2")
+                sl_group = "DYNAMIC" if "DYNAMIC" in sl_group else sl_group
+                self.var_preview_sl_group.set(tf_display.get(sl_group, tf_display["G2"]))
+                if getattr(self, "var_preview_tp_group", None) is getattr(self, "var_preview_sl_group", None):
+                    preset_cfg["MANUAL_TP_GROUP"] = sl_group
+                    preset_cfg["MANUAL_SWING_TP_GROUP"] = sl_group
+            if hasattr(self, "var_preview_tp_group"):
+                tp_group = str(preset_cfg.get("MANUAL_TP_GROUP", preset_cfg.get("MANUAL_SWING_TP_GROUP", preset_cfg.get("MANUAL_SL_GROUP", "G2"))) or "G2")
+                tp_group = "DYNAMIC" if "DYNAMIC" in tp_group else tp_group
+                if getattr(self, "var_preview_tp_group", None) is not getattr(self, "var_preview_sl_group", None):
+                    self.var_preview_tp_group.set(tf_display.get(tp_group, tf_display["G2"]))
+            if hasattr(self, "var_preview_sl_mode"):
+                sl_mode = str(preset_cfg.get("MANUAL_SL_MODE", "PERCENT") or "PERCENT").upper()
+                self.var_preview_sl_mode.set(self._manual_mode_display(sl_mode, "SL"))
+            if hasattr(self, "var_preview_tp_mode"):
+                tp_mode = str(preset_cfg.get("MANUAL_TP_MODE", "RR") or "RR").upper()
+                self.var_preview_tp_mode.set(self._manual_mode_display(tp_mode, "TP"))
             models = self.build_manual_preview_models()
-            if hasattr(self, "lbl_preview_sync"):
-                self.lbl_preview_sync.configure(
-                    text=datetime.now().strftime("SYNC %H:%M:%S"),
-                    text_color="#26C6DA",
-                )
             for key, widgets in self.preview_cards.items():
                 model = models.get(key, {})
                 status = model.get("status", "WAIT")
@@ -1320,35 +1747,86 @@ class BotUI(ctk.CTk):
                 widgets["frame"].configure(border_color=color)
                 widgets["title"].configure(text=model.get("title", key.upper()), text_color=color)
                 widgets["badge"].configure(text=f"{bias} | {status}", text_color=color)
+                setup = model.get("setup", {}) or {}
+                atr_group = self._group_tf_label(setup.get("manual_sl_group", setup.get("group", "--")))
+                atr_txt = self._fmt_price(setup.get("atr"))
                 widgets["meta"].configure(
-                    text=f"{model.get('symbol', '--')} | {model.get('timeframe', '--')} | {model.get('source', '--')}"
+                    text=f"{model.get('symbol', '--')} | {model.get('timeframe', '--')} | ATR {atr_group}={atr_txt} | {model.get('source', '--')}",
+                    text_color="#B2EBF2",
                 )
+                def _set_preview_text(widget, text):
+                    if isinstance(widget, (tuple, list)) and len(widget) >= 2:
+                        widget[1].configure(text=text)
+                    elif widget is not None:
+                        widget.configure(text=text)
+
                 levels = widgets.get("levels", {})
                 if isinstance(levels, dict):
-                    if "entry" in levels:
-                        levels["entry"].configure(text=model.get("entry", "--"))
-                    if "sl" in levels:
-                        levels["sl"].configure(text=self._fmt_price(model.get("sl")))
-                    if "tp_main" in levels:
-                        levels["tp_main"].configure(text="OFF" if model.get("tp_source") == "OFF" else self._fmt_price(model.get("tp_main")))
-                    if "lot" in levels:
-                        levels["lot"].configure(text=f"{model.get('setup', {}).get('lot', 0.0):.2f}")
-                    if "risk" in levels:
-                        levels["risk"].configure(text=f"${model.get('setup', {}).get('risk_usd', 0.0):.2f}")
-                    if "reward" in levels:
-                        levels["reward"].configure(text=f"${model.get('setup', {}).get('reward_usd', 0.0):.2f}")
+                    if "ee_detail" in levels:
+                        gate = str(model.get("ee_gate", "") or "")
+                        zone = str(model.get("entry_zone", "--") or "--")
+                        zone_txt = zone if zone != "--" else "Market"
+                        entry_txt = f"{model.get('entry_signal', '--')} | Price {model.get('entry_price', '--')} | Zone {zone_txt}"
+                        _set_preview_text(levels["entry_signal"], entry_txt)
+                        tp_parts = []
+                        for idx, target_key in enumerate(("tp1", "tp2", "tp3"), start=1):
+                            val = model.get(target_key)
+                            tp_parts.append(f"TP{idx} {self._fmt_price(val) if val else '--'}")
+                        if model.get("tp_source") == "OFF":
+                            tp_parts = ["TP OFF"]
+                        _set_preview_text(levels["sl"], f"SL {self._fmt_price(model.get('sl'))}")
+                        _set_preview_text(levels["tp_main"], " | ".join(tp_parts))
+                        _set_preview_text(levels["tsl"], model.get("tsl_rule", "--"))
+                        ee_reason = str(model.get("setup", {}).get("ee_reason", "") or "")
+                        ee_txt = gate or "Entry filter OFF"
+                        if "MISSING E/E DATA" in ee_reason.upper() and "FALLBACK R" in ee_reason.upper():
+                            ee_reason = ""
+                        if ee_reason and ee_reason not in ee_txt:
+                            ee_txt = f"{ee_txt} | {ee_reason}"
+                        _set_preview_text(levels["ee_detail"], ee_txt)
+                    else:
+                        if "entry_signal" in levels:
+                            _set_preview_text(levels["entry_signal"], model.get("entry_signal", "--"))
+                        if "entry" in levels:
+                            _set_preview_text(levels["entry"], model.get("entry_price", model.get("entry", "--")))
+                        if "entry_zone" in levels:
+                            gate = str(model.get("ee_gate", "") or "")
+                            zone = str(model.get("entry_zone", "--") or "--")
+                            zone_txt = zone if zone != "--" else gate or "Entry filter OFF"
+                            _set_preview_text(levels["entry_zone"], zone_txt[:80])
+                        if "sl" in levels:
+                            _set_preview_text(levels["sl"], model.get("sl_rule", "--"))
+                        if "tp_main" in levels:
+                            _set_preview_text(levels["tp_main"], model.get("exit_rule", "--"))
+                        if "tsl" in levels:
+                            _set_preview_text(levels["tsl"], model.get("tsl_rule", "--"))
+                        if "rr" in levels:
+                            _set_preview_text(levels["rr"], f"{model.get('setup', {}).get('rr', 0.0):.2f}")
+                        if "lot" in levels:
+                            _set_preview_text(levels["lot"], f"{model.get('setup', {}).get('lot', 0.0):.2f}")
+                        if "risk" in levels:
+                            _set_preview_text(levels["risk"], f"${model.get('setup', {}).get('risk_usd', 0.0):.2f}")
+                        if "reward" in levels:
+                            _set_preview_text(levels["reward"], f"${model.get('setup', {}).get('reward_usd', 0.0):.2f}")
                 targets = widgets.get("targets", {})
                 if isinstance(targets, dict):
                     for target_key in ("tp1", "tp2", "tp3"):
-                        if target_key in targets:
+                        if target_key in targets and targets[target_key] is not None:
                             val = model.get(target_key)
-                            targets[target_key].configure(text=self._fmt_price(val) if val else "--")
-                    if "rr" in targets:
-                        targets["rr"].configure(text=f"{model.get('setup', {}).get('rr', 0.0):.2f}")
-                    if "tp_source" in targets:
-                        targets["tp_source"].configure(text=str(model.get("setup", {}).get("tp_ladder_source") or model.get("tp_source", "--"))[:24])
-                    if "ee" in targets:
-                        targets["ee"].configure(text=str(model.get("ee_status", "--"))[:18])
+                            target_widget = targets[target_key]
+                            show_target = bool(model.get("show_tp_ladder") and val)
+                            if isinstance(target_widget, (tuple, list)) and target_widget:
+                                if show_target:
+                                    target_widget[0].grid()
+                                    target_widget[1].configure(text=self._fmt_price(val))
+                                else:
+                                    target_widget[0].grid_remove()
+                            elif show_target:
+                                target_widget.configure(text=self._fmt_price(val))
+                            else:
+                                target_widget.configure(text="")
+                    if "rr" in targets and targets["rr"] is not None:
+                        _set_preview_text(targets["rr"], f"{model.get('setup', {}).get('rr', 0.0):.2f}")
                 chip_widgets = widgets.get("chip_widgets", [])
                 if chip_widgets:
                     model_chips = list(model.get("chips", []))
@@ -1382,8 +1860,7 @@ class BotUI(ctk.CTk):
                     hover_color=color if model.get("can_apply") else "#37474F",
                 )
         except Exception as exc:
-            if hasattr(self, "lbl_preview_sync"):
-                self.lbl_preview_sync.configure(text=f"PREVIEW ERROR: {exc}", text_color=COL_RED)
+            self.log_message(f"[PREVIEW] Error: {exc}", error=True, target="manual")
 
     def apply_manual_preview_setup(self, key):
         model = getattr(self, "manual_preview_models", {}).get(key)

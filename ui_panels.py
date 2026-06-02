@@ -160,7 +160,8 @@ def setup_left_panel(app, parent):
     f_mode_row.grid(row=1, column=1, sticky="ew", padx=5)
 
     app.cbo_preset = ctk.CTkOptionMenu(
-        f_mode_row, values=list(config.PRESETS.keys()), font=FONT_MAIN, width=100
+        f_mode_row, values=list(config.PRESETS.keys()), font=FONT_MAIN, width=100,
+        command=app.on_preset_change,
     )
     app.cbo_preset.set(config.DEFAULT_PRESET)
     app.cbo_preset.pack(side="left", fill="x", expand=True)
@@ -395,6 +396,11 @@ def setup_left_panel(app, parent):
     make_inp(f_input, "VOL (Lot)", app.var_manual_lot, 0)
     make_inp(f_input, "TP (Price)", app.var_manual_tp, 1)
     make_inp(f_input, "SL (Price)", app.var_manual_sl, 2)
+    for _manual_var in (app.var_manual_lot, app.var_manual_tp, app.var_manual_sl):
+        try:
+            _manual_var.trace_add("write", app.on_manual_input_change)
+        except Exception:
+            pass
 
     # --- PHẦN ĐÃ FIX: MULTI-TF CONTEXT PREVIEW (V8.4.1) ---
     f_context = ctk.CTkFrame(parent, fg_color="#1E1E1E", corner_radius=6)
@@ -929,11 +935,21 @@ def setup_right_panel(app, parent):
         try:
             tab_text = event.widget.cget("text") if event and event.widget else log_tabview.get()
             app.after(20, lambda t=tab_text: app.clear_log_unread_by_tab_name(t))
+            if "Preview" in str(tab_text):
+                app.after(25, app.refresh_manual_preview_tab)
         except Exception:
             app.after(60, app.clear_active_log_unread)
 
+    def _on_log_tab_change():
+        app.clear_active_log_unread()
+        try:
+            if "Preview" in str(log_tabview.get()):
+                app.refresh_manual_preview_tab()
+        except Exception:
+            pass
+
     try:
-        log_tabview.configure(command=app.clear_active_log_unread)
+        log_tabview.configure(command=_on_log_tab_change)
         log_tabview._segmented_button.bind("<ButtonRelease-1>", _clear_unread_after_click)
         for _btn in log_tabview._segmented_button._buttons_dict.values():
             _btn.bind("<ButtonRelease-1>", _clear_unread_after_click)
@@ -949,22 +965,29 @@ def setup_right_panel(app, parent):
     )
     preview_body.pack(fill="both", expand=True, padx=6, pady=6)
 
-    preview_head = ctk.CTkFrame(
+    preview_panel = ctk.CTkFrame(
         preview_body,
-        fg_color="#102326",
+        fg_color="#0D1719",
         corner_radius=8,
         border_width=1,
-        border_color="#1D626B",
+        border_color="#00C853",
     )
-    preview_head.pack(fill="x", padx=4, pady=(4, 8))
-    preview_head.grid_columnconfigure(6, weight=1)
+    preview_panel.pack(fill="x", padx=4, pady=(4, 6))
+    preview_panel.grid_columnconfigure(0, weight=1)
+    preview_panel.grid_columnconfigure(1, minsize=132)
 
-    ctk.CTkLabel(
+    preview_head = ctk.CTkFrame(preview_panel, fg_color="transparent")
+    preview_head.grid(row=0, column=0, columnspan=2, sticky="ew", padx=14, pady=(12, 4))
+    preview_head.grid_columnconfigure(2, weight=1)
+
+    lbl_title = ctk.CTkLabel(
         preview_head,
         text="MANUAL PREVIEW",
-        font=("Roboto", 15, "bold"),
+        font=("Roboto", 16, "bold"),
         text_color="#26C6DA",
-    ).grid(row=0, column=0, padx=(12, 8), pady=10, sticky="w")
+        anchor="w",
+    )
+    lbl_title.grid(row=0, column=0, padx=(0, 10), pady=2, sticky="w")
 
     app.lbl_preview_symbol = ctk.CTkLabel(
         preview_head,
@@ -976,10 +999,23 @@ def setup_right_panel(app, parent):
         width=120,
         height=30,
     )
-    app.lbl_preview_symbol.grid(row=0, column=1, padx=6, pady=10, sticky="w")
+    app.lbl_preview_symbol.grid(row=0, column=1, padx=(0, 10), pady=2, sticky="w")
 
-    _preset_group = config.PRESETS.get(app.cbo_preset.get(), {}).get("MANUAL_SWING_SL_GROUP", "G2")
-    _preset_group = "DYNAMIC" if "DYNAMIC" in str(_preset_group) else str(_preset_group or "G2")
+    lbl_badge = ctk.CTkLabel(
+        preview_head,
+        text="WAIT",
+        font=("Roboto", 13, "bold"),
+        text_color="#FFB300",
+        anchor="e",
+    )
+    lbl_badge.grid(row=0, column=2, padx=(8, 0), pady=2, sticky="e")
+
+    _preset_sl_group = config.PRESETS.get(app.cbo_preset.get(), {}).get("MANUAL_SL_GROUP", config.PRESETS.get(app.cbo_preset.get(), {}).get("MANUAL_SWING_SL_GROUP", "G2"))
+    _preset_sl_group = "DYNAMIC" if "DYNAMIC" in str(_preset_sl_group) else str(_preset_sl_group or "G2")
+    _preset_tp_group = config.PRESETS.get(app.cbo_preset.get(), {}).get("MANUAL_TP_GROUP", config.PRESETS.get(app.cbo_preset.get(), {}).get("MANUAL_SWING_TP_GROUP", _preset_sl_group))
+    _preset_tp_group = "DYNAMIC" if "DYNAMIC" in str(_preset_tp_group) else str(_preset_tp_group or "G2")
+    _sl_mode = str(config.PRESETS.get(app.cbo_preset.get(), {}).get("MANUAL_SL_MODE", "PERCENT") or "PERCENT").upper()
+    _tp_mode = str(config.PRESETS.get(app.cbo_preset.get(), {}).get("MANUAL_TP_MODE", "RR") or "RR").upper()
     _tf_display = {
         "G0": f"G0 ({getattr(config, 'G0_TIMEFRAME', '1d')})",
         "G1": f"G1 ({getattr(config, 'G1_TIMEFRAME', '1h')})",
@@ -987,7 +1023,24 @@ def setup_right_panel(app, parent):
         "G3": f"G3 ({getattr(config, 'G3_TIMEFRAME', '15m')})",
         "DYNAMIC": "DYNAMIC",
     }
-    app.var_preview_tf = tk.StringVar(value=_tf_display.get(_preset_group, _tf_display["G2"]))
+    app.var_preview_sl_group = tk.StringVar(value=_tf_display.get(_preset_sl_group, _tf_display["G2"]))
+    app.var_preview_tp_group = tk.StringVar(value=_tf_display.get(_preset_tp_group, _tf_display["G2"]))
+    _mode_display = {
+        "PERCENT": "Percent",
+        "SANDBOX": "SL Sandbox",
+        "RR": "RR",
+        "SWING": "Swing Retest",
+        "SWING_REJECTION": "Swing Retest",
+        "SWING_RETEST": "Swing Retest",
+        "SWING_STRUCTURE": "Swing Struct",
+        "SWING_STRUCT": "Swing Struct",
+        "FIB": "FIB",
+        "PULLBACK": "Pullback",
+        "PULLBACK_ZONE": "Pullback",
+    }
+    app.var_preview_sl_mode = tk.StringVar(value=_mode_display.get(_sl_mode, "Percent"))
+    app.var_preview_tp_mode = tk.StringVar(value=_mode_display.get(_tp_mode, "RR"))
+    app.var_preview_tf = app.var_preview_sl_group
     tf_values = [
         f"G0 ({getattr(config, 'G0_TIMEFRAME', '1d')})",
         f"G1 ({getattr(config, 'G1_TIMEFRAME', '1h')})",
@@ -995,30 +1048,66 @@ def setup_right_panel(app, parent):
         f"G3 ({getattr(config, 'G3_TIMEFRAME', '15m')})",
         "DYNAMIC",
     ]
+    selector_row = ctk.CTkFrame(preview_panel, fg_color="#102326", corner_radius=6)
+    selector_row.grid(row=1, column=0, columnspan=2, sticky="ew", padx=14, pady=(2, 8))
+    selector_row.grid_columnconfigure(1, weight=1)
+    selector_row.grid_columnconfigure(3, weight=1)
     ctk.CTkLabel(
-        preview_head,
-        text="Preview Group:",
+        selector_row,
+        text="SL",
         font=("Roboto", 11, "bold"),
-        text_color="#B0BEC5",
-    ).grid(row=0, column=2, padx=(10, 2), pady=10, sticky="w")
-    app.cbo_preview_tf = ctk.CTkOptionMenu(
-        preview_head,
+        text_color="#FFB3AD",
+        width=34,
+        anchor="w",
+    ).grid(row=0, column=0, padx=(10, 4), pady=8, sticky="w")
+    app.cbo_preview_sl_mode = ctk.CTkOptionMenu(
+        selector_row,
+        values=["Percent", "SL Sandbox", "Swing Retest", "Swing Struct", "FIB", "Pullback"],
+        variable=app.var_preview_sl_mode,
+        width=132,
+        height=30,
+        font=("Roboto", 12, "bold"),
+        command=app.on_preview_sl_mode_change,
+    )
+    app.cbo_preview_sl_mode.grid(row=0, column=1, padx=(0, 10), pady=8, sticky="ew")
+    ctk.CTkLabel(
+        selector_row,
+        text="TP",
+        font=("Roboto", 11, "bold"),
+        text_color="#9AFFC4",
+        width=34,
+        anchor="w",
+    ).grid(row=0, column=2, padx=(0, 4), pady=8, sticky="w")
+    app.cbo_preview_tp_mode = ctk.CTkOptionMenu(
+        selector_row,
+        values=["OFF", "RR", "Swing Retest", "Swing Struct", "FIB", "Pullback"],
+        variable=app.var_preview_tp_mode,
+        width=132,
+        height=30,
+        font=("Roboto", 12, "bold"),
+        command=app.on_preview_tp_mode_change,
+    )
+    app.cbo_preview_tp_mode.grid(row=0, column=3, padx=(0, 10), pady=8, sticky="ew")
+    ctk.CTkLabel(
+        selector_row,
+        text="TF",
+        font=("Roboto", 11, "bold"),
+        text_color="#B2EBF2",
+        width=34,
+        anchor="w",
+    ).grid(row=0, column=4, padx=(0, 4), pady=8, sticky="w")
+    app.var_preview_tp_group = app.var_preview_sl_group
+    app.cbo_preview_sl_group = ctk.CTkOptionMenu(
+        selector_row,
         values=tf_values,
-        variable=app.var_preview_tf,
-        width=116,
+        variable=app.var_preview_sl_group,
+        width=112,
         height=30,
         font=("Roboto", 12, "bold"),
         command=app.on_preview_group_change,
     )
-    app.cbo_preview_tf.grid(row=0, column=3, padx=4, pady=10, sticky="w")
-
-    app.lbl_preview_sync = ctk.CTkLabel(
-        preview_head,
-        text="WAITING DATA",
-        font=("Roboto", 12, "bold"),
-        text_color="#FFB300",
-    )
-    app.lbl_preview_sync.grid(row=0, column=4, padx=8, pady=10, sticky="w")
+    app.cbo_preview_sl_group.grid(row=0, column=5, padx=(0, 10), pady=8, sticky="e")
+    app.cbo_preview_tp_group = app.cbo_preview_sl_group
 
     app.chk_preview_trade_after_apply = ctk.CTkCheckBox(
         preview_head,
@@ -1029,226 +1118,143 @@ def setup_right_panel(app, parent):
         checkbox_width=18,
         checkbox_height=18,
     )
-    app.chk_preview_trade_after_apply.grid(row=0, column=5, padx=8, pady=10, sticky="w")
+    app.chk_preview_trade_after_apply.grid(row=0, column=3, padx=(12, 0), pady=2, sticky="e")
 
-    ctk.CTkButton(
+    app.preview_cards = {}
+    card_key = "primary"
+    lbl_meta = ctk.CTkLabel(
+        preview_panel,
+        text="--",
+        font=("Consolas", 12, "bold"),
+        text_color="#78909C",
+        anchor="w",
+    )
+    lbl_meta.grid(row=2, column=0, columnspan=2, sticky="ew", padx=14, pady=(0, 8))
+
+    def _preview_line(parent, row, title, color, wrap=1200):
+        ctk.CTkLabel(
+            parent,
+            text=title,
+            font=("Roboto", 11, "bold"),
+            text_color=color,
+            anchor="w",
+            width=96,
+        ).grid(row=row, column=0, sticky="w", padx=(0, 8), pady=4)
+        val = ctk.CTkLabel(
+            parent,
+            text="--",
+            font=("Consolas", 12, "bold"),
+            text_color=color,
+            anchor="w",
+            justify="left",
+            wraplength=wrap,
+        )
+        val.grid(row=row, column=1, sticky="ew", padx=(0, 6), pady=4)
+        return val
+
+    levels = ctk.CTkFrame(preview_panel, fg_color="transparent")
+    levels.grid(row=3, column=0, columnspan=2, sticky="ew", padx=14, pady=(0, 6))
+    levels.grid_columnconfigure(1, weight=1)
+    level_widgets = {}
+    target_widgets = {}
+    level_widgets["entry_signal"] = _preview_line(levels, 0, "Entry", "#B2EBF2")
+    level_widgets["entry"] = level_widgets["entry_signal"]
+    level_widgets["entry_zone"] = level_widgets["entry_signal"]
+    ctk.CTkLabel(
+        levels,
+        text="SL / TP",
+        font=("Roboto", 11, "bold"),
+        text_color="#B2EBF2",
+        anchor="w",
+        width=96,
+    ).grid(row=1, column=0, sticky="w", padx=(0, 8), pady=4)
+    sltp_line = ctk.CTkFrame(levels, fg_color="transparent")
+    sltp_line.grid(row=1, column=1, sticky="ew", padx=(0, 6), pady=4)
+    sltp_line.grid_columnconfigure(1, weight=1)
+    level_widgets["sl"] = ctk.CTkLabel(
+        sltp_line,
+        text="SL --",
+        font=("Consolas", 12, "bold"),
+        text_color="#FF5252",
+        anchor="w",
+    )
+    level_widgets["sl"].grid(row=0, column=0, sticky="w", padx=(0, 18))
+    level_widgets["tp_main"] = ctk.CTkLabel(
+        sltp_line,
+        text="TP1 -- | TP2 -- | TP3 --",
+        font=("Consolas", 12, "bold"),
+        text_color="#69F0AE",
+        anchor="w",
+        justify="left",
+        wraplength=900,
+    )
+    level_widgets["tp_main"].grid(row=0, column=1, sticky="ew")
+    level_widgets["rr"] = level_widgets["tp_main"]
+    level_widgets["tsl"] = _preview_line(levels, 2, "TSL", "#9AFFC4", wrap=900)
+    level_widgets["ee_detail"] = _preview_line(levels, 3, "E/E", "#FFD600", wrap=780)
+
+    chips = ctk.CTkFrame(preview_panel, fg_color="transparent")
+    chips.grid(row=4, column=0, columnspan=2, sticky="ew", padx=14, pady=(0, 8))
+    chips.grid_remove()
+    for col in range(4):
+        chips.grid_columnconfigure(col, weight=1, uniform="chips")
+    chip_widgets = []
+    for idx in range(4):
+        chip_box = ctk.CTkFrame(
+            chips,
+            fg_color="#132326",
+            border_width=1,
+            border_color="#37565C",
+            corner_radius=6,
+        )
+        chip_box.grid(row=0, column=idx, sticky="ew", padx=3, pady=2)
+        chip_label = ctk.CTkLabel(
+            chip_box,
+            text="--",
+            text_color="#D9EEF2",
+            font=("Roboto", 11, "bold"),
+            anchor="w",
+            justify="left",
+            wraplength=320,
+        )
+        chip_label.pack(fill="x", padx=8, pady=4)
+        chip_widgets.append((chip_box, chip_label))
+
+    lbl_reason = ctk.CTkLabel(
+        preview_panel,
+        text="--",
+        font=("Roboto", 11),
+        text_color="#B0BEC5",
+        anchor="w",
+        justify="left",
+        wraplength=1280,
+    )
+    lbl_reason.grid(row=5, column=0, columnspan=2, sticky="ew", padx=14, pady=(0, 8))
+
+    btn_apply = ctk.CTkButton(
         preview_head,
-        text="SYNC",
-        width=64,
-        height=28,
+        text="APPLY",
+        width=116,
+        height=40,
         fg_color="#164B52",
         hover_color="#1D626B",
         font=("Roboto", 11, "bold"),
-        command=app.refresh_manual_preview_tab,
-    ).grid(row=0, column=6, padx=(4, 12), pady=10, sticky="e")
+        command=lambda k=card_key: app.apply_manual_preview_setup(k),
+    )
+    btn_apply.grid(row=0, column=4, sticky="e", padx=(12, 0), pady=2)
 
-    app.preview_cards = {}
-    for card_key, title in (("primary", "TRADE PREVIEW"),):
-        card = ctk.CTkFrame(
-            preview_body,
-            fg_color="#101719",
-            corner_radius=8,
-            border_width=1,
-            border_color="#263238",
-        )
-        card.pack(fill="x", padx=4, pady=6)
-        card.grid_columnconfigure(0, weight=1)
-        card.grid_columnconfigure(1, minsize=112)
-
-        head = ctk.CTkFrame(card, fg_color="transparent")
-        head.grid(row=0, column=0, columnspan=2, sticky="ew", padx=12, pady=(10, 2))
-        head.grid_columnconfigure(1, weight=1)
-        lbl_title = ctk.CTkLabel(
-            head,
-            text=title,
-            font=("Roboto", 14, "bold"),
-            text_color="#B2EBF2",
-            anchor="w",
-        )
-        lbl_title.grid(row=0, column=0, sticky="w")
-        lbl_badge = ctk.CTkLabel(
-            head,
-            text="WAIT",
-            font=("Roboto", 13, "bold"),
-            text_color="#FFB300",
-            anchor="e",
-        )
-        lbl_badge.grid(row=0, column=1, sticky="e")
-
-        lbl_meta = ctk.CTkLabel(
-            card,
-            text="--",
-            font=("Consolas", 12, "bold"),
-            text_color="#78909C",
-            anchor="w",
-        )
-        lbl_meta.grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 4))
-
-        levels = ctk.CTkFrame(card, fg_color="transparent")
-        levels.grid(row=2, column=0, columnspan=2, sticky="ew", padx=12, pady=2)
-        levels.grid_columnconfigure((0, 1, 2, 3, 4, 5), weight=1)
-        level_widgets = {}
-        for idx, (name, color) in enumerate(
-            (
-                ("Entry", "#ECEFF1"),
-                ("SL", "#FF5252"),
-                ("TP Main", "#69F0AE"),
-                ("Lot", "#FFD600"),
-                ("Risk", "#FFAB00"),
-                ("Reward", "#00E676"),
-            )
-        ):
-            box = ctk.CTkFrame(
-                levels,
-                fg_color="#0B1416",
-                corner_radius=6,
-                border_width=1,
-                border_color="#22363A",
-            )
-            box.grid(row=0, column=idx, sticky="ew", padx=3)
-            ctk.CTkLabel(
-                box,
-                text=name,
-                font=("Roboto", 10, "bold"),
-                text_color=color,
-            ).pack(anchor="w", padx=8, pady=(5, 0))
-            val = ctk.CTkLabel(
-                box,
-                text="--",
-                font=("Consolas", 13, "bold"),
-                text_color=color,
-                anchor="w",
-                justify="left",
-                wraplength=130,
-            )
-            val.pack(fill="x", padx=8, pady=(0, 6))
-            level_widgets[name.lower().replace(" ", "_")] = val
-
-        targets = ctk.CTkFrame(card, fg_color="transparent")
-        targets.grid(row=3, column=0, columnspan=2, sticky="ew", padx=12, pady=(6, 2))
-        targets.grid_columnconfigure((0, 1, 2, 3, 4, 5), weight=1)
-        target_widgets = {}
-        for idx, (name, color) in enumerate(
-            (
-                ("TP1", "#80CBC4"),
-                ("TP2", "#4DB6AC"),
-                ("TP3", "#26A69A"),
-                ("RR", "#FFD600"),
-                ("TP Source", "#B2EBF2"),
-                ("E/E", "#00B8D4"),
-            )
-        ):
-            box = ctk.CTkFrame(
-                targets,
-                fg_color="#0B1416",
-                corner_radius=6,
-                border_width=1,
-                border_color="#22363A",
-            )
-            box.grid(row=0, column=idx, sticky="ew", padx=3)
-            ctk.CTkLabel(
-                box,
-                text=name,
-                font=("Roboto", 10, "bold"),
-                text_color=color,
-            ).pack(anchor="w", padx=8, pady=(5, 0))
-            val = ctk.CTkLabel(
-                box,
-                text="--",
-                font=("Consolas", 12, "bold"),
-                text_color=color,
-                anchor="w",
-                justify="left",
-                wraplength=130,
-            )
-            val.pack(fill="x", padx=8, pady=(0, 6))
-            target_key = "ee" if name == "E/E" else name.lower().replace(" ", "_")
-            target_widgets[target_key] = val
-
-        chips = ctk.CTkFrame(card, fg_color="transparent")
-        chips.grid(row=4, column=0, columnspan=2, sticky="ew", padx=12, pady=(8, 10))
-        chips.grid_columnconfigure((0, 1, 2), weight=1)
-        chip_widgets = []
-        for idx in range(10):
-            chip_box = ctk.CTkFrame(
-                chips,
-                fg_color="#102326",
-                border_width=1,
-                border_color="#26C6DA",
-                corner_radius=6,
-            )
-            row = idx // 3
-            col = idx % 3
-            if idx in (6, 7, 8, 9):
-                row = 2 + (idx - 6)
-                col = 0
-                columnspan = 3
-            elif idx == 6:
-                row = 2
-                col = 0
-                columnspan = 2
-            elif idx == 7:
-                row = 2
-                col = 2
-                columnspan = 1
-            elif idx == 8:
-                row = 3
-                col = 0
-                columnspan = 2
-            elif idx == 9:
-                row = 3
-                col = 2
-                columnspan = 1
-            else:
-                columnspan = 1
-            chip_box.grid(row=row, column=col, columnspan=columnspan, sticky="ew", padx=3, pady=3)
-            chip_label = ctk.CTkLabel(
-                chip_box,
-                text="--",
-                text_color="#B2EBF2",
-                font=("Roboto", 11, "bold"),
-                anchor="w",
-                justify="left",
-                wraplength=1180 if idx in (1, 6, 7, 8, 9) else 440,
-            )
-            chip_label.pack(fill="x", padx=8, pady=5)
-            chip_widgets.append((chip_box, chip_label))
-
-        lbl_reason = ctk.CTkLabel(
-            card,
-            text="--",
-            font=("Roboto", 11),
-            text_color="#B0BEC5",
-            anchor="w",
-            justify="left",
-            wraplength=1280,
-        )
-        lbl_reason.grid(row=5, column=0, columnspan=2, sticky="ew", padx=12, pady=(0, 10))
-
-        btn_apply = ctk.CTkButton(
-            card,
-            text="APPLY",
-            width=104,
-            height=56,
-            fg_color="#164B52",
-            hover_color="#1D626B",
-            font=("Roboto", 11, "bold"),
-            command=lambda k=card_key: app.apply_manual_preview_setup(k),
-        )
-        btn_apply.grid(row=1, column=1, sticky="e", padx=(4, 12), pady=(0, 4))
-
-        app.preview_cards[card_key] = {
-            "frame": card,
-            "title": lbl_title,
-            "badge": lbl_badge,
-            "meta": lbl_meta,
-            "levels": level_widgets,
-            "targets": target_widgets,
-            "chips": chips,
-            "chip_widgets": chip_widgets,
-            "reason": lbl_reason,
-            "apply": btn_apply,
-        }
+    app.preview_cards[card_key] = {
+        "frame": preview_panel,
+        "title": lbl_title,
+        "badge": lbl_badge,
+        "meta": lbl_meta,
+        "levels": level_widgets,
+        "targets": target_widgets,
+        "chips": chips,
+        "chip_widgets": chip_widgets,
+        "reason": lbl_reason,
+        "apply": btn_apply,
+    }
 
     app.refresh_manual_preview_tab()
 
