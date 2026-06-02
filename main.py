@@ -1108,6 +1108,49 @@ class BotUI(ctk.CTk):
         tf = getattr(config, f"{group}_TIMEFRAME", group)
         return f"{group} ({tf})" if group.startswith("G") else group
 
+    def _resolve_manual_sl_price(self, symbol, direction, price, params, context, manual_sl=0.0):
+        context = context or {}
+        params = params or {}
+        if manual_sl and manual_sl > 0:
+            return manual_sl, abs(price - manual_sl), "MANUAL", False
+
+        sl_mode = self._manual_rule_mode(params, "MANUAL_SL_MODE", "USE_SWING_SL", "PERCENT")
+        sl_group = self._resolve_manual_preset_group(params, "MANUAL_SL_GROUP", context)
+        market_mode = str(context.get("market_mode", "ANY") or "ANY").upper()
+
+        if sl_mode == "SANDBOX":
+            brain = self.trade_mgr._get_brain_settings(symbol)
+            risk_tsl = brain.get("risk_tsl", {}) or {}
+            sandbox_group = str(sl_group or risk_tsl.get("base_sl", getattr(config, "BOT_BASE_SL", "G2")) or "G2")
+            if "DYNAMIC" in sandbox_group:
+                sandbox_group = "G1" if market_mode in ("TREND", "BREAKOUT") else "G2"
+            atr_val = self._safe_float(context.get(f"atr_{sandbox_group}", context.get("atr_entry", 0.0)))
+            swing_low = self._safe_float(context.get(f"swing_low_{sandbox_group}", 0.0))
+            swing_high = self._safe_float(context.get(f"swing_high_{sandbox_group}", 0.0))
+            sl_mult = self._safe_float(risk_tsl.get("sl_atr_multiplier", getattr(config, "sl_atr_multiplier", 0.2)), 0.2)
+            if atr_val > 0 and swing_low > 0 and swing_high > 0:
+                buffer = atr_val * sl_mult
+                sl_price = swing_low - buffer if direction == "BUY" else swing_high + buffer
+                return sl_price, abs(price - sl_price), f"SANDBOX:{sandbox_group}", False
+            sl_mode = "PERCENT"
+
+        if sl_mode in ("SWING_REJECTION", "SWING_STRUCTURE"):
+            if "MANUAL_SL_GROUP" not in params and "MANUAL_SWING_SL_GROUP" in params:
+                sl_group = self._resolve_manual_preset_group(params, "MANUAL_SWING_SL_GROUP", context)
+            atr_val = self._safe_float(context.get(f"atr_{sl_group}", context.get("atr", 0.0)))
+            swing_low = self._safe_float(context.get(f"swing_low_{sl_group}", 0.0))
+            swing_high = self._safe_float(context.get(f"swing_high_{sl_group}", 0.0))
+            if atr_val > 0 and swing_low > 0 and swing_high > 0:
+                sl_mult = self._safe_float(params.get("MANUAL_SWING_SL_ATR_MULT", getattr(config, "sl_atr_multiplier", 0.2)), 0.2)
+                buffer = atr_val * sl_mult
+                sl_price = swing_low - buffer if direction == "BUY" else swing_high + buffer
+                return sl_price, abs(price - sl_price), f"SWING:{sl_group}", False
+            return 0.0, 0.0, f"{sl_mode}:MISSING", True
+
+        sl_dist = price * (float(params.get("SL_PERCENT", 0.5) or 0.5) / 100.0)
+        sl_price = price - sl_dist if direction == "BUY" else price + sl_dist
+        return sl_price, sl_dist, f"PERCENT:{float(params.get('SL_PERCENT', 0.5) or 0.5):g}%", False
+
     def _resolve_manual_setup_preview(self, symbol, direction, preset_name, context):
         params = config.PRESETS.get(
             preset_name,
@@ -2338,7 +2381,13 @@ class BotUI(ctk.CTk):
             except:
                 mlot, msl, mtp = 0.0, 0.0, 0.0
 
-            use_swing_sl = params.get("USE_SWING_SL", False)
+            p_sl, active_sl_dist, sl_label, sl_missing = self._resolve_manual_sl_price(
+                sym, d, cur_price, params, sym_ctx, msl
+            )
+            if sl_missing or active_sl_dist <= 0:
+                active_sl_dist = cur_price * (params["SL_PERCENT"] / 100)
+                p_sl = (cur_price - active_sl_dist) if d == "BUY" else (cur_price + active_sl_dist)
+                sl_label = f"PERCENT:{sl_pct_display}%"
             def resolve_manual_group(key):
                 group = str(params.get(key, "G2") or "G2")
                 if "DYNAMIC" in group:
@@ -2346,34 +2395,7 @@ class BotUI(ctk.CTk):
                     return "G1" if market_mode in ["TREND", "BREAKOUT"] else "G2"
                 return group
 
-            # 1. TÍNH TOÁN TECH SL (NẾU BẬT OPTION SWING POINT)
-            tech_sl_dist = 0
-            p_sl_tech = 0
-            if use_swing_sl and sym_ctx:
-                sl_group = resolve_manual_group("MANUAL_SWING_SL_GROUP")
-                
-                sh = sym_ctx.get(f"swing_high_{sl_group}")
-                sl = sym_ctx.get(f"swing_low_{sl_group}")
-                atr_val = sym_ctx.get(f"atr_{sl_group}")
-                
-                if sh and sl and atr_val:
-                    sl_mult = float(params.get("MANUAL_SWING_SL_ATR_MULT", getattr(config, "sl_atr_multiplier", 0.2)))
-                    buffer = atr_val * sl_mult
-                    p_sl_tech = (sl - buffer) if d == "BUY" else (sh + buffer)
-                    tech_sl_dist = abs(cur_price - p_sl_tech)
-
-            # 2. XÁC ĐỊNH SL MỤC TIÊU VÀ KHOẢNG CÁCH THỰC TẾ
-            if msl > 0:
-                p_sl = msl
-                active_sl_dist = abs(cur_price - p_sl)
-            elif use_swing_sl and tech_sl_dist > 0:
-                p_sl = p_sl_tech
-                active_sl_dist = tech_sl_dist
-            else:
-                active_sl_dist = cur_price * (params["SL_PERCENT"] / 100)
-                p_sl = (cur_price - active_sl_dist) if d == "BUY" else (cur_price + active_sl_dist)
-
-            # 3. XÁC ĐỊNH LỢI NHUẬN MỤC TIÊU (TP)
+            # 2. XÁC ĐỊNH LỢI NHUẬN MỤC TIÊU (TP)
             use_swing_tp = params.get("USE_SWING_TP", False)
             p_tp_tech = 0
             if use_swing_tp and sym_ctx:
@@ -2403,9 +2425,7 @@ class BotUI(ctk.CTk):
                 tp_label = f"{tp_r_display}R"
                 swing_tp_missing = False
 
-            self.lbl_head_sl.configure(
-                text="STOPLOSS (SWING)" if use_swing_sl and tech_sl_dist > 0 else f"STOPLOSS ({sl_pct_display}%)"
-            )
+            self.lbl_head_sl.configure(text=f"STOPLOSS ({sl_label.split(':', 1)[0]})")
             self.lbl_head_tp.configure(text=f"TARGET ({tp_label})")
             try:
                 from core.entry_exit_engine import evaluate_entry_exit, format_decision

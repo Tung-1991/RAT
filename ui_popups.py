@@ -1901,15 +1901,18 @@ def open_preset_config_popup(app):
     top = ctk.CTkToplevel(app)
     top.title(f"Preset: {p_name}")
     top.geometry("540x780")
+    top.minsize(500, 520)
     top.attributes("-topmost", True)
     # top.transient(app)
+    body = _speed_up_scroll(ctk.CTkScrollableFrame(top, fg_color="transparent"))
+    body.pack(fill="both", expand=True, padx=10, pady=(10, 4))
     acc = app.connector.get_account_info()
     eq = acc["equity"] if acc else 1000.0
     tick = app.connector.get_market_status(app.cbo_symbol.get())
     cp = tick.get("ask", 1000.0) if isinstance(tick, dict) else 1000.0
-    ctk.CTkLabel(top, text=f"PRESET: {p_name}", font=FONT_BOLD).pack(pady=10)
+    ctk.CTkLabel(body, text=f"PRESET: {p_name}", font=FONT_BOLD).pack(pady=10)
     _add_popup_hint(
-        top,
+        body,
         "- Preset này dùng cho lệnh manual theo preset đang chọn.\n"
         "- Manual input ngoài panel luôn ưu tiên hơn preset.\n"
         "- Preset chỉ định rule riêng cho SL và TP manual: Percent/RR hoặc SwingPoint.",
@@ -1917,35 +1920,35 @@ def open_preset_config_popup(app):
         pady=(0, 10),
         wraplength=470,
     )
-    ctk.CTkLabel(top, text="Risk Per Trade (%):").pack()
-    e_risk = ctk.CTkEntry(top, justify="center")
+    ctk.CTkLabel(body, text="Risk Per Trade (%):").pack()
+    e_risk = ctk.CTkEntry(body, justify="center")
     e_risk.insert(0, str(data.get("RISK_PERCENT", 0.3)))
     e_risk.pack()
     lbl_h_risk = ctk.CTkLabel(
-        top, text="~ -$0.00", text_color="#CFD8DC", font=("Roboto", 11)
+        body, text="~ -$0.00", text_color="#CFD8DC", font=("Roboto", 11)
     )
     lbl_h_risk.pack(pady=(0, 5))
-    ctk.CTkLabel(top, text="Stop Loss (%):").pack()
-    e_sl = ctk.CTkEntry(top, justify="center")
+    ctk.CTkLabel(body, text="Stop Loss (%):").pack()
+    e_sl = ctk.CTkEntry(body, justify="center")
     e_sl.insert(0, str(data.get("SL_PERCENT", 0.5)))
     e_sl.pack()
     lbl_h_sl = ctk.CTkLabel(
-        top, text="~ Price: 0.00", text_color="#CFD8DC", font=("Roboto", 11)
+        body, text="~ Price: 0.00", text_color="#CFD8DC", font=("Roboto", 11)
     )
     lbl_h_sl.pack(pady=(0, 5))
-    ctk.CTkLabel(top, text="Take Profit (RR):").pack()
-    e_tp = ctk.CTkEntry(top, justify="center")
+    ctk.CTkLabel(body, text="Take Profit (RR):").pack()
+    e_tp = ctk.CTkEntry(body, justify="center")
     e_tp.insert(0, str(data.get("TP_RR_RATIO", 2.0)))
     e_tp.pack()
     lbl_h_tp = ctk.CTkLabel(
-        top, text="~ +$0.00", text_color="#CFD8DC", font=("Roboto", 11)
+        body, text="~ +$0.00", text_color="#CFD8DC", font=("Roboto", 11)
     )
     lbl_h_tp.pack(pady=(0, 10))
 
     # [NEW] Thêm Checkbox Strict Risk (Tính phí Spread/Comm)
     var_strict = ctk.BooleanVar(value=data.get("STRICT_RISK", False))
     chk_strict = ctk.CTkCheckBox(
-        top,
+        body,
         text="Strict Risk: lot đã trừ spread/comm",
         variable=var_strict,
         text_color="#FF6E66",
@@ -1980,7 +1983,7 @@ def open_preset_config_popup(app):
     var_manual_tp_group = tk.StringVar(value=data.get("MANUAL_TP_GROUP", data.get("MANUAL_SWING_TP_GROUP", data.get("MANUAL_SWING_SL_GROUP", "G2"))))
 
     f_sl_rule = ctk.CTkFrame(
-        top,
+        body,
         fg_color="#142124",
         corner_radius=8,
         border_width=1,
@@ -2032,7 +2035,7 @@ def open_preset_config_popup(app):
     ctk.CTkEntry(f_manual_sl_group, textvariable=var_manual_sl_buffer, width=58, justify="center").pack(side="left")
 
     f_tp_rule = ctk.CTkFrame(
-        top,
+        body,
         fg_color="#142124",
         corner_radius=8,
         border_width=1,
@@ -2142,6 +2145,10 @@ def open_preset_config_popup(app):
         if hasattr(app, "var_preview_tp_group"):
             display = var_manual_tp_group.get() or "G2"
             app.var_preview_tp_group.set(display)
+        if hasattr(app, "var_preview_sl_mode"):
+            app.var_preview_sl_mode.set(_manual_mode_display.get(sl_mode, "Percent"))
+        if hasattr(app, "var_preview_tp_mode"):
+            app.var_preview_tp_mode.set(_manual_mode_display.get(tp_mode, "RR"))
         app.refresh_manual_preview_tab()
         top.destroy()
     ctk.CTkButton(top, text="LƯU PRESET", command=save_preset, fg_color=COL_GREEN).pack(

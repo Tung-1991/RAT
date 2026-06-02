@@ -871,7 +871,7 @@ class TradeManager:
         params = getattr(config, "PRESETS", {}).get(
             preset_name, {"SL_PERCENT": 0.4, "TP_RR_RATIO": 1.5, "RISK_PERCENT": 0.3}
         )
-        use_swing_sl = params.get("USE_SWING_SL", False)  # Đọc cấu hình
+        sl_mode = str(params.get("MANUAL_SL_MODE") or ("SWING_REJECTION" if params.get("USE_SWING_SL", False) else "PERCENT")).upper()
 
         tick = mt5.symbol_info_tick(symbol)
         sym_info = mt5.symbol_info(symbol)
@@ -893,7 +893,29 @@ class TradeManager:
         if manual_sl > 0:
             sl_price = manual_sl
             sl_distance = abs(price - manual_sl)
-        elif use_swing_sl and context:
+        elif sl_mode == "SANDBOX" and context:
+            brain = self._get_brain_settings(symbol)
+            risk_tsl = brain.get("risk_tsl", {}) or {}
+            sl_group = resolve_manual_group("MANUAL_SL_GROUP")
+            if not sl_group:
+                sl_group = str(risk_tsl.get("base_sl", getattr(config, "BOT_BASE_SL", "G2")) or "G2")
+            if "DYNAMIC" in sl_group:
+                market_mode = (context or {}).get("market_mode", "ANY")
+                sl_group = "G1" if market_mode in ["TREND", "BREAKOUT"] else "G2"
+
+            sh = context.get(f"swing_high_{sl_group}")
+            sl_val = context.get(f"swing_low_{sl_group}")
+            atr_val = context.get(f"atr_{sl_group}", context.get("atr_entry"))
+
+            if sh and sl_val and atr_val:
+                sl_mult = float(risk_tsl.get("sl_atr_multiplier", getattr(config, "sl_atr_multiplier", 0.2)) or 0.2)
+                buffer = float(atr_val) * sl_mult
+                sl_price = (float(sl_val) - buffer) if direction == "BUY" else (float(sh) + buffer)
+                sl_distance = abs(price - sl_price)
+            else:
+                sl_distance = price * (params.get("SL_PERCENT", 0.5) / 100.0)
+                sl_price = price - sl_distance if direction == "BUY" else price + sl_distance
+        elif sl_mode in ("SWING", "SWING_REJECTION", "SWING_RETEST", "SWING_STRUCTURE", "SWING_STRUCT") and context:
             sl_group = resolve_manual_group("MANUAL_SWING_SL_GROUP")
 
             sh = context.get(f"swing_high_{sl_group}")
