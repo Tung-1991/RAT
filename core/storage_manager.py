@@ -680,7 +680,7 @@ def save_state(state: Dict[str, Any]):
 
             tmp_file = f"{STATE_FILE}.tmp"
             with open(tmp_file, "w", encoding="utf-8") as f:
-                json.dump(state, f, indent=4)
+                json.dump(state, f, indent=4, ensure_ascii=False)
             os.replace(tmp_file, STATE_FILE)
         except:
             pass
@@ -894,8 +894,11 @@ def load_brain_settings() -> Dict[str, Any]:
 def save_brain_settings(data: Dict[str, Any]):
     try:
         os.makedirs(os.path.dirname(BRAIN_FILE), exist_ok=True)
-        with open(BRAIN_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4)
+        tmp_file = f"{BRAIN_FILE}.tmp"
+        with open(tmp_file, "w", encoding="utf-8") as f:
+            json.dump(data if isinstance(data, dict) else {}, f, indent=4, ensure_ascii=False)
+        os.replace(tmp_file, BRAIN_FILE)
+        invalidate_settings_cache()
     except:
         pass
 
@@ -980,7 +983,8 @@ def load_symbol_overrides() -> Dict[str, Any]:
     try:
         if os.path.exists(SYMBOL_OVERRIDES_FILE):
             with open(SYMBOL_OVERRIDES_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
+                data = json.load(f)
+                return data if isinstance(data, dict) else {}
     except Exception:
         pass
     return {}
@@ -988,8 +992,10 @@ def load_symbol_overrides() -> Dict[str, Any]:
 def save_symbol_overrides(data: Dict[str, Any]):
     try:
         os.makedirs(os.path.dirname(SYMBOL_OVERRIDES_FILE), exist_ok=True)
-        with open(SYMBOL_OVERRIDES_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4)
+        tmp_file = f"{SYMBOL_OVERRIDES_FILE}.tmp"
+        with open(tmp_file, "w", encoding="utf-8") as f:
+            json.dump(data if isinstance(data, dict) else {}, f, indent=4, ensure_ascii=False)
+        os.replace(tmp_file, SYMBOL_OVERRIDES_FILE)
         invalidate_settings_cache()  # Xóa cache khi lưu override mới
     except Exception:
         pass

@@ -104,6 +104,8 @@ PRESETS = {
         "RISK_PERCENT": 0.3,
         "USE_SWING_SL": False,
         "USE_SWING_TP": False,
+        "MANUAL_SWING_SL_GROUP": "G2",
+        "MANUAL_SWING_TP_GROUP": "G2",
     },
     "SAFE": {
         "DESC": "An toàn",
@@ -112,6 +114,8 @@ PRESETS = {
         "RISK_PERCENT": 0.2,
         "USE_SWING_SL": False,
         "USE_SWING_TP": False,
+        "MANUAL_SWING_SL_GROUP": "G2",
+        "MANUAL_SWING_TP_GROUP": "G2",
     },
     "BREAKOUT": {
         "DESC": "Săn trend lớn",
@@ -120,6 +124,8 @@ PRESETS = {
         "RISK_PERCENT": 0.5,
         "USE_SWING_SL": False,
         "USE_SWING_TP": False,
+        "MANUAL_SWING_SL_GROUP": "G2",
+        "MANUAL_SWING_TP_GROUP": "G2",
     },
 }
 

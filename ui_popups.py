@@ -17,6 +17,40 @@ import os
 import json
 
 
+def _speed_up_scroll(frame, factor=5):
+    canvas = getattr(frame, "_parent_canvas", None)
+    if canvas is None:
+        return frame
+
+    def on_mousewheel(event):
+        step = int(-1 * (event.delta / 120) * factor) if getattr(event, "delta", 0) else 0
+        if step:
+            canvas.yview_scroll(step, "units")
+        return "break"
+
+    def on_button4(_event):
+        canvas.yview_scroll(-factor, "units")
+        return "break"
+
+    def on_button5(_event):
+        canvas.yview_scroll(factor, "units")
+        return "break"
+
+    def activate(_event):
+        frame.bind_all("<MouseWheel>", on_mousewheel)
+        frame.bind_all("<Button-4>", on_button4)
+        frame.bind_all("<Button-5>", on_button5)
+
+    def deactivate(_event):
+        frame.unbind_all("<MouseWheel>")
+        frame.unbind_all("<Button-4>")
+        frame.unbind_all("<Button-5>")
+
+    frame.bind("<Enter>", activate, add="+")
+    frame.bind("<Leave>", deactivate, add="+")
+    return frame
+
+
 # --- BẢNG MÀU & FONT CHUẨN ---
 
 FONT_BOLD = ("Roboto", 13, "bold")
@@ -82,7 +116,7 @@ def open_symbol_config_popup(app, symbol, on_change=None):
     top.minsize(620, 520)
     top.attributes("-topmost", True)
     top.focus_force()
-    body = ctk.CTkScrollableFrame(top, fg_color="transparent")
+    body = _speed_up_scroll(ctk.CTkScrollableFrame(top, fg_color="transparent"))
     body.pack(fill="both", expand=True, padx=12, pady=(10, 4))
     top.grab_set()  # Khóa (Block) cửa sổ mẹ, bắt buộc người dùng thao tác trên popup này
     ctk.CTkLabel(
@@ -297,7 +331,7 @@ def open_bot_setting_popup(app):
     top.minsize(860, 560)
     top.attributes("-topmost", True)
     # top.transient(app) # Khóa Z-index, luôn nổi trên App chính
-    tab_core = ctk.CTkScrollableFrame(top, fg_color="transparent")
+    tab_core = _speed_up_scroll(ctk.CTkScrollableFrame(top, fg_color="transparent"))
     tab_core.pack(fill="both", expand=True, padx=15, pady=15)
     # Switch Auto Trade
     f_auto = ctk.CTkFrame(tab_core, fg_color="transparent")
@@ -935,7 +969,7 @@ def open_advanced_tools_popup(app):
     tab_grid = tabs.add("GRID")
     tab_hedge = tabs.add("HEDGE")
     tab_backtest = tabs.add("BACKTEST")
-    grid_body = ctk.CTkScrollableFrame(tab_grid, fg_color="transparent")
+    grid_body = _speed_up_scroll(ctk.CTkScrollableFrame(tab_grid, fg_color="transparent"))
     grid_body.pack(fill="both", expand=True)
     ctk.CTkLabel(
         grid_body, text="GRID Control", font=("Roboto", 16, "bold"), text_color="#00B8D4"
@@ -1163,7 +1197,7 @@ def open_advanced_tools_popup(app):
         font=("Roboto", 13, "bold"),
         command=_open_grid_settings,
     ).pack(anchor="w", padx=14, pady=8)
-    hedge_body = ctk.CTkScrollableFrame(tab_hedge, fg_color="transparent")
+    hedge_body = _speed_up_scroll(ctk.CTkScrollableFrame(tab_hedge, fg_color="transparent"))
     hedge_body.pack(fill="both", expand=True)
     ctk.CTkLabel(
         hedge_body, text="HEDGE Dual Control", font=("Roboto", 16, "bold"), text_color="#CE93D8"
@@ -1866,7 +1900,7 @@ def open_preset_config_popup(app):
     data = config.PRESETS.get(p_name, {})
     top = ctk.CTkToplevel(app)
     top.title(f"Preset: {p_name}")
-    top.geometry("430x620")
+    top.geometry("430x700")
     top.attributes("-topmost", True)
     # top.transient(app)
     acc = app.connector.get_account_info()
@@ -1921,23 +1955,55 @@ def open_preset_config_popup(app):
 
     # --- THÊM MỚI TỪ ĐÂY ---
     var_swing_sl = ctk.BooleanVar(value=data.get("USE_SWING_SL", False))
+    var_manual_sl_group = tk.StringVar(value=data.get("MANUAL_SWING_SL_GROUP", "G2"))
     chk_swing_sl = ctk.CTkCheckBox(
         top,
-        text="Dùng SL theo cấu trúc SwingPoint (Giống Bot)",
+        text="Dùng SL theo cấu trúc SwingPoint",
         variable=var_swing_sl,
         text_color="#29B6F6",
         font=("Roboto", 12, "bold"),
     )
-    chk_swing_sl.pack(pady=(0, 10))
+    chk_swing_sl.pack(pady=(0, 4))
+    f_manual_sl_group = ctk.CTkFrame(top, fg_color="transparent")
+    f_manual_sl_group.pack(fill="x", padx=80, pady=(0, 10))
+    ctk.CTkLabel(
+        f_manual_sl_group,
+        text="Manual SL Group:",
+        width=130,
+        anchor="w",
+        text_color="#B0BEC5",
+    ).pack(side="left")
+    ctk.CTkOptionMenu(
+        f_manual_sl_group,
+        values=["G0", "G1", "G2", "G3", "DYNAMIC"],
+        variable=var_manual_sl_group,
+        width=110,
+    ).pack(side="left")
     var_swing_tp = ctk.BooleanVar(value=data.get("USE_SWING_TP", False))
+    var_manual_tp_group = tk.StringVar(value=data.get("MANUAL_SWING_TP_GROUP", data.get("MANUAL_SWING_SL_GROUP", "G2")))
     chk_swing_tp = ctk.CTkCheckBox(
         top,
-        text="Dùng TP theo cấu trúc SwingPoint (Giống Bot)",
+        text="Dùng TP theo cấu trúc SwingPoint",
         variable=var_swing_tp,
         text_color="#66BB6A",
         font=("Roboto", 12, "bold"),
     )
-    chk_swing_tp.pack(pady=(0, 10))
+    chk_swing_tp.pack(pady=(0, 4))
+    f_manual_tp_group = ctk.CTkFrame(top, fg_color="transparent")
+    f_manual_tp_group.pack(fill="x", padx=80, pady=(0, 10))
+    ctk.CTkLabel(
+        f_manual_tp_group,
+        text="Manual TP Group:",
+        width=130,
+        anchor="w",
+        text_color="#B0BEC5",
+    ).pack(side="left")
+    ctk.CTkOptionMenu(
+        f_manual_tp_group,
+        values=["G0", "G1", "G2", "G3", "DYNAMIC"],
+        variable=var_manual_tp_group,
+        width=110,
+    ).pack(side="left")
 
     # --- KẾT THÚC THÊM MỚI ---
 
@@ -1975,6 +2041,8 @@ def open_preset_config_popup(app):
                 "STRICT_RISK": var_strict.get(),
                 "USE_SWING_SL": var_swing_sl.get(),  # Lưu biến mới
                 "USE_SWING_TP": var_swing_tp.get(),
+                "MANUAL_SWING_SL_GROUP": var_manual_sl_group.get() or "G2",
+                "MANUAL_SWING_TP_GROUP": var_manual_tp_group.get() or "G2",
             }
         )
         app.save_settings()
@@ -2031,9 +2099,9 @@ def open_tsl_popup(app, override_symbol=None):
     tabview.pack(fill="both", expand=True, padx=10, pady=5)
     tab_basic_root = tabview.add("Basic (BE, PNL, STEP)")
     tab_adv_root = tabview.add("Advanced (CASH, PSAR)")
-    tab_basic = ctk.CTkScrollableFrame(tab_basic_root, fg_color="transparent")
+    tab_basic = _speed_up_scroll(ctk.CTkScrollableFrame(tab_basic_root, fg_color="transparent"))
     tab_basic.pack(fill="both", expand=True, padx=4, pady=4)
-    tab_adv = ctk.CTkScrollableFrame(tab_adv_root, fg_color="transparent")
+    tab_adv = _speed_up_scroll(ctk.CTkScrollableFrame(tab_adv_root, fg_color="transparent"))
     tab_adv.pack(fill="both", expand=True, padx=4, pady=4)
     if not override_symbol:
         tab_ow = tabview.add("Overwrite (Mẹ-Con)")
@@ -2222,7 +2290,7 @@ def open_tsl_popup(app, override_symbol=None):
         pass
     f_pnl = sec(tab_basic, "2. KHÓA LÃI PNL (LEVELS)")
     f_pnl.pack(fill="x", padx=15, pady=(0, 8))
-    scroll_pnl = ctk.CTkScrollableFrame(f_pnl, height=125, fg_color="#181818")
+    scroll_pnl = _speed_up_scroll(ctk.CTkScrollableFrame(f_pnl, height=125, fg_color="#181818"))
     scroll_pnl.pack(fill="x", padx=10, pady=(0, 6))
     scroll_pnl.grid_columnconfigure(0, weight=1)
     pnl_entries = []
@@ -2317,11 +2385,13 @@ def open_tsl_popup(app, override_symbol=None):
     )
     cbo_cash_type.set(tsl_cfg.get("BE_CASH_TYPE", "USD"))
     cbo_cash_type.pack(side="left", padx=5)
-    ctk.CTkLabel(f_cash_r1, text="Trig:").pack(side="left", padx=2)
+    lbl_cash_trig = ctk.CTkLabel(f_cash_r1, text="Trig:")
+    lbl_cash_trig.pack(side="left", padx=2)
     e_cash_trig = ctk.CTkEntry(f_cash_r1, width=50)
     e_cash_trig.insert(0, str(tsl_cfg.get("BE_TRIGGER", 10.0)))
     e_cash_trig.pack(side="left", padx=2)
-    ctk.CTkLabel(f_cash_r1, text="Step:").pack(side="left", padx=2)
+    lbl_cash_step = ctk.CTkLabel(f_cash_r1, text="Step:")
+    lbl_cash_step.pack(side="left", padx=2)
     e_cash_val = ctk.CTkEntry(f_cash_r1, width=50)
     e_cash_val.insert(0, str(tsl_cfg.get("BE_VALUE", 20.0)))
     e_cash_val.pack(side="left", padx=2)
@@ -2335,14 +2405,17 @@ def open_tsl_popup(app, override_symbol=None):
     var_cash_fee_protect = ctk.BooleanVar(
         value=tsl_cfg.get("BE_CASH_FEE_PROTECT", True)
     )
-    ctk.CTkCheckBox(
+    chk_cash_fee = ctk.CTkCheckBox(
         f_cash_r2, text="Fee Protect", variable=var_cash_fee_protect, width=60
-    ).pack(side="left", padx=5)
+    )
+    chk_cash_fee.pack(side="left", padx=5)
     var_be_one_time = ctk.BooleanVar(value=tsl_cfg.get("ONE_TIME_BE", False))
-    ctk.CTkCheckBox(
+    chk_be_one_time = ctk.CTkCheckBox(
         f_cash_r2, text="One-Time (Chỉ khóa mốc 1)", variable=var_be_one_time, width=60
-    ).pack(side="left", padx=5)
-    ctk.CTkLabel(f_cash_r3, text="Buffer:").pack(side="left", padx=2)
+    )
+    chk_be_one_time.pack(side="left", padx=5)
+    lbl_cash_buffer = ctk.CTkLabel(f_cash_r3, text="Buffer:")
+    lbl_cash_buffer.pack(side="left", padx=2)
     cbo_cash_buffer_type = ctk.CTkOptionMenu(
         f_cash_r3, values=["USD", "PERCENT", "POINT", "ATR", "R"], width=90
     )
@@ -2351,17 +2424,51 @@ def open_tsl_popup(app, override_symbol=None):
     e_cash_buffer = ctk.CTkEntry(f_cash_r3, width=55)
     e_cash_buffer.insert(0, str(tsl_cfg.get("BE_CASH_SOFT_BUFFER", 3.0)))
     e_cash_buffer.pack(side="left", padx=2)
-    ctk.CTkLabel(f_cash_r3, text="Min Lock:").pack(side="left", padx=(10, 2))
+    lbl_cash_min_lock = ctk.CTkLabel(f_cash_r3, text="Min Lock:")
+    lbl_cash_min_lock.pack(side="left", padx=(10, 2))
     e_cash_min_lock = ctk.CTkEntry(f_cash_r3, width=55)
     e_cash_min_lock.insert(0, str(tsl_cfg.get("BE_CASH_MIN_LOCK", 0.0)))
     e_cash_min_lock.pack(side="left", padx=2)
-    ctk.CTkLabel(
+    lbl_cash_help = ctk.CTkLabel(
         f_cash,
         text="SOFT LOCK: khóa = target - buffer; Min Lock là sàn khóa tối thiểu nếu kết quả còn dương.",
         text_color="#B0BEC5",
         font=("Arial", 11, "italic"),
         wraplength=820,
-    ).pack(anchor="w", padx=8, pady=(4, 0))
+    )
+    lbl_cash_help.pack(anchor="w", padx=8, pady=(4, 0))
+    try:
+        for row_frame in (f_cash_r1, f_cash_r2, f_cash_r3):
+            for child in row_frame.winfo_children():
+                child.pack_forget()
+            row_frame.grid_columnconfigure(9, weight=1)
+        lbl_cash_help.pack_forget()
+        compact_menu(cbo_cash_type)
+        compact_menu(cbo_cash_strat)
+        compact_menu(cbo_cash_buffer_type)
+        compact_entry(e_cash_trig)
+        compact_entry(e_cash_val)
+        compact_entry(e_cash_buffer)
+        compact_entry(e_cash_min_lock)
+        ctk.CTkLabel(f_cash_r1, text="Unit:", text_color="#B0BEC5").grid(row=0, column=0, sticky="w", padx=(8, 4), pady=5)
+        cbo_cash_type.grid(row=0, column=1, sticky="w", padx=(0, 12), pady=5)
+        lbl_cash_trig.grid(row=0, column=2, sticky="w", padx=(0, 4), pady=5)
+        e_cash_trig.grid(row=0, column=3, sticky="w", padx=(0, 12), pady=5)
+        lbl_cash_step.grid(row=0, column=4, sticky="w", padx=(0, 4), pady=5)
+        e_cash_val.grid(row=0, column=5, sticky="w", padx=(0, 12), pady=5)
+        ctk.CTkLabel(f_cash_r1, text="Strategy:", text_color="#B0BEC5").grid(row=0, column=6, sticky="w", padx=(0, 4), pady=5)
+        cbo_cash_strat.grid(row=0, column=7, sticky="w", padx=(0, 8), pady=5)
+        chk_cash_fee.grid(row=0, column=0, sticky="w", padx=(8, 16), pady=5)
+        chk_be_one_time.grid(row=0, column=1, columnspan=4, sticky="w", padx=(0, 8), pady=5)
+        lbl_cash_buffer.grid(row=0, column=0, sticky="w", padx=(8, 4), pady=5)
+        cbo_cash_buffer_type.grid(row=0, column=1, sticky="w", padx=(0, 12), pady=5)
+        e_cash_buffer.grid(row=0, column=2, sticky="w", padx=(0, 16), pady=5)
+        lbl_cash_min_lock.grid(row=0, column=3, sticky="w", padx=(0, 4), pady=5)
+        e_cash_min_lock.grid(row=0, column=4, sticky="w", padx=(0, 8), pady=5)
+        lbl_cash_help.configure(wraplength=820, justify="left", anchor="w")
+        lbl_cash_help.pack(fill="x", padx=12, pady=(4, 10))
+    except Exception:
+        pass
     f_psar = sec(tab_adv, "6. PSAR TRAILING (Đuổi chấm)")
     f_psar.pack(fill="x", padx=15, pady=(0, 8))
     f_psar_row1 = ctk.CTkFrame(f_psar, fg_color="transparent")
@@ -2708,7 +2815,7 @@ def open_tsl_popup(app, override_symbol=None):
     if not override_symbol:
 
         def build_overwrite_tab():
-            f = ctk.CTkScrollableFrame(tab_ow)
+            f = _speed_up_scroll(ctk.CTkScrollableFrame(tab_ow))
             f.pack(fill="both", expand=True, padx=5, pady=5)
             ctk.CTkLabel(
                 f,

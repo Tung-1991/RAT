@@ -105,7 +105,7 @@ class ChecklistManager:
 
         # 3. Daily Loss Check ($/%)
         start_bal = state["starting_balance"]
-        pnl_today = state["pnl_today"]
+        pnl_today = state.get("manual_pnl_today", 0.0)
         loss_pct = (pnl_today / start_bal * 100) if start_bal > 0 else 0
         max_loss_limit = -config.MAX_DAILY_LOSS_PERCENT
 
@@ -142,7 +142,7 @@ class ChecklistManager:
             )
 
         # 5. Trades Today Check (Hiển thị Max)
-        count = state["trades_today_count"]
+        count = state.get("manual_trades_today", 0)
         max_trades = config.MAX_TRADES_PER_DAY
         trade_msg = f"{count} (Max {max_trades})"
 
@@ -159,7 +159,7 @@ class ChecklistManager:
         magics = storage_manager.get_magic_numbers()
         my_pos = [
             p for p in positions
-            if is_bot_position(p, magics) or is_manual_position(p, magics)
+            if is_manual_position(p, magics)
         ]
 
         try:

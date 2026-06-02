@@ -12,6 +12,40 @@ import config
 import core.storage_manager as storage_manager
 
 
+def _speed_up_scroll(frame, factor=5):
+    canvas = getattr(frame, "_parent_canvas", None)
+    if canvas is None:
+        return frame
+
+    def on_mousewheel(event):
+        step = int(-1 * (event.delta / 120) * factor) if getattr(event, "delta", 0) else 0
+        if step:
+            canvas.yview_scroll(step, "units")
+        return "break"
+
+    def on_button4(_event):
+        canvas.yview_scroll(-factor, "units")
+        return "break"
+
+    def on_button5(_event):
+        canvas.yview_scroll(factor, "units")
+        return "break"
+
+    def activate(_event):
+        frame.bind_all("<MouseWheel>", on_mousewheel)
+        frame.bind_all("<Button-4>", on_button4)
+        frame.bind_all("<Button-5>", on_button5)
+
+    def deactivate(_event):
+        frame.unbind_all("<MouseWheel>")
+        frame.unbind_all("<Button-4>")
+        frame.unbind_all("<Button-5>")
+
+    frame.bind("<Enter>", activate, add="+")
+    frame.bind("<Leave>", deactivate, add="+")
+    return frame
+
+
 COL_GREEN = "#00C853"
 COL_WARN = "#FFAB00"
 COL_GRAY_BTN = "#424242"
@@ -136,10 +170,7 @@ def _load_global_cfg():
 def _save_global_cfg(cfg):
     payload = _load_global_payload()
     payload["entry_exit"] = cfg
-    os.makedirs(os.path.dirname(storage_manager.BRAIN_FILE), exist_ok=True)
-    with open(storage_manager.BRAIN_FILE, "w", encoding="utf-8") as f:
-        json.dump(payload, f, indent=4, ensure_ascii=False)
-    storage_manager.invalidate_settings_cache()
+    storage_manager.save_brain_settings(payload)
 
 
 def _hint(parent, text):
@@ -166,14 +197,19 @@ def _section(parent, title, color="#00B8D4"):
     frame = ctk.CTkFrame(parent, fg_color=COL_PANEL, corner_radius=8, border_width=1, border_color=color)
     frame.pack(fill="x", padx=10, pady=8)
     ctk.CTkLabel(frame, text=title, font=("Roboto", 13, "bold"), text_color=color).grid(
-        row=0, column=0, columnspan=5, sticky="w", padx=12, pady=(8, 6)
+        row=0, column=0, columnspan=6, sticky="w", padx=12, pady=(8, 6)
     )
-    frame.grid_columnconfigure((1, 3), weight=1)
+    frame.grid_columnconfigure(0, minsize=145)
+    frame.grid_columnconfigure(1, minsize=170)
+    frame.grid_columnconfigure(2, minsize=140)
+    frame.grid_columnconfigure(3, minsize=170)
+    frame.grid_columnconfigure(4, minsize=80)
+    frame.grid_columnconfigure(5, weight=1)
     return frame
 
 
 def _field(frame, row, label, variable, values=None, width=130, col=0):
-    ctk.CTkLabel(frame, text=label, text_color="#FFFFFF").grid(row=row, column=col, sticky="w", padx=12, pady=5)
+    ctk.CTkLabel(frame, text=label, text_color="#FFFFFF", anchor="w").grid(row=row, column=col, sticky="ew", padx=12, pady=5)
     if values:
         widget = ctk.CTkOptionMenu(frame, values=values, variable=variable, width=width, fg_color="#1f538d", button_color="#16406D")
     else:
@@ -205,13 +241,13 @@ def open_entry_exit_popup(app, override_symbol=None):
 
     tabview = ctk.CTkTabview(top)
     tabview.pack(fill="both", expand=True, padx=12, pady=(10, 4))
-    tab_basic = ctk.CTkScrollableFrame(tabview.add("Cơ bản"), fg_color="transparent")
-    tab_advanced = ctk.CTkScrollableFrame(tabview.add("Nâng cao"), fg_color="transparent")
+    tab_basic = _speed_up_scroll(ctk.CTkScrollableFrame(tabview.add("Cơ bản"), fg_color="transparent"))
+    tab_advanced = _speed_up_scroll(ctk.CTkScrollableFrame(tabview.add("Nâng cao"), fg_color="transparent"))
     tab_basic.pack(fill="both", expand=True, padx=4, pady=4)
     tab_advanced.pack(fill="both", expand=True, padx=4, pady=4)
 
     if not override_symbol:
-        tab_overwrite = ctk.CTkScrollableFrame(tabview.add("Overwrite"), fg_color="transparent")
+        tab_overwrite = _speed_up_scroll(ctk.CTkScrollableFrame(tabview.add("Overwrite"), fg_color="transparent"))
         tab_overwrite.pack(fill="both", expand=True, padx=4, pady=4)
 
     var_signal_ttl = tk.StringVar()

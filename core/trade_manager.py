@@ -24,7 +24,7 @@ from core.storage_manager import (
     mark_safeguard_brake,
 )
 from core.market_hours import is_symbol_trade_window_open
-from core.position_classifier import is_bot_position, is_grid_position, is_manual_position
+from core.position_classifier import is_bot_position, is_grid_position, is_hedge_position, is_manual_position
 from core.entry_exit_engine import evaluate_entry_exit, format_decision
 
 
@@ -583,6 +583,7 @@ class TradeManager:
         import core.storage_manager as storage_manager
 
         magics = storage_manager.get_magic_numbers()
+        bot_magic = magics.get("bot_magic", 9999)
         if signal_class in ["DCA", "PCA"]:
             positions = [
                 p
@@ -881,28 +882,26 @@ class TradeManager:
         equity = acc_info["equity"]
         order_type = mt5.ORDER_TYPE_BUY if direction == "BUY" else mt5.ORDER_TYPE_SELL
 
+        def resolve_manual_group(key):
+            group = str(params.get(key, "G2") or "G2")
+            if "DYNAMIC" in group:
+                market_mode = (context or {}).get("market_mode", "ANY")
+                return "G1" if market_mode in ["TREND", "BREAKOUT"] else "G2"
+            return group
+
         # --- TÍNH TOÁN SL CHÍNH XÁC ---
         if manual_sl > 0:
             sl_price = manual_sl
             sl_distance = abs(price - manual_sl)
         elif use_swing_sl and context:
-            brain = self._get_brain_settings(symbol)
-            risk_tsl = brain.get("risk_tsl", {})
-            sl_group = risk_tsl.get("base_sl", "G2")
-            if "DYNAMIC" in sl_group:
-                market_mode = context.get("market_mode", "ANY")
-                sl_group = "G1" if market_mode in ["TREND", "BREAKOUT"] else "G2"
+            sl_group = resolve_manual_group("MANUAL_SWING_SL_GROUP")
 
             sh = context.get(f"swing_high_{sl_group}")
             sl_val = context.get(f"swing_low_{sl_group}")
             atr_val = context.get(f"atr_{sl_group}")
 
             if sh and sl_val and atr_val:
-                sl_mult = float(
-                    risk_tsl.get(
-                        "sl_atr_multiplier", getattr(config, "sl_atr_multiplier", 0.2)
-                    )
-                )
+                sl_mult = float(params.get("MANUAL_SWING_SL_ATR_MULT", getattr(config, "sl_atr_multiplier", 0.2)))
                 buffer = atr_val * sl_mult
                 sl_price = (sl_val - buffer) if direction == "BUY" else (sh + buffer)
                 sl_distance = abs(price - sl_price)
@@ -967,23 +966,14 @@ class TradeManager:
         if manual_tp > 0:
             tp_price = manual_tp
         elif use_swing_tp and context:
-            brain = self._get_brain_settings(symbol)
-            risk_tsl = brain.get("risk_tsl", {})
-            tp_group = risk_tsl.get("base_sl", "G2")
-            if "DYNAMIC" in tp_group:
-                market_mode = context.get("market_mode", "ANY")
-                tp_group = "G1" if market_mode in ["TREND", "BREAKOUT"] else "G2"
+            tp_group = resolve_manual_group("MANUAL_SWING_TP_GROUP")
 
             sh = context.get(f"swing_high_{tp_group}")
             sl_val = context.get(f"swing_low_{tp_group}")
             atr_val = context.get(f"atr_{tp_group}")
 
             if sh and sl_val and atr_val:
-                tp_mult = float(
-                    risk_tsl.get(
-                        "sl_atr_multiplier", getattr(config, "sl_atr_multiplier", 0.2)
-                    )
-                )
+                tp_mult = float(params.get("MANUAL_SWING_TP_ATR_MULT", params.get("MANUAL_SWING_SL_ATR_MULT", getattr(config, "sl_atr_multiplier", 0.2))))
                 buffer = atr_val * tp_mult
                 tp_price = (sh - buffer) if direction == "BUY" else (sl_val + buffer)
             else:
@@ -1081,13 +1071,17 @@ class TradeManager:
                             is_grid = is_grid_position(d_out, magics) or any(
                                 is_grid_position(d, magics) for d in deals
                             )
-                            is_bot = is_bot_position(d_out, magics) and not is_grid
+                            is_hedge = is_hedge_position(d_out, magics) or any(
+                                is_hedge_position(d, magics) for d in deals
+                            )
+                            is_manual = is_manual_position(d_out, magics) and not is_grid and not is_hedge
+                            is_bot = is_bot_position(d_out, magics) and not is_grid and not is_hedge
                             if not is_bot:
                                 is_bot = any(
                                     marker in str(getattr(d, "comment", ""))
                                     for d in deals
                                     for marker in ("[BOT]", "AUTO_DCA", "AUTO_PCA")
-                                ) and not is_grid
+                                ) and not is_grid and not is_hedge
 
                             self.state["pnl_today"] += real_pnl
 
@@ -1159,7 +1153,7 @@ class TradeManager:
                                 else:
                                     self.state["bot_losing_streak"] = 0
                                     symbol_streaks[d_out.symbol] = 0
-                            elif not is_grid:
+                            elif is_manual:
                                 self.state["manual_pnl_today"] = (
                                     self.state.get("manual_pnl_today", 0) + real_pnl
                                 )
