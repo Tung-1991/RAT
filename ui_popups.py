@@ -51,6 +51,59 @@ def _speed_up_scroll(frame, factor=5):
     return frame
 
 
+def open_advisor_popup(app):
+    top = ctk.CTkToplevel(app)
+    top.title("AI Advisor")
+    top.geometry("520x360")
+    top.minsize(480, 320)
+    top.attributes("-topmost", True)
+    top.focus_force()
+
+    root = ctk.CTkFrame(top, fg_color="#1E1E1E", corner_radius=0)
+    root.pack(fill="both", expand=True, padx=10, pady=10)
+
+    ctk.CTkLabel(root, text="AI ADVISOR", font=("Roboto", 18, "bold"), text_color="#80DEEA").pack(anchor="w", padx=10, pady=(8, 4))
+
+    status_row = ctk.CTkFrame(root, fg_color="#252526", corner_radius=6)
+    status_row.pack(fill="x", padx=10, pady=(2, 8))
+    ctk.CTkLabel(status_row, text="Status", font=("Roboto", 12, "bold"), text_color="gray").pack(side="left", padx=10, pady=8)
+    app.lbl_advisor_status = ctk.CTkLabel(
+        status_row,
+        text=getattr(app, "advisor_last_export_status", "Never"),
+        font=("Roboto", 12, "bold"),
+        text_color="#00C853" if "OK" in getattr(app, "advisor_last_export_status", "") else "gray",
+        anchor="e",
+    )
+    app.lbl_advisor_status.pack(side="right", fill="x", expand=True, padx=10, pady=8)
+
+    settings = ctk.CTkFrame(root, fg_color="transparent")
+    settings.pack(fill="x", padx=10, pady=4)
+    settings.grid_columnconfigure(1, weight=1)
+
+    ctk.CTkLabel(settings, text="Export days", font=("Roboto", 12, "bold"), text_color="#D7DCE2").grid(row=0, column=0, sticky="w", pady=6)
+    ctk.CTkOptionMenu(settings, values=["1", "3", "7", "14", "30"], variable=app.var_advisor_export_days, width=110, height=28).grid(row=0, column=1, sticky="e", pady=6)
+
+    ctk.CTkLabel(settings, text="Mode", font=("Roboto", 12, "bold"), text_color="#D7DCE2").grid(row=1, column=0, sticky="w", pady=6)
+    ctk.CTkOptionMenu(settings, values=["Manual Only", "API Trigger"], variable=app.var_advisor_mode, width=160, height=28).grid(row=1, column=1, sticky="e", pady=6)
+
+    ctk.CTkLabel(settings, text="Fixed time", font=("Roboto", 12, "bold"), text_color="#D7DCE2").grid(row=2, column=0, sticky="w", pady=6)
+    ctk.CTkEntry(settings, textvariable=app.var_advisor_fixed_time, width=110, height=28, placeholder_text="HH:MM").grid(row=2, column=1, sticky="e", pady=6)
+
+    ctk.CTkCheckBox(
+        settings,
+        text="Save Advisor Snapshots",
+        variable=app.var_advisor_save_archive,
+        font=("Roboto", 12, "bold"),
+        checkbox_width=18,
+        checkbox_height=18,
+    ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(8, 4))
+
+    buttons = ctk.CTkFrame(root, fg_color="transparent")
+    buttons.pack(fill="x", padx=10, pady=(14, 8))
+    ctk.CTkButton(buttons, text="Generate Advisor Package", height=34, fg_color="#00695C", hover_color="#004D40", command=app.generate_advisor_package_ui).pack(side="left", fill="x", expand=True, padx=(0, 5))
+    ctk.CTkButton(buttons, text="Open Folder", width=110, height=34, fg_color="#424242", hover_color="#616161", command=app.open_advisor_folder).pack(side="left", padx=5)
+    ctk.CTkButton(buttons, text="Send API", width=100, height=34, fg_color="#1f538d", hover_color="#14375e", command=app.send_advisor_api_now).pack(side="left", padx=(5, 0))
+
 # --- BẢNG MÀU & FONT CHUẨN ---
 
 FONT_BOLD = ("Roboto", 13, "bold")

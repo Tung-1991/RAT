@@ -499,6 +499,31 @@ def append_trade_log(ticket, symbol, type_str, volume, entry_price, sl, tp, fee,
             writer = csv.writer(f)
             writer.writerow(header)
             writer.writerows(rows)
+
+        try:
+            from ai_advisor.history import record_closed_trade
+
+            record_closed_trade(
+                ticket,
+                symbol,
+                type_str,
+                volume,
+                entry_price,
+                sl,
+                tp,
+                fee,
+                pnl,
+                close_reason,
+                market_mode=market_mode,
+                trigger_signal=trigger_signal,
+                session_id=session_id,
+                open_time_str=open_time_str,
+                mae_usd=mae_usd,
+                mfe_usd=mfe_usd,
+                state=load_state(),
+            )
+        except Exception:
+            pass
     except:
         pass
 
@@ -899,6 +924,17 @@ def save_brain_settings(data: Dict[str, Any]):
             json.dump(data if isinstance(data, dict) else {}, f, indent=4, ensure_ascii=False)
         os.replace(tmp_file, BRAIN_FILE)
         invalidate_settings_cache()
+        try:
+            from ai_advisor.history import ensure_config_snapshot, record_event
+
+            snapshot_id = ensure_config_snapshot(reason="save_brain_settings")
+            record_event(
+                "config_saved",
+                "brain_settings.json saved",
+                payload={"source": BRAIN_FILE, "config_snapshot_id": snapshot_id},
+            )
+        except Exception:
+            pass
     except:
         pass
 
@@ -997,6 +1033,17 @@ def save_symbol_overrides(data: Dict[str, Any]):
             json.dump(data if isinstance(data, dict) else {}, f, indent=4, ensure_ascii=False)
         os.replace(tmp_file, SYMBOL_OVERRIDES_FILE)
         invalidate_settings_cache()  # Xóa cache khi lưu override mới
+        try:
+            from ai_advisor.history import ensure_config_snapshot, record_event
+
+            snapshot_id = ensure_config_snapshot(reason="save_symbol_overrides")
+            record_event(
+                "config_saved",
+                "symbol_overrides.json saved",
+                payload={"source": SYMBOL_OVERRIDES_FILE, "config_snapshot_id": snapshot_id},
+            )
+        except Exception:
+            pass
     except Exception:
         pass
 

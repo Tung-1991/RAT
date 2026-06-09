@@ -304,6 +304,24 @@ def setup_left_panel(app, parent):
         hover_color="#006064",
         command=app.open_advanced_tools_popup,
     ).pack(side="left", padx=(0, 1))
+    ctk.CTkButton(
+        f_ad_cluster,
+        text="AI",
+        width=30,
+        height=26,
+        font=("Roboto", 11, "bold"),
+        fg_color="#00695C",
+        hover_color="#004D40",
+        command=app.open_advisor_popup,
+    ).pack(side="left", padx=(2, 1))
+    app.lbl_advisor_inline_status = ctk.CTkLabel(
+        f_ad_cluster,
+        text="AI",
+        width=16,
+        font=("Roboto", 8, "bold"),
+        text_color="gray",
+    )
+    app.lbl_advisor_inline_status.pack(side="left", padx=(1, 0))
 
     ctk.CTkLabel(f_set, text="E/E:", font=FONT_SECTION, text_color="#D7DCE2").grid(
         row=3, column=0, sticky="e", padx=(0, 8), pady=2

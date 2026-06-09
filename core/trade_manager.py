@@ -762,6 +762,29 @@ class TradeManager:
             self.state.setdefault("initial_r_usd", {})[str(ticket_id)] = self._calc_risk_usd(
                 symbol, order_type, lot_size, current_price, sl_price
             )
+            try:
+                from ai_advisor.history import record_trade_opened_data
+
+                record_trade_opened_data(
+                    ticket_id,
+                    symbol=symbol,
+                    open_time=time.time(),
+                    source=f"bot_order_success:{signal_class}",
+                    payload={
+                        "direction": direction,
+                        "volume": lot_size,
+                        "entry_price": current_price,
+                        "sl": sl_price,
+                        "tp": tp_price,
+                        "signal_class": signal_class,
+                        "market_mode": market_mode,
+                        "tactic": bot_tactic,
+                        "entry_exit_tactic": self.get_trade_entry_exit_tactic(ticket_id),
+                        "market_context": context or {},
+                    },
+                )
+            except Exception:
+                pass
 
             if parent_pos and signal_class in ["DCA", "PCA"]:
                 s_parent = str(parent_pos.ticket)
@@ -1042,6 +1065,27 @@ class TradeManager:
             )
 
             save_state(self.state)
+            try:
+                from ai_advisor.history import record_trade_opened_data
+
+                record_trade_opened_data(
+                    result.order,
+                    symbol=symbol,
+                    open_time=time.time(),
+                    source="manual_order_success",
+                    payload={
+                        "direction": direction,
+                        "volume": lot_size,
+                        "entry_price": price,
+                        "sl": sl_price,
+                        "tp": tp_price,
+                        "tactic": tactic_str,
+                        "preset": preset_name,
+                        "market_context": context or {},
+                    },
+                )
+            except Exception:
+                pass
             self.log(
                 f"🚀 [USER EXEC] {direction} {symbol} #{result.order} | Vol: {lot_size:.2f} | Entry: {price:.5f} | SL: {sl_price:.5f} | TP: {tp_price:.5f} | TSL: {tactic_str}"
             )
@@ -1378,6 +1422,7 @@ class TradeManager:
 
             needs_save = False
             for pos in tracked_positions:
+                is_newly_tracked = pos.ticket not in self.state["active_trades"]
                 if pos.ticket not in self.state["active_trades"]:
                     self.state["active_trades"].append(pos.ticket)
                     needs_save = True
@@ -1408,6 +1453,18 @@ class TradeManager:
                     if all_market_contexts
                     else {}
                 )
+                if is_newly_tracked:
+                    try:
+                        from ai_advisor.history import record_trade_opened
+
+                        record_trade_opened(
+                            pos,
+                            state=self.state,
+                            market_context=sym_ctx,
+                            source="running_trade_discovery",
+                        )
+                    except Exception:
+                        pass
                 tsl_status_map[pos.ticket] = self._apply_independent_tsl(pos, sym_ctx)
 
                 if "ANTI_CASH" in self.get_trade_tactic(pos.ticket):

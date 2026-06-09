@@ -97,6 +97,17 @@ def load_hedge_settings() -> Dict[str, Any]:
 def save_hedge_settings(data: Dict[str, Any]) -> None:
     merged = _merge_defaults(DEFAULT_HEDGE_SETTINGS, data)
     _save_json(hedge_settings_path(), merged)
+    try:
+        from ai_advisor.history import ensure_config_snapshot, record_event
+
+        snapshot_id = ensure_config_snapshot(reason="save_hedge_settings")
+        record_event(
+            "config_saved",
+            "hedge_settings.json saved",
+            payload={"source": hedge_settings_path(), "config_snapshot_id": snapshot_id},
+        )
+    except Exception:
+        pass
 
 
 def load_hedge_state() -> Dict[str, Any]:

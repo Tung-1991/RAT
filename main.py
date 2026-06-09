@@ -152,6 +152,15 @@ class BotUI(ctk.CTk):
         self.daemon_process = None
         self.daemon_output_file = None
         self.log_cooldown_cache = {}
+        self.var_advisor_export_days = tk.StringVar(value="7")
+        self.var_advisor_mode = tk.StringVar(value="Manual Only")
+        self.var_advisor_save_archive = tk.BooleanVar(value=False)
+        self.var_advisor_fixed_time = tk.StringVar(value="")
+        self.advisor_last_export_status = "Never"
+        self.advisor_last_error = ""
+        self._advisor_worker_active = False
+        self._advisor_last_trigger_check = 0.0
+        self._advisor_last_trigger_fire = {}
 
         # [MODIFIED V6.9.4] Kết nối MT5 TRƯỚC để lấy ID -> Setup Workspace -> Mới Load Setting
         self.connector = ExnessConnector()
@@ -564,6 +573,7 @@ class BotUI(ctk.CTk):
             self.lbl_preview_symbol.configure(text=new_symbol)
         self._save_brain_live_config()
         self.lbl_dashboard_price.configure(text="Đang nạp...", text_color="gray")
+        self.on_direction_change(self.var_direction.get())
         self.update_grid_manual_preview()
         self.refresh_manual_preview_tab()
         threading.Thread(target=lambda: mt5.symbol_select(new_symbol, True)).start()
@@ -2010,6 +2020,9 @@ class BotUI(ctk.CTk):
     def open_advanced_tools_popup(self):
         ui_popups.open_advanced_tools_popup(self)
 
+    def open_advisor_popup(self):
+        ui_popups.open_advisor_popup(self)
+
     # ==========================================
     # LOG TAILER - THEO DÕI DAEMON VÀ HIỂN THỊ LÊN UI
     # ==========================================
@@ -2224,6 +2237,7 @@ class BotUI(ctk.CTk):
                     sym,
                     pos,
                 )
+                self.run_advisor_triggers_tick()
             except Exception as e:
                 import traceback
                 traceback.print_exc()
@@ -2988,6 +3002,120 @@ class BotUI(ctk.CTk):
                 self.log_message(f"❌ THẤT BẠI: {result}", error=True)
 
         threading.Thread(target=run_trade_thread).start()
+
+    def _set_advisor_status(self, status, error=""):
+        self.advisor_last_export_status = status
+        self.advisor_last_error = error or ""
+        label = getattr(self, "lbl_advisor_status", None)
+        if label and label.winfo_exists():
+            text = status if not error else f"{status} | {error}"
+            color = COL_RED if error else (COL_GREEN if "OK" in status else COL_WARN)
+            label.configure(text=text, text_color=color)
+        inline = getattr(self, "lbl_advisor_inline_status", None)
+        if inline and inline.winfo_exists():
+            color = COL_RED if error else (COL_GREEN if "OK" in status else "gray")
+            inline.configure(text="OK" if "OK" in status else ("ERR" if error else "AI"), text_color=color)
+
+    def _advisor_worker(self, send_api=False, reason="manual"):
+        if self._advisor_worker_active:
+            return
+        self._advisor_worker_active = True
+        try:
+            from ai_advisor.exporter import generate_advisor_package
+
+            try:
+                days = int(self.var_advisor_export_days.get() or 7)
+            except Exception:
+                days = 7
+            result = generate_advisor_package(
+                export_days=days,
+                save_archive=self.var_advisor_save_archive.get(),
+                connector=self.connector,
+                state=getattr(self.trade_mgr, "state", {}),
+                market_contexts=getattr(self, "latest_market_context", {}),
+                reason=reason,
+            )
+            if not result.get("ok"):
+                err = result.get("error", "advisor export failed")
+                self.after(0, lambda: self._set_advisor_status("Advisor ERR", err))
+                self.log_message(f"[AI ADVISOR] Export failed: {err}", error=True, target="manual")
+                return
+
+            api_result = None
+            if send_api:
+                from ai_advisor.api_client import send_package_to_api
+
+                api_result = send_package_to_api()
+                if not api_result.get("ok"):
+                    self.log_message(
+                        f"[AI ADVISOR] API skipped/failed: {api_result.get('error')}",
+                        error=True,
+                        target="manual",
+                    )
+
+            msg = f"Advisor OK | closed={result.get('synced_closed_trades', 0)} open={result.get('open_trades', 0)}"
+            if api_result and api_result.get("ok"):
+                msg += " | API OK"
+            self.after(0, lambda m=msg: self._set_advisor_status(m))
+            self.log_message(f"[AI ADVISOR] {msg}", target="manual")
+        except Exception as exc:
+            self.after(0, lambda e=str(exc): self._set_advisor_status("Advisor ERR", e))
+            self.log_message(f"[AI ADVISOR] Error: {exc}", error=True, target="manual")
+        finally:
+            self._advisor_worker_active = False
+
+    def generate_advisor_package_ui(self):
+        self._set_advisor_status("Advisor exporting...")
+        threading.Thread(target=self._advisor_worker, kwargs={"send_api": False, "reason": "manual_button"}, daemon=True).start()
+
+    def send_advisor_api_now(self):
+        self._set_advisor_status("Advisor API sending...")
+        threading.Thread(target=self._advisor_worker, kwargs={"send_api": True, "reason": "api_button"}, daemon=True).start()
+
+    def open_advisor_folder(self):
+        try:
+            from ai_advisor.paths import advisor_root, ensure_advisor_dirs
+
+            ensure_advisor_dirs()
+            os.startfile(advisor_root())
+            self.log_message("[AI ADVISOR] Opened Advisor folder.", target="manual")
+        except Exception as exc:
+            self._set_advisor_status("Advisor folder ERR", str(exc))
+            self.log_message(f"[AI ADVISOR] Cannot open folder: {exc}", error=True, target="manual")
+
+    def run_advisor_triggers_tick(self):
+        if self.var_advisor_mode.get() != "API Trigger":
+            return
+        now = time.time()
+        if now - self._advisor_last_trigger_check < 30:
+            return
+        self._advisor_last_trigger_check = now
+        if self._advisor_worker_active:
+            return
+        try:
+            fixed_time = (self.var_advisor_fixed_time.get() or "").strip()
+            reasons = []
+            if fixed_time and time.strftime("%H:%M") == fixed_time:
+                reasons.append("fixed_time")
+            from ai_advisor.triggers import evaluate
+
+            reasons.extend(evaluate(getattr(self.trade_mgr, "state", {}), connector=self.connector))
+            fresh = []
+            for reason in sorted(set(reasons)):
+                last = self._advisor_last_trigger_fire.get(reason, 0.0)
+                if now - last >= 3600:
+                    fresh.append(reason)
+                    self._advisor_last_trigger_fire[reason] = now
+            if fresh:
+                reason_text = "+".join(fresh)
+                self.log_message(f"[AI ADVISOR] Trigger: {reason_text}", target="manual")
+                threading.Thread(
+                    target=self._advisor_worker,
+                    kwargs={"send_api": True, "reason": f"trigger:{reason_text}"},
+                    daemon=True,
+                ).start()
+        except Exception as exc:
+            self.log_message(f"[AI ADVISOR] Trigger check error: {exc}", error=True, target="manual")
 
     def log_message(self, msg, error=False, target="manual"):
         if "Retcode: 10025" in msg:

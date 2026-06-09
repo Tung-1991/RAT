@@ -68,6 +68,17 @@ def load_grid_settings() -> Dict[str, Any]:
 def save_grid_settings(data: Dict[str, Any]) -> None:
     merged = _merge_defaults(DEFAULT_GRID_SETTINGS, data)
     _save_json(grid_settings_path(), merged)
+    try:
+        from ai_advisor.history import ensure_config_snapshot, record_event
+
+        snapshot_id = ensure_config_snapshot(reason="save_grid_settings")
+        record_event(
+            "config_saved",
+            "grid_settings.json saved",
+            payload={"source": grid_settings_path(), "config_snapshot_id": snapshot_id},
+        )
+    except Exception:
+        pass
 
 
 def load_grid_state() -> Dict[str, Any]:
