@@ -54,8 +54,8 @@ def _speed_up_scroll(frame, factor=5):
 def open_advisor_popup(app):
     top = ctk.CTkToplevel(app)
     top.title("AI Advisor")
-    top.geometry("520x360")
-    top.minsize(480, 320)
+    top.geometry("520x440")
+    top.minsize(480, 400)
     top.attributes("-topmost", True)
     top.focus_force()
 
@@ -91,15 +91,63 @@ def open_advisor_popup(app):
 
     ctk.CTkCheckBox(
         settings,
-        text="Save Advisor Snapshots",
-        variable=app.var_advisor_save_archive,
+        text="Global cooldown emergency",
+        variable=app.var_advisor_global_emergency,
         font=("Roboto", 12, "bold"),
         checkbox_width=18,
         checkbox_height=18,
     ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(8, 4))
 
+    ctk.CTkCheckBox(
+        settings,
+        text="Save Advisor Snapshots",
+        variable=app.var_advisor_save_archive,
+        font=("Roboto", 12, "bold"),
+        checkbox_width=18,
+        checkbox_height=18,
+    ).grid(row=4, column=0, columnspan=2, sticky="w", pady=(4, 4))
+
+    api_hint = ctk.CTkFrame(root, fg_color="#252526", corner_radius=6)
+    api_hint.pack(fill="x", padx=10, pady=(8, 2))
+    ctk.CTkLabel(
+        api_hint,
+        text="API key is read from the current PowerShell session.",
+        font=("Roboto", 10, "bold"),
+        text_color="gray",
+    ).pack(anchor="w", padx=10, pady=(7, 2))
+    api_cmd_row = ctk.CTkFrame(api_hint, fg_color="transparent")
+    api_cmd_row.pack(fill="x", padx=10, pady=(0, 8))
+    api_cmd = '$env:OPENAI_API_KEY="TOKEN"'
+    ctk.CTkLabel(
+        api_cmd_row,
+        text=api_cmd,
+        font=("Consolas", 11, "bold"),
+        text_color="#D7DCE2",
+        anchor="w",
+    ).pack(side="left", fill="x", expand=True)
+
+    def copy_api_cmd():
+        try:
+            top.clipboard_clear()
+            top.clipboard_append(api_cmd)
+            top.update()
+            if hasattr(app, "_set_advisor_status"):
+                app._set_advisor_status("API env command copied")
+        except Exception:
+            pass
+
+    ctk.CTkButton(
+        api_cmd_row,
+        text="Copy",
+        width=70,
+        height=26,
+        fg_color="#424242",
+        hover_color="#616161",
+        command=copy_api_cmd,
+    ).pack(side="right", padx=(8, 0))
+
     buttons = ctk.CTkFrame(root, fg_color="transparent")
-    buttons.pack(fill="x", padx=10, pady=(14, 8))
+    buttons.pack(fill="x", padx=10, pady=(10, 8))
     ctk.CTkButton(buttons, text="Generate Advisor Package", height=34, fg_color="#00695C", hover_color="#004D40", command=app.generate_advisor_package_ui).pack(side="left", fill="x", expand=True, padx=(0, 5))
     ctk.CTkButton(buttons, text="Open Folder", width=110, height=34, fg_color="#424242", hover_color="#616161", command=app.open_advisor_folder).pack(side="left", padx=5)
     ctk.CTkButton(buttons, text="Send API", width=100, height=34, fg_color="#1f538d", hover_color="#14375e", command=app.send_advisor_api_now).pack(side="left", padx=(5, 0))

@@ -74,7 +74,8 @@ FONT_FEE = ("Roboto", 13, "bold")
 
 COL_GREEN = "#00C853"
 COL_RED = "#D50000"
-COL_BLUE_ACCENT = "#1565C0"
+COL_BLUE_ACCENT = "#0D47A1"
+COL_BLUE_ACCENT_HOVER = "#0A3578"
 COL_GRAY_BTN = "#424242"
 COL_WARN = "#FFAB00"
 COL_BOT_TAG = "#E040FB"
@@ -156,6 +157,7 @@ class BotUI(ctk.CTk):
         self.var_advisor_mode = tk.StringVar(value="Manual Only")
         self.var_advisor_save_archive = tk.BooleanVar(value=False)
         self.var_advisor_fixed_time = tk.StringVar(value="")
+        self.var_advisor_global_emergency = tk.BooleanVar(value=True)
         self.advisor_last_export_status = "Never"
         self.advisor_last_error = ""
         self._advisor_worker_active = False
@@ -214,7 +216,7 @@ class BotUI(ctk.CTk):
         self.grid_rowconfigure(0, weight=1)
 
         self.frm_left = ctk.CTkScrollableFrame(
-            self, width=400, corner_radius=0, label_text=""
+            self, width=405, corner_radius=0, label_text=""
         )
         self.frm_left.grid(row=0, column=0, sticky="nswe")
         self.frm_left.grid_columnconfigure(0, weight=1)
@@ -528,7 +530,10 @@ class BotUI(ctk.CTk):
 
     def update_tactic_buttons_ui(self):
         def set_btn(btn, is_active):
-            btn.configure(fg_color=COL_BLUE_ACCENT if is_active else COL_GRAY_BTN)
+            btn.configure(
+                fg_color=COL_BLUE_ACCENT if is_active else COL_GRAY_BTN,
+                hover_color=COL_BLUE_ACCENT_HOVER if is_active else "#616161",
+            )
 
         set_btn(self.btn_tactic_be, self.tactic_states["BE"])
         set_btn(self.btn_tactic_pnl, self.tactic_states["PNL"])
@@ -552,8 +557,8 @@ class BotUI(ctk.CTk):
     def update_entry_exit_buttons_ui(self):
         def set_btn(btn, is_active):
             btn.configure(
-                fg_color="#00838F" if is_active else COL_GRAY_BTN,
-                hover_color="#006064" if is_active else "#616161",
+                fg_color=COL_BLUE_ACCENT if is_active else COL_GRAY_BTN,
+                hover_color=COL_BLUE_ACCENT_HOVER if is_active else "#616161",
             )
 
         if hasattr(self, "btn_entry_r"):
@@ -3096,10 +3101,11 @@ class BotUI(ctk.CTk):
             fixed_time = (self.var_advisor_fixed_time.get() or "").strip()
             reasons = []
             if fixed_time and time.strftime("%H:%M") == fixed_time:
-                reasons.append("fixed_time")
-            from ai_advisor.triggers import evaluate
+                reasons.append("fixed_time_report")
+            if self.var_advisor_global_emergency.get():
+                from ai_advisor.triggers import evaluate
 
-            reasons.extend(evaluate(getattr(self.trade_mgr, "state", {}), connector=self.connector))
+                reasons.extend(evaluate(getattr(self.trade_mgr, "state", {}), connector=self.connector))
             fresh = []
             for reason in sorted(set(reasons)):
                 last = self._advisor_last_trigger_fire.get(reason, 0.0)

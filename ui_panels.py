@@ -19,9 +19,12 @@ FONT_FEE = ("Roboto", 13, "bold")
 
 COL_GREEN = "#00C853"
 COL_RED = "#D50000"
-COL_BLUE_ACCENT = "#1565C0"
+COL_BLUE_ACCENT = "#0D47A1"
+COL_BLUE_ACCENT_HOVER = "#0A3578"
 COL_WARN = "#FFAB00"
 COL_BOT_TAG = "#E040FB"
+COL_SETTING = "#0E7490"
+COL_SETTING_HOVER = "#155E75"
 
 
 def setup_left_panel(app, parent):
@@ -84,195 +87,258 @@ def setup_left_panel(app, parent):
     )
     app.lbl_brain_status.pack(side="right", padx=5)
 
-    # 2. SETTINGS PANEL (Coin, Mode, Tactic)
-    f_set = ctk.CTkFrame(parent, fg_color="transparent")
-    f_set.pack(fill="x", padx=5, pady=5)
-    f_set.columnconfigure(0, minsize=74)
+    # 2. SETTINGS PANEL
+    f_set = ctk.CTkFrame(parent, fg_color="#1f1f1f", corner_radius=8)
+    f_set.pack(fill="x", padx=5, pady=(6, 8))
+    f_set.columnconfigure(0, minsize=42)
     f_set.columnconfigure(1, weight=1)
 
-    # --- DÒNG 1: COIN & CẤU HÌNH BOT & SANDBOX ---
-    ctk.CTkLabel(f_set, text="COIN:", font=FONT_SECTION, text_color="#D7DCE2").grid(
-        row=0, column=0, sticky="e", padx=(0, 8)
-    )
-    f_coin_row = ctk.CTkFrame(f_set, fg_color="transparent")
-    f_coin_row.grid(row=0, column=1, sticky="ew", padx=5)
+    def setting_label(row, text):
+        ctk.CTkLabel(
+            f_set,
+            text=text,
+            font=("Roboto", 11, "bold"),
+            text_color="#B0BEC5",
+            anchor="e",
+        ).grid(row=row, column=0, sticky="e", padx=(6, 6), pady=4)
 
+    def setting_row(row):
+        frame = ctk.CTkFrame(f_set, fg_color="transparent")
+        frame.grid(row=row, column=1, sticky="ew", padx=(0, 6), pady=4)
+        return frame
+
+    def stretch_columns(frame, widths):
+        for col, width in enumerate(widths):
+            frame.grid_columnconfigure(col, weight=1, minsize=width)
+
+    def set_force_button_state():
+        enabled = app.var_bypass_checklist.get()
+        app.btn_force.configure(
+            fg_color=COL_BLUE_ACCENT if enabled else "#424242",
+            hover_color=COL_BLUE_ACCENT_HOVER if enabled else "#616161",
+        )
+
+    def toggle_force_button():
+        app.var_bypass_checklist.set(not app.var_bypass_checklist.get())
+        set_force_button_state()
+
+    setting_label(0, "COIN")
+    f_coin_row = setting_row(0)
+    stretch_columns(f_coin_row, (112, 154))
     app.cbo_symbol = ctk.CTkOptionMenu(
         f_coin_row,
         values=config.COIN_LIST,
         font=FONT_BOLD,
-        width=100,
+        width=112,
+        height=32,
         command=app.on_symbol_change,
     )
     if config.DEFAULT_SYMBOL in config.COIN_LIST:
         app.cbo_symbol.set(config.DEFAULT_SYMBOL)
     elif len(config.COIN_LIST) > 0:
         app.cbo_symbol.set(config.COIN_LIST[0])
-    app.cbo_symbol.pack(side="left")
-
-    f_bot_controls = ctk.CTkFrame(f_coin_row, fg_color="transparent")
-    f_bot_controls.pack(side="left", padx=10)
-
-    app.ind_auto_light = ctk.CTkFrame(
-        f_bot_controls, width=14, height=14, corner_radius=7, fg_color=COL_RED
-    )
-    app.ind_auto_light.pack(side="left", padx=(0, 6))
-
-    ctk.CTkButton(
-        f_bot_controls,
-        text="⚙ BOT",
-        width=40,
-        height=24,
-        fg_color="#4A148C",
-        hover_color="#6A1B9A",
-        command=app.open_bot_setting_popup,
-    ).pack(side="left", padx=(0, 5))
-
-    app.btn_strategy = ctk.CTkButton(
-        f_bot_controls,
-        text="🧩 SANDBOX",
-        width=60,
-        height=24,
-        font=("Roboto", 11, "bold"),
-        fg_color="#1f538d",
-        hover_color="#14375e",
-        command=app.open_strategy_sandbox,
-    )
-    app.btn_strategy.pack(side="left")
-
-    app.chk_force = ctk.CTkCheckBox(
-        f_coin_row,
-        text="F",
-        variable=app.var_bypass_checklist,
-        font=("Roboto", 11, "bold"),
-        text_color=COL_WARN,
-        width=50,
-        checkbox_width=18,
-        checkbox_height=18,
-    )
-    app.chk_force.pack(side="right", padx=0)
-
-    # --- DÒNG 2: MODE ---
-    ctk.CTkLabel(f_set, text="MODE:", font=FONT_SECTION, text_color="#D7DCE2").grid(
-        row=1, column=0, sticky="e", padx=(0, 8), pady=5
-    )
-    f_mode_row = ctk.CTkFrame(f_set, fg_color="transparent")
-    f_mode_row.grid(row=1, column=1, sticky="ew", padx=5)
+    app.cbo_symbol.grid(row=0, column=0, sticky="ew", padx=(0, 6))
 
     app.cbo_preset = ctk.CTkOptionMenu(
-        f_mode_row, values=list(config.PRESETS.keys()), font=FONT_MAIN, width=100,
+        f_coin_row,
+        values=list(config.PRESETS.keys()),
+        font=FONT_MAIN,
+        width=154,
+        height=32,
         command=app.on_preset_change,
     )
     app.cbo_preset.set(config.DEFAULT_PRESET)
-    app.cbo_preset.pack(side="left", fill="x", expand=True)
-    ctk.CTkButton(
-        f_mode_row,
-        text="⚙",
-        width=30,
-        height=26,
-        fg_color="#444",
-        hover_color="#666",
-        command=app.open_preset_config_popup,
-    ).pack(side="left", padx=(2, 0))
+    app.cbo_preset.grid(row=0, column=1, sticky="ew")
+
+    setting_label(1, "ACC")
+    f_account_row = setting_row(1)
+    stretch_columns(f_account_row, (128, 74, 104))
     app.cbo_account_type = ctk.CTkOptionMenu(
-        f_mode_row,
+        f_account_row,
         values=list(config.ACCOUNT_TYPES_CONFIG.keys()),
         font=FONT_MAIN,
-        width=80,
+        width=128,
+        height=32,
     )
     app.cbo_account_type.set(config.DEFAULT_ACCOUNT_TYPE)
-    app.cbo_account_type.pack(side="right", fill="x", padx=(5, 0))
-
-    # --- DÒNG 2: TACTIC ---
-    ctk.CTkLabel(f_set, text="TSL:", font=FONT_SECTION, text_color="#D7DCE2").grid(
-        row=2, column=0, sticky="e", padx=(0, 8), pady=2
+    app.cbo_account_type.grid(row=0, column=0, sticky="ew", padx=(0, 6))
+    ctk.CTkButton(
+        f_account_row,
+        text="\u2699 PRESET",
+        width=92,
+        height=32,
+        fg_color=COL_SETTING,
+        hover_color=COL_SETTING_HOVER,
+        command=app.open_preset_config_popup,
+    ).grid(row=0, column=2, sticky="ew")
+    app.btn_force = ctk.CTkButton(
+        f_account_row,
+        text="Force",
+        font=("Roboto", 11, "bold"),
+        text_color="white",
+        width=74,
+        height=32,
+        fg_color="#424242",
+        hover_color="#616161",
+        command=toggle_force_button,
     )
-    f_tsl_row = ctk.CTkFrame(f_set, fg_color="transparent")
-    f_tsl_row.grid(row=2, column=1, sticky="ew", padx=5)
+    app.btn_force.grid(row=0, column=1, sticky="ew", padx=(0, 6))
+    set_force_button_state()
 
+    setting_label(2, "TSL")
+    f_tsl_row = setting_row(2)
+    stretch_columns(f_tsl_row, (36, 40, 46, 54, 48, 48, 42))
     app.btn_tactic_be = ctk.CTkButton(
-        f_tsl_row, text="BE", width=32, command=lambda: app.toggle_tactic("BE")
+        f_tsl_row, text="BE", width=36, height=32, command=lambda: app.toggle_tactic("BE")
     )
-    app.btn_tactic_be.pack(side="left", padx=1)
+    app.btn_tactic_be.grid(row=0, column=0, sticky="ew", padx=(0, 3))
     app.btn_tactic_pnl = ctk.CTkButton(
-        f_tsl_row, text="PNL", width=28, command=lambda: app.toggle_tactic("PNL")
+        f_tsl_row, text="PNL", width=40, height=32, command=lambda: app.toggle_tactic("PNL")
     )
-    app.btn_tactic_pnl.pack(side="left", padx=1)
+    app.btn_tactic_pnl.grid(row=0, column=1, sticky="ew", padx=3)
     app.btn_tactic_step = ctk.CTkButton(
-        f_tsl_row, text="STEP", width=32, command=lambda: app.toggle_tactic("STEP_R")
+        f_tsl_row, text="STEP", width=46, height=32, command=lambda: app.toggle_tactic("STEP_R")
     )
-    app.btn_tactic_step.pack(side="left", padx=1)
+    app.btn_tactic_step.grid(row=0, column=2, sticky="ew", padx=3)
     app.btn_tactic_swing = ctk.CTkButton(
-        f_tsl_row, text="SWING", width=38, command=lambda: app.toggle_tactic("SWING")
+        f_tsl_row, text="SWING", width=54, height=32, command=lambda: app.toggle_tactic("SWING")
     )
-    app.btn_tactic_swing.pack(side="left", padx=1)
-
-    # [FIX V4.4] Thêm nút CASH và PSAR lên Pannel
+    app.btn_tactic_swing.grid(row=0, column=3, sticky="ew", padx=3)
     app.btn_tactic_cash = ctk.CTkButton(
-        f_tsl_row, text="CASH", width=38, command=lambda: app.toggle_tactic("BE_CASH")
+        f_tsl_row, text="CASH", width=48, height=32, command=lambda: app.toggle_tactic("BE_CASH")
     )
-    app.btn_tactic_cash.pack(side="left", padx=1)
+    app.btn_tactic_cash.grid(row=0, column=4, sticky="ew", padx=3)
     app.btn_tactic_psar = ctk.CTkButton(
+        f_tsl_row, text="PSAR", width=48, height=32, command=lambda: app.toggle_tactic("PSAR_TRAIL")
+    )
+    app.btn_tactic_psar.grid(row=0, column=5, sticky="ew", padx=3)
+    ctk.CTkButton(
         f_tsl_row,
-        text="PSAR",
-        width=38,
-        command=lambda: app.toggle_tactic("PSAR_TRAIL"),
-    )
-    app.btn_tactic_psar.pack(side="left", padx=1)
+        text="TSL",
+        width=42,
+        height=32,
+        fg_color=COL_SETTING,
+        hover_color=COL_SETTING_HOVER,
+        command=app.open_tsl_popup,
+    ).grid(row=0, column=6, sticky="ew", padx=(3, 0))
 
-    # [NEW V4.4] RECOVERY & SAFELOCK Section
-    ctk.CTkLabel(f_set, text="DEF:", font=FONT_SECTION, text_color="#D7DCE2").grid(
-        row=4, column=0, sticky="e", padx=(0, 8), pady=2
+    setting_label(3, "E/E")
+    f_entry = setting_row(3)
+    stretch_columns(f_entry, (36, 62, 62, 40, 42, 42))
+    app.btn_entry_r = ctk.CTkButton(
+        f_entry, text="R", width=36, height=32, command=lambda: app.toggle_entry_exit_tactic("FALLBACK_R")
     )
-    f_extra = ctk.CTkFrame(f_set, fg_color="transparent")
-    f_extra.grid(row=4, column=1, sticky="ew", padx=5)
+    app.btn_entry_r.grid(row=0, column=0, sticky="ew", padx=(0, 3))
+    app.btn_entry_swing = ctk.CTkButton(
+        f_entry, text="RETEST", width=62, height=32, command=lambda: app.toggle_entry_exit_tactic("SWING_REJECTION")
+    )
+    app.btn_entry_swing.grid(row=0, column=1, sticky="ew", padx=3)
+    app.btn_entry_struct = ctk.CTkButton(
+        f_entry, text="STRUCT", width=62, height=32, command=lambda: app.toggle_entry_exit_tactic("SWING_STRUCTURE")
+    )
+    app.btn_entry_struct.grid(row=0, column=2, sticky="ew", padx=3)
+    app.btn_entry_fib = ctk.CTkButton(
+        f_entry, text="FIB", width=40, height=32, command=lambda: app.toggle_entry_exit_tactic("FIB_RETRACE")
+    )
+    app.btn_entry_fib.grid(row=0, column=3, sticky="ew", padx=3)
+    app.btn_entry_pullback = ctk.CTkButton(
+        f_entry, text="PULL", width=42, height=32, command=lambda: app.toggle_entry_exit_tactic("PULLBACK_ZONE")
+    )
+    app.btn_entry_pullback.grid(row=0, column=4, sticky="ew", padx=3)
+    ctk.CTkButton(
+        f_entry,
+        text="EE",
+        width=42,
+        height=32,
+        fg_color=COL_SETTING,
+        hover_color=COL_SETTING_HOVER,
+        command=app.open_entry_exit_popup,
+    ).grid(row=0, column=5, sticky="ew", padx=(3, 0))
 
+    setting_label(4, "DEF")
+    f_def = setting_row(4)
+    stretch_columns(f_def, (50, 50, 50, 58, 110))
     app.btn_tactic_dca = ctk.CTkButton(
-        f_extra, text="DCA", width=36, command=lambda: app.toggle_tactic("AUTO_DCA")
+        f_def, text="DCA", width=50, height=32, command=lambda: app.toggle_tactic("AUTO_DCA")
     )
-    app.btn_tactic_dca.pack(side="left", padx=1)
-
+    app.btn_tactic_dca.grid(row=0, column=0, sticky="ew", padx=(0, 3))
     app.btn_tactic_pca = ctk.CTkButton(
-        f_extra, text="PCA", width=36, command=lambda: app.toggle_tactic("AUTO_PCA")
+        f_def, text="PCA", width=50, height=32, command=lambda: app.toggle_tactic("AUTO_PCA")
     )
-    app.btn_tactic_pca.pack(side="left", padx=1)
-
+    app.btn_tactic_pca.grid(row=0, column=1, sticky="ew", padx=3)
     app.btn_tactic_rev_c = ctk.CTkButton(
-        f_extra, text="REV", width=34, command=lambda: app.toggle_tactic("REV_C")
+        f_def, text="REV", width=50, height=32, command=lambda: app.toggle_tactic("REV_C")
     )
-    app.btn_tactic_rev_c.pack(side="left", padx=1)
-
+    app.btn_tactic_rev_c.grid(row=0, column=2, sticky="ew", padx=3)
     app.btn_tactic_anti_cash = ctk.CTkButton(
-        f_extra, text="A.CUT", width=38, command=lambda: app.toggle_tactic("ANTI_CASH")
+        f_def, text="A.CUT", width=58, height=32, command=lambda: app.toggle_tactic("ANTI_CASH")
     )
-    app.btn_tactic_anti_cash.pack(side="left", padx=1)
+    app.btn_tactic_anti_cash.grid(row=0, column=3, sticky="ew", padx=3)
+    ctk.CTkButton(
+        f_def,
+        text="\u2699 AI ADVISOR",
+        width=110,
+        height=32,
+        fg_color=COL_SETTING,
+        hover_color=COL_SETTING_HOVER,
+        command=app.open_advisor_popup,
+    ).grid(row=0, column=4, sticky="ew", padx=(3, 0))
 
+    setting_label(5, "BOT")
+    f_bot_row = setting_row(5)
+    stretch_columns(f_bot_row, (20, 112, 120))
+    app.ind_auto_light = ctk.CTkFrame(
+        f_bot_row, width=14, height=14, corner_radius=7, fg_color=COL_RED
+    )
+    app.ind_auto_light.grid(row=0, column=0, padx=(0, 6))
+    ctk.CTkButton(
+        f_bot_row,
+        text="\u2699 BOT",
+        width=112,
+        height=32,
+        fg_color=COL_SETTING,
+        hover_color=COL_SETTING_HOVER,
+        command=app.open_bot_setting_popup,
+    ).grid(row=0, column=1, sticky="ew", padx=(0, 3))
+    app.btn_strategy = ctk.CTkButton(
+        f_bot_row,
+        text="\u2699 SANDBOX",
+        width=120,
+        height=32,
+        font=("Roboto", 11, "bold"),
+        fg_color=COL_SETTING,
+        hover_color=COL_SETTING_HOVER,
+        command=app.open_strategy_sandbox,
+    )
+    app.btn_strategy.grid(row=0, column=2, sticky="ew", padx=(3, 0))
+
+    setting_label(6, "TOOLS")
+    f_tools = setting_row(6)
+    stretch_columns(f_tools, (112, 210))
     try:
         from grid.grid_storage import load_grid_settings
 
         _grid_on = bool(load_grid_settings().get("ENABLED", False))
     except Exception:
         _grid_on = False
-    f_ad_cluster = ctk.CTkFrame(f_extra, fg_color="transparent")
-    f_ad_cluster.pack(side="left", padx=(4, 1))
-    f_ad_status = ctk.CTkFrame(f_ad_cluster, fg_color="transparent")
-    f_ad_status.pack(side="left", padx=(0, 2))
+    f_ad_status = ctk.CTkFrame(f_tools, fg_color="transparent")
+    f_ad_status.grid(row=0, column=0, sticky="w", padx=(0, 6))
 
     f_grid_state = ctk.CTkFrame(f_ad_status, fg_color="transparent")
     f_grid_state.pack(anchor="w", pady=0)
     app.ind_ad_grid_light = ctk.CTkFrame(
         f_grid_state,
-        width=8,
-        height=8,
-        corner_radius=4,
+        width=9,
+        height=9,
+        corner_radius=5,
         fg_color=COL_GREEN if _grid_on else COL_RED,
     )
-    app.ind_ad_grid_light.pack(side="left", padx=(0, 2))
+    app.ind_ad_grid_light.pack(side="left", padx=(0, 4))
     ctk.CTkLabel(
         f_grid_state,
         text="GRID",
-        font=("Roboto", 8, "bold"),
-        height=10,
+        font=("Roboto", 11, "bold"),
+        height=14,
         text_color="#00B8D4" if _grid_on else "gray",
     ).pack(side="left")
 
@@ -280,112 +346,30 @@ def setup_left_panel(app, parent):
     f_hedge_state.pack(anchor="w", pady=0)
     app.ind_ad_hedge_light = ctk.CTkFrame(
         f_hedge_state,
-        width=8,
-        height=8,
-        corner_radius=4,
+        width=9,
+        height=9,
+        corner_radius=5,
         fg_color=COL_RED,
     )
-    app.ind_ad_hedge_light.pack(side="left", padx=(0, 2))
+    app.ind_ad_hedge_light.pack(side="left", padx=(0, 4))
     ctk.CTkLabel(
         f_hedge_state,
         text="HEDGE",
-        font=("Roboto", 8, "bold"),
-        height=10,
+        font=("Roboto", 11, "bold"),
+        height=14,
         text_color="gray",
     ).pack(side="left")
 
     ctk.CTkButton(
-        f_ad_cluster,
-        text="⚙ AD",
-        width=34,
-        height=26,
+        f_tools,
+        text="\u2699 ADVANCED TOOLS",
+        width=210,
+        height=32,
         font=("Roboto", 11, "bold"),
-        fg_color="#00838F",
-        hover_color="#006064",
+        fg_color=COL_SETTING,
+        hover_color=COL_SETTING_HOVER,
         command=app.open_advanced_tools_popup,
-    ).pack(side="left", padx=(0, 1))
-    ctk.CTkButton(
-        f_ad_cluster,
-        text="AI",
-        width=30,
-        height=26,
-        font=("Roboto", 11, "bold"),
-        fg_color="#00695C",
-        hover_color="#004D40",
-        command=app.open_advisor_popup,
-    ).pack(side="left", padx=(2, 1))
-    app.lbl_advisor_inline_status = ctk.CTkLabel(
-        f_ad_cluster,
-        text="AI",
-        width=16,
-        font=("Roboto", 8, "bold"),
-        text_color="gray",
-    )
-    app.lbl_advisor_inline_status.pack(side="left", padx=(1, 0))
-
-    ctk.CTkLabel(f_set, text="E/E:", font=FONT_SECTION, text_color="#D7DCE2").grid(
-        row=3, column=0, sticky="e", padx=(0, 8), pady=2
-    )
-    f_entry = ctk.CTkFrame(f_set, fg_color="transparent")
-    f_entry.grid(row=3, column=1, sticky="ew", padx=5)
-
-    app.btn_entry_r = ctk.CTkButton(
-        f_entry,
-        text="R",
-        width=34,
-        command=lambda: app.toggle_entry_exit_tactic("FALLBACK_R"),
-    )
-    app.btn_entry_r.pack(side="left", padx=1)
-    app.btn_entry_swing = ctk.CTkButton(
-        f_entry,
-        text="RETEST",
-        width=54,
-        command=lambda: app.toggle_entry_exit_tactic("SWING_REJECTION"),
-    )
-    app.btn_entry_swing.pack(side="left", padx=1)
-    app.btn_entry_struct = ctk.CTkButton(
-        f_entry,
-        text="STRUCT",
-        width=54,
-        command=lambda: app.toggle_entry_exit_tactic("SWING_STRUCTURE"),
-    )
-    app.btn_entry_struct.pack(side="left", padx=1)
-    app.btn_entry_fib = ctk.CTkButton(
-        f_entry,
-        text="FIB",
-        width=34,
-        command=lambda: app.toggle_entry_exit_tactic("FIB_RETRACE"),
-    )
-    app.btn_entry_fib.pack(side="left", padx=1)
-    app.btn_entry_pullback = ctk.CTkButton(
-        f_entry,
-        text="PULL",
-        width=42,
-        command=lambda: app.toggle_entry_exit_tactic("PULLBACK_ZONE"),
-    )
-    app.btn_entry_pullback.pack(side="left", padx=1)
-
-    ctk.CTkButton(
-        f_entry,
-        text="\u2699 E/E",
-        width=54,
-        height=26,
-        fg_color="#424242",
-        hover_color="#616161",
-        command=app.open_entry_exit_popup,
-    ).pack(side="left", padx=(6, 1))
-
-    f_btn_settings = ctk.CTkFrame(f_tsl_row, fg_color="transparent")
-    f_btn_settings.pack(side="right", padx=(0, 0))
-    ctk.CTkButton(
-        f_btn_settings,
-        text="⚙ TSL",
-        width=38,
-        height=24,
-        fg_color="#424242",
-        hover_color="#616161",
-        command=app.open_tsl_popup,
-    ).pack(side="right")
+    ).grid(row=0, column=1, sticky="ew")
 
     app.update_tactic_buttons_ui()
     app.update_entry_exit_buttons_ui()
