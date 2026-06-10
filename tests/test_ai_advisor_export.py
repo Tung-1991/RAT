@@ -4,7 +4,7 @@ from pathlib import Path
 
 from openpyxl import Workbook, load_workbook
 
-from ai_advisor import api_client, history, paths
+from ai_advisor import api_client, exporter, history, paths
 
 
 def _patch_account_dir(monkeypatch, tmp_path):
@@ -32,6 +32,7 @@ def test_advisor_paths_split_history_and_export(monkeypatch, tmp_path):
     assert paths.history_path().replace("\\", "/").endswith("advisor_history.xlsx")
     assert paths.history_path().replace("\\", "/").endswith("history/advisor_history.xlsx")
     assert paths.export_path().replace("\\", "/").endswith("advisor/advisor_export.xlsx")
+    assert paths.advisor_flow_path().replace("\\", "/").endswith("advisor/advisor_flow.md")
     assert paths.advisor_response_path().replace("\\", "/").endswith("advisor/advisor_response.md")
     assert paths.advisor_response_history_path().replace("\\", "/").endswith(".md")
     assert "/history/advisor_response_" in paths.advisor_response_history_path().replace("\\", "/")
@@ -281,3 +282,65 @@ def test_api_client_saves_latest_response_and_history_snapshot(monkeypatch, tmp_
         assert f.read() == "advisor answer"
     with open(result["response_history"], "r", encoding="utf-8") as f:
         assert f.read() == "advisor answer"
+
+
+def test_generate_package_creates_advisor_response_template(monkeypatch, tmp_path):
+    _patch_account_dir(monkeypatch, tmp_path)
+
+    result = exporter.generate_advisor_package()
+
+    assert result["ok"] is True
+    with open(paths.advisor_flow_path(), "r", encoding="utf-8") as f:
+        flow = f.read()
+    assert "RAT6 AI Advisor Flow" in flow
+    with open(paths.advisor_response_path(), "r", encoding="utf-8") as f:
+        text = f.read()
+    assert "No API response has been saved yet." in text
+
+
+def test_api_client_only_sends_advisor_response_when_enabled(monkeypatch, tmp_path):
+    import json
+
+    _patch_account_dir(monkeypatch, tmp_path)
+    export_wb = _new_history_workbook()
+    export_wb.save(paths.export_path())
+    with open(paths.technical_settings_path(), "w", encoding="utf-8") as f:
+        f.write("{}")
+    with open(paths.user_context_path(), "w", encoding="utf-8") as f:
+        f.write("context")
+    with open(paths.advisor_flow_path(), "w", encoding="utf-8") as f:
+        f.write("flow marker")
+    with open(paths.advisor_response_path(), "w", encoding="utf-8") as f:
+        f.write("previous advice marker")
+
+    seen_inputs = []
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return b'{"output_text":"advisor answer"}'
+
+    def fake_urlopen(req, **_kwargs):
+        payload = json.loads(req.data.decode("utf-8"))
+        seen_inputs.append(payload["input"])
+        return FakeResponse()
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(api_client.urllib.request, "urlopen", fake_urlopen)
+
+    assert api_client.send_package_to_api()["ok"] is True
+    assert seen_inputs[-1].startswith("# advisor_flow.md")
+    assert "flow marker" in seen_inputs[-1]
+    assert "previous_advisor_response.md" not in seen_inputs[-1]
+    assert "previous advice marker" not in seen_inputs[-1]
+
+    with open(paths.advisor_response_path(), "w", encoding="utf-8") as f:
+        f.write("previous advice marker")
+    assert api_client.send_package_to_api(include_previous_response=True)["ok"] is True
+    assert "previous_advisor_response.md" in seen_inputs[-1]
+    assert "previous advice marker" in seen_inputs[-1]

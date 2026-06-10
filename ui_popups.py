@@ -98,6 +98,15 @@ def open_advisor_popup(app):
         checkbox_height=18,
     ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(8, 4))
 
+    ctk.CTkCheckBox(
+        settings,
+        text="Send advisor_response.md with API",
+        variable=app.var_advisor_send_response_file,
+        font=("Roboto", 12, "bold"),
+        checkbox_width=18,
+        checkbox_height=18,
+    ).grid(row=4, column=0, columnspan=2, sticky="w", pady=(4, 4))
+
     api_hint = ctk.CTkFrame(root, fg_color="#252526", corner_radius=6)
     api_hint.pack(fill="x", padx=10, pady=(8, 2))
     ctk.CTkLabel(

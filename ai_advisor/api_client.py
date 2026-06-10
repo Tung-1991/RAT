@@ -8,7 +8,7 @@ from . import history, paths
 
 
 DEFAULT_PROMPT = """You are an AI Advisor for RAT6. Analyze only the provided internal package.
-Read advisor_guide inside technical_settings.json before interpreting internal keys.
+Read advisor_flow.md first, then advisor_guide inside technical_settings.json before interpreting internal keys.
 Do not suggest automatic trading actions. Do not claim web research. Do not tell the bot to edit config.
 Act like a trader/risk manager reviewing performance, risk, close reasons, modules, and config history.
 When uncertain about an internal key, say what evidence you used instead of inventing behavior."""
@@ -40,7 +40,7 @@ def _workbook_text(limit_rows=80):
         return f"advisor_export.xlsx read warning: {exc}"
 
 
-def send_package_to_api(prompt=None):
+def send_package_to_api(prompt=None, include_previous_response=False):
     key = os.environ.get("OPENAI_API_KEY")
     if not key:
         msg = "OPENAI_API_KEY is not configured; API mode skipped."
@@ -49,16 +49,24 @@ def send_package_to_api(prompt=None):
 
     model = os.environ.get("ADVISOR_API_MODEL", "gpt-5-mini")
     endpoint = os.environ.get("ADVISOR_API_URL", "https://api.openai.com/v1/responses")
-    body_text = "\n\n".join(
-        [
-            "# technical_settings.json",
-            _read_text(paths.technical_settings_path()),
-            "# advisor_export.xlsx",
-            _workbook_text(),
-            "# user_context.md",
-            _read_text(paths.user_context_path()),
-        ]
-    )
+    sections = [
+        "# advisor_flow.md",
+        _read_text(paths.advisor_flow_path()),
+        "# technical_settings.json",
+        _read_text(paths.technical_settings_path()),
+        "# advisor_export.xlsx",
+        _workbook_text(),
+        "# user_context.md",
+        _read_text(paths.user_context_path()),
+    ]
+    if include_previous_response:
+        sections.extend(
+            [
+                "# previous_advisor_response.md",
+                _read_text(paths.advisor_response_path(), limit=60000),
+            ]
+        )
+    body_text = "\n\n".join(sections)
     payload = {
         "model": model,
         "instructions": prompt or DEFAULT_PROMPT,
@@ -94,7 +102,11 @@ def send_package_to_api(prompt=None):
         history.record_event(
             "advisor_api_response_saved",
             "Advisor API response saved",
-            payload={"model": model, "response_history": response_history},
+            payload={
+                "model": model,
+                "response_history": response_history,
+                "include_previous_response": bool(include_previous_response),
+            },
         )
         return {"ok": True, "response": paths.advisor_response_path(), "response_history": response_history, "model": model}
     except Exception as exc:

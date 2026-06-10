@@ -53,6 +53,10 @@ def user_context_path():
     return os.path.join(advisor_root(), "user_context.md")
 
 
+def advisor_flow_path():
+    return os.path.join(advisor_root(), "advisor_flow.md")
+
+
 def advisor_response_path():
     return os.path.join(advisor_root(), "advisor_response.md")
 

@@ -158,6 +158,8 @@ class BotUI(ctk.CTk):
         self.var_advisor_save_archive = tk.BooleanVar(value=False)
         self.var_advisor_fixed_time = tk.StringVar(value="")
         self.var_advisor_global_emergency = tk.BooleanVar(value=True)
+        self.var_advisor_send_response_file = tk.BooleanVar(value=False)
+        self.var_advisor_send_previous_response = self.var_advisor_send_response_file
         self.advisor_last_export_status = "Never"
         self.advisor_last_error = ""
         self._advisor_worker_active = False
@@ -3050,7 +3052,13 @@ class BotUI(ctk.CTk):
             if send_api:
                 from ai_advisor.api_client import send_package_to_api
 
-                api_result = send_package_to_api()
+                response_file_var = getattr(
+                    self,
+                    "var_advisor_send_response_file",
+                    getattr(self, "var_advisor_send_previous_response", None),
+                )
+                include_response_file = bool(response_file_var.get()) if response_file_var else False
+                api_result = send_package_to_api(include_previous_response=include_response_file)
                 if not api_result.get("ok"):
                     self.log_message(
                         f"[AI ADVISOR] API skipped/failed: {api_result.get('error')}",
