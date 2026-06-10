@@ -3,7 +3,8 @@ import csv
 import json
 import os
 import time
-from datetime import datetime
+import shutil
+from datetime import datetime, timedelta
 
 from . import config_snapshot, paths
 
@@ -63,8 +64,21 @@ def _load_workbook():
     Workbook, load_workbook = _import_openpyxl()
     paths.ensure_advisor_dirs()
     path = paths.history_path()
+    for legacy in (paths.legacy_account_history_path(), paths.legacy_history_path()):
+        if not os.path.exists(path) and os.path.exists(legacy):
+            shutil.copy2(legacy, path)
     if os.path.exists(path):
-        wb = load_workbook(path)
+        try:
+            wb = load_workbook(path)
+        except Exception:
+            corrupt_path = f"{path}.corrupt_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            try:
+                os.replace(path, corrupt_path)
+            except Exception:
+                pass
+            wb = Workbook()
+            default = wb.active
+            wb.remove(default)
     else:
         wb = Workbook()
         default = wb.active
@@ -82,6 +96,25 @@ def _load_workbook():
 
 def _save_workbook(wb):
     path = paths.history_path()
+    tmp = f"{path}.tmp.xlsx"
+    wb.save(tmp)
+    os.replace(tmp, path)
+
+
+def _load_export_workbook():
+    Workbook, _load_workbook_impl = _import_openpyxl()
+    wb = Workbook()
+    default = wb.active
+    wb.remove(default)
+    for name, headers in SHEETS.items():
+        ws = wb.create_sheet(name)
+        ws.append(headers)
+    return wb
+
+
+def _save_export_workbook(wb):
+    paths.ensure_advisor_dirs()
+    path = paths.export_path()
     tmp = f"{path}.tmp.xlsx"
     wb.save(tmp)
     os.replace(tmp, path)
@@ -245,6 +278,49 @@ def _safe_float(value, default=0.0):
         return float(str(value).replace("$", "").replace(",", "").strip())
     except Exception:
         return default
+
+
+def _safe_datetime(value):
+    if isinstance(value, datetime):
+        return value
+    text = str(value or "").strip()
+    if not text:
+        return None
+    for candidate in (text, text.replace("Z", "+00:00")):
+        try:
+            parsed = datetime.fromisoformat(candidate)
+            return parsed.replace(tzinfo=None) if parsed.tzinfo else parsed
+        except Exception:
+            pass
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M:%S", "%d/%m/%Y %H:%M:%S"):
+        try:
+            return datetime.strptime(text, fmt)
+        except Exception:
+            pass
+    return None
+
+
+def _row_trade_datetime(headers, row_values):
+    idx = {name: pos for pos, name in enumerate(headers)}
+    for name in ("Exit Time", "Recorded At"):
+        pos = idx.get(name)
+        if pos is None or pos >= len(row_values):
+            continue
+        parsed = _safe_datetime(row_values[pos])
+        if parsed:
+            return parsed
+    return None
+
+
+def _copy_sheet_rows(src_ws, dst_ws, include_row):
+    headers = [src_ws.cell(1, col).value for col in range(1, src_ws.max_column + 1)]
+    copied = 0
+    for row_idx in range(2, src_ws.max_row + 1):
+        row_values = _row_values(src_ws, row_idx)
+        if include_row(headers, row_values):
+            dst_ws.append(row_values)
+            copied += 1
+    return copied
 
 
 def record_closed_trade(
@@ -434,9 +510,9 @@ def refresh_open_trades(connector=None, state=None, market_contexts=None):
         return 0
 
 
-def rebuild_summaries():
+def rebuild_summaries(wb=None, save=True, path_kind="history"):
     try:
-        wb = _load_workbook()
+        wb = wb or _load_workbook()
         closed = wb["closed_trades"]
         headers = [closed.cell(1, col).value for col in range(1, closed.max_column + 1)]
         idx = {name: pos + 1 for pos, name in enumerate(headers)}
@@ -480,8 +556,43 @@ def rebuild_summaries():
                 ws.delete_rows(2, ws.max_row - 1)
             for key, item in sorted(data.items()):
                 ws.append([key, item["trades"], round(item["profit"], 2), round(item["fee"], 2), item["wins"], item["losses"]])
-        _save_workbook(wb)
+        if save:
+            if path_kind == "export":
+                _save_export_workbook(wb)
+            else:
+                _save_workbook(wb)
         return True
     except Exception as exc:
         record_event("summary_rebuild_error", str(exc), severity="ERROR")
         return False
+
+
+def build_export_workbook(export_days=7):
+    try:
+        try:
+            days = max(1, int(export_days or 7))
+        except Exception:
+            days = 7
+        cutoff = datetime.now() - timedelta(days=days)
+        source = _load_workbook()
+        export_wb = _load_export_workbook()
+
+        closed_src = source["closed_trades"]
+        closed_dst = export_wb["closed_trades"]
+
+        def include_closed(headers, row_values):
+            trade_time = _row_trade_datetime(headers, row_values)
+            return bool(trade_time and trade_time >= cutoff)
+
+        closed_count = _copy_sheet_rows(closed_src, closed_dst, include_closed)
+
+        for sheet_name in ("open_trades", "config_snapshots", "config_changes", "events", "trade_config_map"):
+            if sheet_name in source.sheetnames and sheet_name in export_wb.sheetnames:
+                _copy_sheet_rows(source[sheet_name], export_wb[sheet_name], lambda _h, _r: True)
+
+        rebuild_summaries(wb=export_wb, save=False, path_kind="export")
+        _save_export_workbook(export_wb)
+        return {"ok": True, "path": paths.export_path(), "closed_trades": closed_count, "export_days": days}
+    except Exception as exc:
+        record_event("advisor_export_build_error", str(exc), severity="ERROR", payload={"export_days": export_days})
+        return {"ok": False, "error": str(exc), "path": paths.export_path(), "closed_trades": 0, "export_days": export_days}

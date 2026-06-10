@@ -21,6 +21,17 @@ _active_account_dir = "data"
 _active_account_id = None
 _state_lock = threading.RLock()
 
+
+def _move_legacy_file(old_path: str, new_path: str):
+    try:
+        if old_path == new_path:
+            return
+        if os.path.exists(old_path) and not os.path.exists(new_path):
+            os.makedirs(os.path.dirname(new_path), exist_ok=True)
+            os.replace(old_path, new_path)
+    except Exception:
+        pass
+
 def _merge_timestamp_map(state: Dict[str, Any], current_state: Dict[str, Any], key: str):
     current_map = current_state.get(key, {})
     next_map = state.setdefault(key, {})
@@ -42,14 +53,18 @@ def set_active_account(account_id: str):
     _active_account_id = str(account_id)
     _active_account_dir = os.path.join("data", str(account_id))
     os.makedirs(_active_account_dir, exist_ok=True)
+    history_dir = os.path.join(_active_account_dir, "history")
+    os.makedirs(history_dir, exist_ok=True)
     
     STATE_FILE = os.path.join(_active_account_dir, "bot_state.json")
     BRAIN_FILE = os.path.join(_active_account_dir, "brain_settings.json")
-    HISTORY_FILE = os.path.join(_active_account_dir, "trade_history_log.csv")
-    MASTER_LOG_FILE = os.path.join(_active_account_dir, "trade_history_master.csv")
+    HISTORY_FILE = os.path.join(history_dir, "trade_history_log.csv")
+    MASTER_LOG_FILE = os.path.join(history_dir, "trade_history_master.csv")
     SYMBOL_OVERRIDES_FILE = os.path.join(_active_account_dir, "symbol_overrides.json")
     SYSTEM_META_FILE = os.path.join(_active_account_dir, "system_meta.json")
     GROUP_STATUS_TRACKER_FILE = os.path.join(_active_account_dir, "group_status_tracker.json")
+    _move_legacy_file(os.path.join(_active_account_dir, "trade_history_log.csv"), HISTORY_FILE)
+    _move_legacy_file(os.path.join(_active_account_dir, "trade_history_master.csv"), MASTER_LOG_FILE)
     
     invalidate_settings_cache()
 

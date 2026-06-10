@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 import json
 import os
-import shutil
 
 from . import config_snapshot, history, paths
 
@@ -45,21 +44,6 @@ def write_technical_settings(reason="manual_export"):
     return path, snapshot.get("config_snapshot_id")
 
 
-def _archive_package():
-    stamp = paths.timestamp_name()
-    target = os.path.join(paths.archive_root(), stamp)
-    os.makedirs(target, exist_ok=True)
-    for src in [
-        paths.technical_settings_path(),
-        paths.history_path(),
-        paths.user_context_path(),
-        paths.advisor_response_path(),
-    ]:
-        if os.path.exists(src):
-            shutil.copy2(src, os.path.join(target, os.path.basename(src)))
-    return target
-
-
 def generate_advisor_package(
     export_days=7,
     save_archive=False,
@@ -73,6 +57,7 @@ def generate_advisor_package(
         "root": paths.advisor_root(),
         "technical_settings": paths.technical_settings_path(),
         "advisor_history": paths.history_path(),
+        "advisor_export": paths.export_path(),
         "user_context": paths.user_context_path(),
         "archive": None,
         "warnings": [],
@@ -85,14 +70,17 @@ def generate_advisor_package(
         synced = history.sync_from_master_csv()
         open_count = history.refresh_open_trades(connector=connector, state=state, market_contexts=market_contexts)
         history.rebuild_summaries()
-        if save_archive:
-            result["archive"] = _archive_package()
+        export_result = history.build_export_workbook(export_days=export_days)
+        if not export_result.get("ok"):
+            result["warnings"].append(export_result.get("error", "advisor export build failed"))
         result.update(
             {
                 "ok": True,
                 "technical_settings": tech_path,
+                "advisor_export": export_result.get("path", paths.export_path()),
                 "config_snapshot_id": snapshot_id,
                 "synced_closed_trades": synced,
+                "export_closed_trades": export_result.get("closed_trades", 0),
                 "open_trades": open_count,
                 "export_days": export_days,
             }

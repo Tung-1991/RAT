@@ -98,15 +98,6 @@ def open_advisor_popup(app):
         checkbox_height=18,
     ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(8, 4))
 
-    ctk.CTkCheckBox(
-        settings,
-        text="Save Advisor Snapshots",
-        variable=app.var_advisor_save_archive,
-        font=("Roboto", 12, "bold"),
-        checkbox_width=18,
-        checkbox_height=18,
-    ).grid(row=4, column=0, columnspan=2, sticky="w", pady=(4, 4))
-
     api_hint = ctk.CTkFrame(root, fg_color="#252526", corner_radius=6)
     api_hint.pack(fill="x", padx=10, pady=(8, 2))
     ctk.CTkLabel(
@@ -149,10 +140,86 @@ def open_advisor_popup(app):
     buttons = ctk.CTkFrame(root, fg_color="transparent")
     buttons.pack(fill="x", padx=10, pady=(10, 8))
     ctk.CTkButton(buttons, text="Generate Advisor Package", height=34, fg_color="#00695C", hover_color="#004D40", command=app.generate_advisor_package_ui).pack(side="left", fill="x", expand=True, padx=(0, 5))
-    ctk.CTkButton(buttons, text="Open Folder", width=110, height=34, fg_color="#424242", hover_color="#616161", command=app.open_advisor_folder).pack(side="left", padx=5)
+    ctk.CTkButton(buttons, text="Edit Context", width=105, height=34, fg_color="#424242", hover_color="#616161", command=lambda: open_advisor_context_editor(app)).pack(side="left", padx=5)
+    ctk.CTkButton(buttons, text="Open Folder", width=105, height=34, fg_color="#424242", hover_color="#616161", command=app.open_advisor_folder).pack(side="left", padx=5)
     ctk.CTkButton(buttons, text="Send API", width=100, height=34, fg_color="#1f538d", hover_color="#14375e", command=app.send_advisor_api_now).pack(side="left", padx=(5, 0))
 
 # --- BẢNG MÀU & FONT CHUẨN ---
+
+def open_advisor_context_editor(app):
+    from ai_advisor.exporter import ensure_user_context
+    from ai_advisor import paths
+
+    path = ensure_user_context()
+    top = ctk.CTkToplevel(app)
+    top.title("Edit Advisor Context")
+    top.geometry("760x620")
+    top.minsize(620, 460)
+    top.attributes("-topmost", True)
+    top.focus_force()
+
+    root = ctk.CTkFrame(top, fg_color="#1E1E1E", corner_radius=0)
+    root.pack(fill="both", expand=True, padx=10, pady=10)
+    ctk.CTkLabel(
+        root,
+        text="user_context.md",
+        font=("Roboto", 16, "bold"),
+        text_color="#80DEEA",
+    ).pack(anchor="w", padx=8, pady=(6, 2))
+    ctk.CTkLabel(
+        root,
+        text=path,
+        font=("Consolas", 10),
+        text_color="gray",
+    ).pack(anchor="w", padx=8, pady=(0, 8))
+
+    text = ctk.CTkTextbox(root, font=("Consolas", 12), wrap="word")
+    text.pack(fill="both", expand=True, padx=8, pady=(0, 8))
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            text.insert("1.0", f.read())
+    except Exception as exc:
+        text.insert("1.0", f"# Failed to read context\n\n{exc}")
+
+    footer = ctk.CTkFrame(root, fg_color="transparent")
+    footer.pack(fill="x", padx=8, pady=(0, 6))
+    status = ctk.CTkLabel(footer, text="", font=("Roboto", 11, "bold"), text_color="gray")
+    status.pack(side="left", fill="x", expand=True)
+
+    def save_context():
+        try:
+            content = text.get("1.0", "end-1c")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(content)
+            snapshot_path = paths.user_context_history_path()
+            os.makedirs(os.path.dirname(snapshot_path), exist_ok=True)
+            with open(snapshot_path, "w", encoding="utf-8") as f:
+                f.write(content)
+            status.configure(text="Saved", text_color="#00C853")
+            if hasattr(app, "_set_advisor_status"):
+                app._set_advisor_status("Context saved")
+        except Exception as exc:
+            status.configure(text=f"Save failed: {exc}", text_color="#D50000")
+
+    ctk.CTkButton(
+        footer,
+        text="Save",
+        width=100,
+        height=32,
+        fg_color="#00695C",
+        hover_color="#004D40",
+        command=save_context,
+    ).pack(side="right", padx=(8, 0))
+    ctk.CTkButton(
+        footer,
+        text="Close",
+        width=90,
+        height=32,
+        fg_color="#424242",
+        hover_color="#616161",
+        command=top.destroy,
+    ).pack(side="right")
+
 
 FONT_BOLD = ("Roboto", 13, "bold")
 

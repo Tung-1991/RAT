@@ -3034,7 +3034,7 @@ class BotUI(ctk.CTk):
                 days = 7
             result = generate_advisor_package(
                 export_days=days,
-                save_archive=self.var_advisor_save_archive.get(),
+                save_archive=False,
                 connector=self.connector,
                 state=getattr(self.trade_mgr, "state", {}),
                 market_contexts=getattr(self, "latest_market_context", {}),
@@ -3058,7 +3058,11 @@ class BotUI(ctk.CTk):
                         target="manual",
                     )
 
-            msg = f"Advisor OK | closed={result.get('synced_closed_trades', 0)} open={result.get('open_trades', 0)}"
+            msg = (
+                f"Advisor OK | export={result.get('export_days', days)}d "
+                f"closed={result.get('export_closed_trades', 0)} "
+                f"open={result.get('open_trades', 0)}"
+            )
             if api_result and api_result.get("ok"):
                 msg += " | API OK"
             self.after(0, lambda m=msg: self._set_advisor_status(m))

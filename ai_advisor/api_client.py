@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import json
 import os
+import shutil
 import urllib.request
 
 from . import history, paths
@@ -22,9 +23,9 @@ def _workbook_text(limit_rows=80):
     try:
         from openpyxl import load_workbook
 
-        if not os.path.exists(paths.history_path()):
+        if not os.path.exists(paths.export_path()):
             return ""
-        wb = load_workbook(paths.history_path(), data_only=True)
+        wb = load_workbook(paths.export_path(), data_only=True)
         chunks = []
         for name in wb.sheetnames:
             ws = wb[name]
@@ -34,7 +35,7 @@ def _workbook_text(limit_rows=80):
                 chunks.append(" | ".join("" if v is None else str(v) for v in row))
         return "\n".join(chunks)
     except Exception as exc:
-        return f"advisor_history.xlsx read warning: {exc}"
+        return f"advisor_export.xlsx read warning: {exc}"
 
 
 def send_package_to_api(prompt=None):
@@ -50,7 +51,7 @@ def send_package_to_api(prompt=None):
         [
             "# technical_settings.json",
             _read_text(paths.technical_settings_path()),
-            "# advisor_history.xlsx",
+            "# advisor_export.xlsx",
             _workbook_text(),
             "# user_context.md",
             _read_text(paths.user_context_path()),
@@ -85,8 +86,15 @@ def send_package_to_api(prompt=None):
             text = json.dumps(data, ensure_ascii=False, indent=2)
         with open(paths.advisor_response_path(), "w", encoding="utf-8") as f:
             f.write(text)
-        history.record_event("advisor_api_response_saved", "Advisor API response saved", payload={"model": model})
-        return {"ok": True, "response": paths.advisor_response_path(), "model": model}
+        response_history = paths.advisor_response_history_path()
+        os.makedirs(os.path.dirname(response_history), exist_ok=True)
+        shutil.copy2(paths.advisor_response_path(), response_history)
+        history.record_event(
+            "advisor_api_response_saved",
+            "Advisor API response saved",
+            payload={"model": model, "response_history": response_history},
+        )
+        return {"ok": True, "response": paths.advisor_response_path(), "response_history": response_history, "model": model}
     except Exception as exc:
         history.record_event("advisor_api_error", str(exc), severity="ERROR", payload={"model": model, "endpoint": endpoint})
         return {"ok": False, "error": str(exc)}

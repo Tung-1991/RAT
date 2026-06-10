@@ -25,12 +25,24 @@ def advisor_root():
     return os.path.join(account_dir(), "advisor")
 
 
-def archive_root():
-    return os.path.join(advisor_root(), "archive")
+def history_root():
+    return os.path.join(account_dir(), "history")
 
 
 def history_path():
+    return os.path.join(history_root(), "advisor_history.xlsx")
+
+
+def legacy_history_path():
     return os.path.join(advisor_root(), "advisor_history.xlsx")
+
+
+def legacy_account_history_path():
+    return os.path.join(account_dir(), "advisor_history.xlsx")
+
+
+def export_path():
+    return os.path.join(advisor_root(), "advisor_export.xlsx")
 
 
 def technical_settings_path():
@@ -45,8 +57,17 @@ def advisor_response_path():
     return os.path.join(advisor_root(), "advisor_response.md")
 
 
+def advisor_response_history_path():
+    return os.path.join(history_root(), f"advisor_response_{timestamp_name()}.md")
+
+
+def user_context_history_path():
+    return os.path.join(history_root(), f"user_context_{timestamp_name()}.md")
+
+
 def ensure_advisor_dirs():
     os.makedirs(advisor_root(), exist_ok=True)
+    os.makedirs(history_root(), exist_ok=True)
     return advisor_root()
 
 
