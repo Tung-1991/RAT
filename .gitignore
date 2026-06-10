@@ -1,10 +1,10 @@
-# 1. Môi trường ảo (Đã cập nhật theo tên mới của Ngài)
+# Virtual environments
 ratvenv/
 exnessvenv/
 venv/
 env/
 
-# 2. Xử lý triệt để Cache (Áp dụng cho core/ và mọi thư mục con)
+# Python cache/test artifacts
 **/__pycache__/
 **/*.pyc
 **/*.pyo
@@ -13,25 +13,32 @@ env/
 .coverage
 htmlcov/
 
-# 3. Dữ liệu Bot & Log (Bỏ qua toàn bộ thư mục data)
+# Runtime data: ignore everything by default
 data/*
 
-*.log
-
-# 3.1 Xử lý JSON
-*.json
-
-# [NGOẠI LỆ]: Giữ lại thư mục templates và các file JSON chiến thuật
+# Keep strategy templates only
 !data/templates/
-!data/templates/*.json
+!data/templates/**
+!data/*/
+data/*/*
+!data/*/templates/
+!data/*/templates/**
+
+# Runtime logs
+*.log
+data/logs/
+
+# Runtime/private JSON outside whitelisted templates
+*.json
 !data/templates/**/*.json
+!data/*/templates/**/*.json
 
-# 4. Cấu hình nhạy cảm (Cảnh báo DevSecOps)
-# Nếu config.py chứa API Key hoặc Password của Ngài, nên bỏ qua nó 
-# và dùng một file config.py.example để push lên.
-# config.py 
+# Local secrets/config
+.env
+.env.*
+# config.py
 
-# 5. IDE & Hệ thống
+# IDE/system files
 .vscode/
 .idea/
 .DS_Store

@@ -32,6 +32,92 @@ def _move_legacy_file(old_path: str, new_path: str):
     except Exception:
         pass
 
+
+def _derive_trade_times(time_display, session_id, open_time_str="", close_time_str="", default_close_now=True):
+    if close_time_str:
+        return open_time_str or "", close_time_str
+    close_dt = None
+    open_dt = None
+    try:
+        if open_time_str:
+            open_dt = datetime.fromisoformat(str(open_time_str))
+    except Exception:
+        open_dt = None
+    try:
+        sid = str(session_id or "")
+        if len(sid) >= 8 and sid[:8].isdigit():
+            base_date = datetime.strptime(sid[:8], "%Y%m%d").date()
+            parts = str(time_display or "").split("->")
+            open_part = parts[0].strip()
+            close_part = parts[-1].strip()
+            if len(close_part) >= 8:
+                close_dt = datetime.combine(base_date, datetime.strptime(close_part[:8], "%H:%M:%S").time())
+            if not open_dt and len(open_part) >= 8:
+                open_dt = datetime.combine(base_date, datetime.strptime(open_part[:8], "%H:%M:%S").time())
+    except Exception:
+        pass
+    if not default_close_now and not close_time_str and not close_dt:
+        return (
+            open_dt.isoformat(timespec="seconds") if open_dt else (open_time_str or ""),
+            "",
+        )
+    close_dt = close_dt or datetime.now()
+    return (
+        open_dt.isoformat(timespec="seconds") if open_dt else (open_time_str or ""),
+        close_dt.isoformat(timespec="seconds"),
+    )
+
+
+def _normalize_master_log_schema():
+    try:
+        if not os.path.exists(MASTER_LOG_FILE):
+            return
+        with open(MASTER_LOG_FILE, mode="r", newline="", encoding="utf-8") as f:
+            reader = csv.reader(f)
+            header = next(reader, None)
+            rows = [r for r in reader if r]
+        if not header:
+            return
+        changed = False
+        for col in ["MAE ($)", "MFE ($)", "Open Time", "Close Time"]:
+            if col not in header:
+                header.append(col)
+                changed = True
+        idx = {name: i for i, name in enumerate(header)}
+        for row in rows:
+            while len(row) < len(header):
+                row.append("")
+                changed = True
+            ot_idx = idx.get("Open Time")
+            ct_idx = idx.get("Close Time")
+            if ot_idx is not None and ct_idx is not None:
+                session_id = row[13] if len(row) > 13 else ""
+                has_session_date = len(str(session_id or "")) >= 8 and str(session_id or "")[:8].isdigit()
+                if row[ct_idx] and not row[ot_idx] and not has_session_date:
+                    row[ct_idx] = ""
+                    changed = True
+                if row[ct_idx]:
+                    continue
+                old_open, old_close = _derive_trade_times(
+                    row[0] if len(row) > 0 else "",
+                    session_id,
+                    open_time_str=row[ot_idx] if ot_idx < len(row) else "",
+                    default_close_now=False,
+                )
+                if old_open and not row[ot_idx]:
+                    row[ot_idx] = old_open
+                    changed = True
+                if old_close:
+                    row[ct_idx] = old_close
+                    changed = True
+        if changed:
+            with open(MASTER_LOG_FILE, mode="w", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                writer.writerow(header)
+                writer.writerows(rows)
+    except Exception:
+        pass
+
 def _merge_timestamp_map(state: Dict[str, Any], current_state: Dict[str, Any], key: str):
     current_map = current_state.get(key, {})
     next_map = state.setdefault(key, {})
@@ -65,6 +151,7 @@ def set_active_account(account_id: str):
     GROUP_STATUS_TRACKER_FILE = os.path.join(_active_account_dir, "group_status_tracker.json")
     _move_legacy_file(os.path.join(_active_account_dir, "trade_history_log.csv"), HISTORY_FILE)
     _move_legacy_file(os.path.join(_active_account_dir, "trade_history_master.csv"), MASTER_LOG_FILE)
+    _normalize_master_log_schema()
     
     invalidate_settings_cache()
 
@@ -468,12 +555,19 @@ def append_trade_log(ticket, symbol, type_str, volume, entry_price, sl, tp, fee,
     try:
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S") 
         time_display = f"{open_time_str[11:]} -> {now_str[11:]}" if open_time_str else now_str
-        header = ["Time", "Ticket", "Symbol", "Type", "Vol", "Entry", "SL", "TP", "Fee", "PnL ($)", "Reason", "Market Mode", "Trigger", "Session_ID", "MAE ($)", "MFE ($)"]
+        open_time_full, close_time_full = _derive_trade_times(
+            time_display, session_id, open_time_str=open_time_str, close_time_str=now_str
+        )
+        header = [
+            "Time", "Ticket", "Symbol", "Type", "Vol", "Entry", "SL", "TP", "Fee",
+            "PnL ($)", "Reason", "Market Mode", "Trigger", "Session_ID", "MAE ($)",
+            "MFE ($)", "Open Time", "Close Time",
+        ]
         new_row = [
             time_display, ticket, symbol, type_str, volume,
             f"{entry_price:.5f}", f"{sl:.5f}", f"{tp:.5f}", f"{fee:.2f}",
             f"{pnl:.2f}", close_reason, market_mode, trigger_signal, session_id,
-            f"{mae_usd:.2f}", f"{mfe_usd:.2f}"
+            f"{mae_usd:.2f}", f"{mfe_usd:.2f}", open_time_full, close_time_full,
         ]
 
         def reason_rank(reason):
@@ -493,9 +587,30 @@ def append_trade_log(ticket, symbol, type_str, volume, entry_price, sl, tp, fee,
                 rows = [r for r in reader if r]
                 if existing_header:
                     header = existing_header
-                    for col in ["MAE ($)", "MFE ($)"]:
+                    for col in ["MAE ($)", "MFE ($)", "Open Time", "Close Time"]:
                         if col not in header:
                             header.append(col)
+                    idx = {name: i for i, name in enumerate(header)}
+                    for row in rows:
+                        while len(row) < len(header):
+                            row.append("")
+                        ot_idx = idx.get("Open Time")
+                        ct_idx = idx.get("Close Time")
+                        if ot_idx is not None and ct_idx is not None:
+                            session_id_old = row[13] if len(row) > 13 else ""
+                            has_session_date = len(str(session_id_old or "")) >= 8 and str(session_id_old or "")[:8].isdigit()
+                            if row[ct_idx] and not row[ot_idx] and not has_session_date:
+                                row[ct_idx] = ""
+                            if row[ct_idx]:
+                                continue
+                            old_open, old_close = _derive_trade_times(
+                                row[0] if len(row) > 0 else "",
+                                session_id_old,
+                                open_time_str=row[ot_idx] if ot_idx < len(row) else "",
+                                default_close_now=False,
+                            )
+                            row[ot_idx] = row[ot_idx] or old_open
+                            row[ct_idx] = old_close
 
         ticket_str = str(ticket)
         replaced = False

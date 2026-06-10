@@ -300,15 +300,54 @@ def _safe_datetime(value):
     return None
 
 
+def _derive_csv_trade_times(row_map):
+    open_time = row_map.get("Open Time") or ""
+    close_time = row_map.get("Close Time") or ""
+    if _safe_datetime(close_time):
+        return open_time, close_time
+    session_id = str(row_map.get("Session_ID") or row_map.get("Session ID") or "")
+    time_display = str(row_map.get("Time") or "")
+    close_dt = None
+    open_dt = _safe_datetime(open_time)
+    try:
+        if len(session_id) >= 8 and session_id[:8].isdigit():
+            base_date = datetime.strptime(session_id[:8], "%Y%m%d").date()
+            parts = time_display.split("->")
+            open_part = parts[0].strip()
+            close_part = parts[-1].strip()
+            if len(close_part) >= 8:
+                close_dt = datetime.combine(base_date, datetime.strptime(close_part[:8], "%H:%M:%S").time())
+            if not open_dt and len(open_part) >= 8:
+                open_dt = datetime.combine(base_date, datetime.strptime(open_part[:8], "%H:%M:%S").time())
+    except Exception:
+        pass
+    if not close_dt:
+        return (open_dt.isoformat(timespec="seconds") if open_dt else ""), ""
+    return (
+        open_dt.isoformat(timespec="seconds") if open_dt else "",
+        close_dt.isoformat(timespec="seconds"),
+    )
+
+
 def _row_trade_datetime(headers, row_values):
     idx = {name: pos for pos, name in enumerate(headers)}
-    for name in ("Exit Time", "Recorded At"):
-        pos = idx.get(name)
-        if pos is None or pos >= len(row_values):
-            continue
-        parsed = _safe_datetime(row_values[pos])
+    exit_pos = idx.get("Exit Time")
+    if exit_pos is not None and exit_pos < len(row_values):
+        parsed = _safe_datetime(row_values[exit_pos])
         if parsed:
             return parsed
+
+    entry_pos = idx.get("Entry Time")
+    session_pos = idx.get("Session ID")
+    entry_time = row_values[entry_pos] if entry_pos is not None and entry_pos < len(row_values) else ""
+    session_id = str(row_values[session_pos] if session_pos is not None and session_pos < len(row_values) else "")
+    has_session_date = len(session_id) >= 8 and session_id[:8].isdigit()
+    if not entry_time and not has_session_date:
+        return None
+
+    recorded_pos = idx.get("Recorded At")
+    if recorded_pos is not None and recorded_pos < len(row_values):
+        return _safe_datetime(row_values[recorded_pos])
     return None
 
 
@@ -362,10 +401,11 @@ def record_closed_trade(
         ee_tactic = state.get("entry_exit_tactics", {}).get(ticket_str, "unknown")
         parent = state.get("child_to_parent", {}).get(ticket_str, "")
         modules = _module_tags(close_reason, trigger_signal, tactic, session_id)
-        exit_time = exit_time or _now()
+        if exit_time is None:
+            exit_time = _now()
         hold_seconds = ""
         try:
-            if open_time_str:
+            if open_time_str and exit_time:
                 hold_seconds = max(0, int((datetime.fromisoformat(exit_time) - datetime.fromisoformat(open_time_str)).total_seconds()))
         except Exception:
             hold_seconds = ""
@@ -432,26 +472,33 @@ def sync_from_master_csv():
         with open(csv_path, "r", encoding="utf-8", newline="") as f:
             reader = csv.reader(f)
             header = next(reader, None)
+            header = header or []
             for row in reader:
                 if len(row) < 14:
                     continue
+                row_map = {
+                    name: row[idx] if idx < len(row) else ""
+                    for idx, name in enumerate(header)
+                }
+                open_time, close_time = _derive_csv_trade_times(row_map)
                 record_closed_trade(
-                    row[1],
-                    row[2],
-                    row[3],
-                    row[4],
-                    row[5],
-                    row[6],
-                    row[7],
-                    row[8],
-                    row[9],
-                    row[10],
-                    market_mode=row[11],
-                    trigger_signal=row[12],
-                    session_id=row[13],
-                    open_time_str="",
-                    mae_usd=row[14] if len(row) > 14 else 0.0,
-                    mfe_usd=row[15] if len(row) > 15 else 0.0,
+                    row_map.get("Ticket", row[1] if len(row) > 1 else ""),
+                    row_map.get("Symbol", row[2] if len(row) > 2 else ""),
+                    row_map.get("Type", row[3] if len(row) > 3 else ""),
+                    row_map.get("Vol", row[4] if len(row) > 4 else ""),
+                    row_map.get("Entry", row[5] if len(row) > 5 else ""),
+                    row_map.get("SL", row[6] if len(row) > 6 else ""),
+                    row_map.get("TP", row[7] if len(row) > 7 else ""),
+                    row_map.get("Fee", row[8] if len(row) > 8 else ""),
+                    row_map.get("PnL ($)", row[9] if len(row) > 9 else ""),
+                    row_map.get("Reason", row[10] if len(row) > 10 else ""),
+                    market_mode=row_map.get("Market Mode", row[11] if len(row) > 11 else "ANY"),
+                    trigger_signal=row_map.get("Trigger", row[12] if len(row) > 12 else "UNK"),
+                    session_id=row_map.get("Session_ID", row[13] if len(row) > 13 else "LEGACY"),
+                    open_time_str=open_time,
+                    mae_usd=row_map.get("MAE ($)", row[14] if len(row) > 14 else 0.0),
+                    mfe_usd=row_map.get("MFE ($)", row[15] if len(row) > 15 else 0.0),
+                    exit_time=close_time,
                     warn_missing_snapshot=False,
                 )
                 count += 1

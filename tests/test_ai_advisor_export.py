@@ -61,6 +61,54 @@ def test_storage_csv_paths_live_in_account_history(monkeypatch, tmp_path):
             shutil.rmtree(repo_artifact)
 
 
+def test_storage_master_csv_gets_full_time_columns(monkeypatch, tmp_path):
+    import csv
+    import core.storage_manager as storage_manager
+
+    monkeypatch.chdir(tmp_path)
+    history_dir = tmp_path / "data" / "TEST_ACCOUNT" / "history"
+    history_dir.mkdir(parents=True)
+    master = history_dir / "trade_history_master.csv"
+    with open(master, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["Time", "Ticket", "Symbol", "Type", "Vol", "Entry", "SL", "TP", "Fee", "PnL ($)", "Reason", "Market Mode", "Trigger", "Session_ID", "MAE ($)", "MFE ($)"])
+        writer.writerow(["08:34:49 -> 11:12:38", "1", "ETHUSD", "BUY", "1", "1", "1", "1", "0", "10", "Manual_Close", "ANY", "[USER]", "20260609_111238", "0", "10"])
+
+    storage_manager.set_active_account("TEST_ACCOUNT")
+
+    with open(master, "r", newline="", encoding="utf-8") as f:
+        rows = list(csv.reader(f))
+    header = rows[0]
+    row = rows[1]
+    assert "Open Time" in header
+    assert "Close Time" in header
+    assert row[header.index("Open Time")] == "2026-06-09T08:34:49"
+    assert row[header.index("Close Time")] == "2026-06-09T11:12:38"
+
+
+def test_storage_master_csv_keeps_unknown_legacy_close_time_blank(monkeypatch, tmp_path):
+    import csv
+    import core.storage_manager as storage_manager
+
+    monkeypatch.chdir(tmp_path)
+    history_dir = tmp_path / "data" / "TEST_ACCOUNT" / "history"
+    history_dir.mkdir(parents=True)
+    master = history_dir / "trade_history_master.csv"
+    with open(master, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["Time", "Ticket", "Symbol", "Type", "Vol", "Entry", "SL", "TP", "Fee", "PnL ($)", "Reason", "Market Mode", "Trigger", "Session_ID", "MAE ($)", "MFE ($)", "Open Time", "Close Time"])
+        writer.writerow(["13:52:16 -> 16:16:59", "legacy-grid", "ETHUSD", "BUY", "1", "1", "1", "1", "0", "10", "Manual_Close", "ANY", "[GRID]", "GRID", "0", "10", "", "2026-06-10T10:32:39"])
+
+    storage_manager.set_active_account("TEST_ACCOUNT")
+
+    with open(master, "r", newline="", encoding="utf-8") as f:
+        rows = list(csv.reader(f))
+    header = rows[0]
+    row = rows[1]
+    assert row[header.index("Open Time")] == ""
+    assert row[header.index("Close Time")] == ""
+
+
 def test_advisor_folder_has_no_nested_dirs_after_export(monkeypatch, tmp_path):
     _patch_account_dir(monkeypatch, tmp_path)
     wb = _new_history_workbook()
@@ -123,6 +171,65 @@ def test_export_workbook_filters_closed_trades_without_touching_full_history(mon
 
     full_wb = load_workbook(paths.history_path())
     assert full_wb["closed_trades"].max_row == 3
+
+
+def test_export_skips_unknown_legacy_closed_trades(monkeypatch, tmp_path):
+    _patch_account_dir(monkeypatch, tmp_path)
+    now = datetime.now()
+    wb = _new_history_workbook()
+
+    closed_headers = history.SHEETS["closed_trades"]
+    wb["closed_trades"].append(
+        _row(
+            closed_headers,
+            **{
+                "Recorded At": now.isoformat(timespec="seconds"),
+                "Ticket": "unknown-date",
+                "Symbol": "ETHUSD",
+                "Session ID": "GRID",
+                "Profit": "10",
+            },
+        )
+    )
+    wb["closed_trades"].append(
+        _row(
+            closed_headers,
+            **{
+                "Recorded At": now.isoformat(timespec="seconds"),
+                "Ticket": "known-date",
+                "Symbol": "ETHUSD",
+                "Exit Time": now.isoformat(timespec="seconds"),
+                "Session ID": "20260610_100000",
+                "Profit": "10",
+            },
+        )
+    )
+    wb.save(paths.history_path())
+
+    result = history.build_export_workbook(export_days=7)
+    assert result["closed_trades"] == 1
+    export_wb = load_workbook(paths.export_path())
+    assert [export_wb["closed_trades"].cell(r, 2).value for r in range(2, export_wb["closed_trades"].max_row + 1)] == ["known-date"]
+
+
+def test_master_csv_sync_uses_real_session_date_for_old_rows(monkeypatch, tmp_path):
+    import csv
+    import core.storage_manager as storage_manager
+
+    monkeypatch.chdir(tmp_path)
+    storage_manager.set_active_account("TEST_ACCOUNT")
+    with open(storage_manager.MASTER_LOG_FILE, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["Time", "Ticket", "Symbol", "Type", "Vol", "Entry", "SL", "TP", "Fee", "PnL ($)", "Reason", "Market Mode", "Trigger", "Session_ID", "MAE ($)", "MFE ($)"])
+        writer.writerow(["08:34:49 -> 11:12:38", "csv-1", "ETHUSD", "BUY", "1", "1", "1", "1", "0", "10", "Manual_Close", "ANY", "[USER]", "20260609_111238", "0", "10"])
+
+    synced = history.sync_from_master_csv()
+    wb = load_workbook(paths.history_path())
+    ws = wb["closed_trades"]
+
+    assert synced == 1
+    assert ws.cell(2, 6).value == "2026-06-09T08:34:49"
+    assert ws.cell(2, 7).value == "2026-06-09T11:12:38"
 
 
 def test_api_client_reads_advisor_export_not_full_history(monkeypatch, tmp_path):

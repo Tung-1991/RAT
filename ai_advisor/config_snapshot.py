@@ -77,6 +77,45 @@ def _stable_hash(payload):
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
 
 
+def _advisor_guide():
+    return {
+        "purpose": "Use this package to review RAT6 trading performance, risk controls, module behavior, and configuration drift. Do not propose direct automated order actions.",
+        "files": {
+            "technical_settings.json": "Current config snapshot plus raw source JSON files.",
+            "advisor_export.xlsx": "Filtered trade/config/event view for the selected export window.",
+            "user_context.md": "Human notes, goals, constraints, and questions from the operator.",
+        },
+        "timeframe_groups": {
+            "G0": "Macro/base timeframe, usually highest timeframe.",
+            "G1": "Trend/context timeframe.",
+            "G2": "Execution/swing timeframe.",
+            "G3": "Fast confirmation timeframe.",
+        },
+        "modules": {
+            "TSL": "Trailing stop layer. Includes BE, PNL, STEP_R, SWING, BE_CASH, PSAR, ANTI_CASH.",
+            "E/E": "Entry/Exit tactic layer. Includes fallback R, retest, structure, fib, pullback.",
+            "DCA": "Adds to losing/averaging basket according to DCA rules.",
+            "PCA": "Adds to winning/confirmed basket according to PCA rules.",
+            "REV_C": "Recovery/reversal close logic.",
+            "A.CUT": "Anti-cash hard stop/giveback guard.",
+            "GRID": "Grid trading module.",
+            "HEDGE": "Hedge trading module.",
+            "SANDBOX": "Strategy sandbox/rules preview and bot strategy configuration.",
+        },
+        "trade_metrics": {
+            "MAE": "Maximum adverse excursion in USD for a trade/session.",
+            "MFE": "Maximum favorable excursion in USD for a trade/session.",
+            "Fee": "Commission/spread fee estimate stored by the bot.",
+            "Session ID": "Bot/manual session grouping key.",
+        },
+        "important_advice_rules": [
+            "Prefer diagnosing which module/rule caused losses or missed profit.",
+            "Compare performance by symbol, close reason, module tag, and trigger.",
+            "Use current config values only as context; do not assume the bot should modify files automatically.",
+        ],
+    }
+
+
 def build_snapshot(reason="manual"):
     import core.storage_manager as storage_manager
 
@@ -111,6 +150,7 @@ def build_snapshot(reason="manual"):
         "account_dir": paths.account_dir(),
         "config_snapshot_id": snapshot_id,
         "hash_basis": "config_py + active_global + active_by_symbol + raw_settings_sources",
+        "advisor_guide": _advisor_guide(),
         "settings": config_payload,
     }
 

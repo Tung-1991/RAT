@@ -17,6 +17,7 @@ sys.modules.setdefault(
         terminal_info=lambda: SimpleNamespace(ping_last=0),
         symbol_info_tick=lambda symbol: None,
         symbol_info=lambda symbol: None,
+        history_deals_get=lambda *_args, **_kwargs: [],
         last_error=lambda: (0, ""),
     ),
 )
