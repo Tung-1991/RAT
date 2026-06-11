@@ -3051,6 +3051,7 @@ class BotUI(ctk.CTk):
                 return
 
             api_result = None
+            telegram_result = None
             if send_api:
                 from ai_advisor.api_client import send_package_to_api
 
@@ -3070,6 +3071,24 @@ class BotUI(ctk.CTk):
                         target="manual",
                     )
                     return
+                try:
+                    from telegram_notify.reporter import send_advisor_response
+
+                    telegram_result = send_advisor_response(api_result.get("response"))
+                    if telegram_result.get("ok"):
+                        self.log_message(
+                            f"[TELEGRAM] Advisor response sent to report group ({telegram_result.get('sent', 0)} parts).",
+                            target="manual",
+                        )
+                    elif not telegram_result.get("skipped"):
+                        self.log_message(
+                            f"[TELEGRAM] Advisor report skipped/failed: {telegram_result.get('error', 'Telegram failed')}",
+                            error=True,
+                            target="manual",
+                        )
+                except Exception as exc:
+                    telegram_result = {"ok": False, "error": str(exc)}
+                    self.log_message(f"[TELEGRAM] Advisor report error: {exc}", error=True, target="manual")
 
             msg = (
                 f"Advisor OK | export={result.get('export_days', days)}d "
@@ -3078,6 +3097,10 @@ class BotUI(ctk.CTk):
             )
             if api_result and api_result.get("ok"):
                 msg += " | API OK"
+            if telegram_result and telegram_result.get("ok"):
+                msg += " | TG OK"
+            elif telegram_result and not telegram_result.get("skipped"):
+                msg += " | TG WARN"
             self.after(0, lambda m=msg: self._set_advisor_status(m))
             self.log_message(f"[AI ADVISOR] {msg}", target="manual")
         except Exception as exc:

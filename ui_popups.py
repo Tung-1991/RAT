@@ -68,6 +68,7 @@ def open_advisor_popup(app):
     tabs.pack(fill="both", expand=True, padx=6, pady=(2, 6))
     tab_run = tabs.add("Run")
     tab_edit = tabs.add("Edit")
+    tab_telegram = tabs.add("Telegram")
     edit_body = _speed_up_scroll(ctk.CTkScrollableFrame(tab_edit, fg_color="transparent"))
     edit_body.pack(fill="both", expand=True, padx=0, pady=0)
 
@@ -169,6 +170,225 @@ def open_advisor_popup(app):
     if not os.path.exists(api_client.paths.advisor_api_settings_path()):
         api_client.save_api_settings(api_client.DEFAULT_API_SETTINGS)
     api_settings = api_client.load_api_settings()
+
+    from telegram_notify import reporter as telegram_reporter
+    from telegram_notify import settings as telegram_settings
+
+    tg_settings = telegram_settings.load_settings()
+    var_tg_enabled = tk.BooleanVar(value=bool(tg_settings.get("enabled")))
+    var_tg_env = tk.StringVar(value=str(tg_settings.get("bot_token_env", "TELE_BOT_KEY")))
+    var_tg_report_chat = tk.StringVar(value=str(tg_settings.get("report_chat_id", "1003772881044")))
+    var_tg_control_chat = tk.StringVar(value=str(tg_settings.get("control_chat_id", "1003941549878")))
+    var_tg_chunk = tk.StringVar(value=str(tg_settings.get("chunk_size", 3500)))
+    var_tg_env_cmd = tk.StringVar()
+
+    def refresh_telegram_env_cmd(*_args):
+        env_name = (var_tg_env.get() or "TELE_BOT_KEY").strip() or "TELE_BOT_KEY"
+        var_tg_env_cmd.set(f'$env:{env_name}="key"')
+
+    var_tg_env.trace_add("write", refresh_telegram_env_cmd)
+    refresh_telegram_env_cmd()
+
+    tg_body = _speed_up_scroll(ctk.CTkScrollableFrame(tab_telegram, fg_color="transparent"), factor=12)
+    tg_body.pack(fill="both", expand=True, padx=10, pady=10)
+    tg_body.grid_columnconfigure(1, weight=1)
+
+    tg_status = ctk.CTkFrame(tg_body, fg_color="#252526", corner_radius=6)
+    tg_status.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 10))
+    ctk.CTkLabel(
+        tg_status,
+        text="Telegram",
+        font=("Roboto", 12, "bold"),
+        text_color="#80DEEA",
+    ).pack(anchor="w", padx=10, pady=(8, 2))
+    ctk.CTkLabel(
+        tg_status,
+        text="Bot key is read only from the PowerShell ENV. It is never saved to disk.",
+        font=("Roboto", 11, "bold"),
+        text_color="gray",
+        anchor="w",
+    ).pack(anchor="w", padx=10, pady=(0, 6))
+
+    tg_env_row = ctk.CTkFrame(tg_status, fg_color="transparent")
+    tg_env_row.pack(fill="x", padx=10, pady=(0, 10))
+    ctk.CTkEntry(
+        tg_env_row,
+        textvariable=var_tg_env_cmd,
+        height=28,
+        font=("Consolas", 11, "bold"),
+    ).pack(side="left", fill="x", expand=True)
+
+    ctk.CTkCheckBox(
+        tg_body,
+        text="When AI API has a response, send it to RAT-report",
+        variable=var_tg_enabled,
+        font=("Roboto", 12, "bold"),
+        checkbox_width=18,
+        checkbox_height=18,
+    ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(0, 10))
+    ctk.CTkLabel(
+        tg_body,
+        text="Only for the Send API flow. Manual/web-chat sending is opened below and always manual.",
+        font=("Roboto", 10, "bold"),
+        text_color="gray",
+        anchor="w",
+    ).grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+
+    def _tg_row(label, variable, row):
+        ctk.CTkLabel(tg_body, text=label, font=("Roboto", 11, "bold"), text_color="#D7DCE2").grid(
+            row=row, column=0, sticky="w", pady=5
+        )
+        ctk.CTkEntry(tg_body, textvariable=variable, height=28).grid(
+            row=row, column=1, sticky="ew", padx=(10, 0), pady=5
+        )
+
+    _tg_row("Token ENV name", var_tg_env, 3)
+    _tg_row("Report chat ID", var_tg_report_chat, 4)
+    _tg_row("Control chat ID", var_tg_control_chat, 5)
+    _tg_row("Chunk size", var_tg_chunk, 6)
+
+    tg_buttons = ctk.CTkFrame(tg_body, fg_color="transparent")
+    tg_buttons.grid(row=7, column=0, columnspan=2, sticky="ew", pady=(12, 0))
+    tg_buttons.grid_columnconfigure((0, 1), weight=1)
+
+    def save_telegram_settings():
+        try:
+            saved = telegram_settings.save_settings(
+                {
+                    "enabled": var_tg_enabled.get(),
+                    "bot_token_env": var_tg_env.get(),
+                    "report_chat_id": var_tg_report_chat.get(),
+                    "control_chat_id": var_tg_control_chat.get(),
+                    "chunk_size": var_tg_chunk.get(),
+                }
+            )
+            var_tg_enabled.set(bool(saved.get("enabled")))
+            var_tg_env.set(str(saved.get("bot_token_env", "TELE_BOT_KEY")))
+            var_tg_report_chat.set(str(saved.get("report_chat_id", "")))
+            var_tg_control_chat.set(str(saved.get("control_chat_id", "")))
+            var_tg_chunk.set(str(saved.get("chunk_size", 3500)))
+            refresh_telegram_env_cmd()
+            app._set_advisor_status("Telegram settings saved")
+            return saved
+        except Exception as exc:
+            app._set_advisor_status("Telegram settings ERR", str(exc))
+            return None
+
+    def copy_telegram_env():
+        try:
+            top.clipboard_clear()
+            top.clipboard_append(var_tg_env_cmd.get())
+            top.update()
+            app._set_advisor_status("Telegram env command copied")
+        except Exception:
+            pass
+
+    ctk.CTkButton(
+        tg_env_row,
+        text="Copy Set Key",
+        width=120,
+        height=28,
+        fg_color="#424242",
+        hover_color="#616161",
+        command=copy_telegram_env,
+    ).pack(side="right", padx=(8, 0))
+
+    def open_telegram_report_sender():
+        saved = save_telegram_settings()
+        if not saved:
+            return
+
+        sender = ctk.CTkToplevel(top)
+        sender.title("Send Telegram Report")
+        sender.geometry("820x620")
+        sender.minsize(640, 460)
+        sender.attributes("-topmost", True)
+        sender.focus_force()
+
+        body = ctk.CTkFrame(sender, fg_color="#1E1E1E", corner_radius=0)
+        body.pack(fill="both", expand=True, padx=10, pady=10)
+        body.grid_columnconfigure(0, weight=1)
+        body.grid_rowconfigure(2, weight=1)
+
+        ctk.CTkLabel(
+            body,
+            text="SEND TO RAT-REPORT",
+            font=("Roboto", 16, "bold"),
+            text_color="#80DEEA",
+        ).grid(row=0, column=0, sticky="w", padx=10, pady=(8, 4))
+        ctk.CTkLabel(
+            body,
+            text="Paste AI web-chat output or any test text here. It will be split automatically if too long.",
+            font=("Roboto", 11, "bold"),
+            text_color="gray",
+            anchor="w",
+        ).grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 8))
+
+        txt_report = ctk.CTkTextbox(body, font=("Consolas", 12))
+        txt_report.grid(row=2, column=0, sticky="nsew", padx=10, pady=(0, 10))
+
+        actions = ctk.CTkFrame(body, fg_color="transparent")
+        actions.grid(row=3, column=0, sticky="ew", padx=10, pady=(0, 10))
+        actions.grid_columnconfigure((0, 1), weight=1)
+
+        def send_report():
+            text = txt_report.get("1.0", "end").strip()
+            if not text:
+                app._set_advisor_status("Telegram report empty")
+                return
+            result = telegram_reporter.send_text_report(
+                text,
+                title="RAT6 Advisor Report",
+                require_enabled=False,
+            )
+            if result.get("ok"):
+                app._set_advisor_status("Telegram report sent")
+                app.log_message(
+                    f"[TELEGRAM] Report sent ({result.get('sent', 0)} parts).",
+                    target="manual",
+                )
+            else:
+                err = result.get("error", "Telegram report failed")
+                app._set_advisor_status("Telegram report ERR", err)
+                app.log_message(f"[TELEGRAM] Report failed: {err}", error=True, target="manual")
+
+        def clear_report():
+            txt_report.delete("1.0", "end")
+            app._set_advisor_status("Telegram report cleared")
+
+        ctk.CTkButton(
+            actions,
+            text="Send To RAT-report",
+            height=34,
+            fg_color="#1f538d",
+            hover_color="#14375e",
+            command=send_report,
+        ).grid(row=0, column=0, sticky="ew", padx=(0, 5))
+        ctk.CTkButton(
+            actions,
+            text="Clear",
+            height=34,
+            fg_color="#424242",
+            hover_color="#616161",
+            command=clear_report,
+        ).grid(row=0, column=1, sticky="ew", padx=(5, 0))
+
+    ctk.CTkButton(
+        tg_buttons,
+        text="Save Telegram",
+        height=30,
+        fg_color="#00695C",
+        hover_color="#004D40",
+        command=save_telegram_settings,
+    ).grid(row=0, column=0, sticky="ew", padx=(0, 5))
+    ctk.CTkButton(
+        tg_buttons,
+        text="Open Report Sender",
+        height=30,
+        fg_color="#1f538d",
+        hover_color="#14375e",
+        command=open_telegram_report_sender,
+    ).grid(row=0, column=1, sticky="ew", padx=(5, 0))
 
     files_box = ctk.CTkFrame(edit_body, fg_color="#252526", corner_radius=6)
     files_box.pack(fill="x", padx=10, pady=(10, 8))
