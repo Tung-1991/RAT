@@ -25,6 +25,18 @@ def advisor_root():
     return os.path.join(account_dir(), "advisor")
 
 
+def account_api_settings_path():
+    return os.path.join(account_dir(), "advisor_api_settings.json")
+
+
+def template_root():
+    return os.path.join("data", "templates", "ai-advisor")
+
+
+def advisor_template_path(filename):
+    return os.path.join(template_root(), filename)
+
+
 def history_root():
     return os.path.join(account_dir(), "history")
 
@@ -55,6 +67,18 @@ def user_context_path():
 
 def advisor_flow_path():
     return os.path.join(advisor_root(), "advisor_flow.md")
+
+
+def advisor_prompt_path():
+    return os.path.join(advisor_root(), "advisor_prompt.md")
+
+
+def advisor_api_settings_path():
+    return account_api_settings_path()
+
+
+def legacy_advisor_api_settings_path():
+    return os.path.join(advisor_root(), "advisor_api_settings.json")
 
 
 def advisor_response_path():

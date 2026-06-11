@@ -21,6 +21,7 @@ data/*
 !data/templates/**
 !data/*/
 data/*/*
+!data/templates/**/*
 !data/*/templates/
 !data/*/templates/**
 

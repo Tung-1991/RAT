@@ -54,8 +54,8 @@ def _speed_up_scroll(frame, factor=5):
 def open_advisor_popup(app):
     top = ctk.CTkToplevel(app)
     top.title("AI Advisor")
-    top.geometry("520x440")
-    top.minsize(480, 400)
+    top.geometry("660x760")
+    top.minsize(600, 640)
     top.attributes("-topmost", True)
     top.focus_force()
 
@@ -64,7 +64,14 @@ def open_advisor_popup(app):
 
     ctk.CTkLabel(root, text="AI ADVISOR", font=("Roboto", 18, "bold"), text_color="#80DEEA").pack(anchor="w", padx=10, pady=(8, 4))
 
-    status_row = ctk.CTkFrame(root, fg_color="#252526", corner_radius=6)
+    tabs = ctk.CTkTabview(root)
+    tabs.pack(fill="both", expand=True, padx=6, pady=(2, 6))
+    tab_run = tabs.add("Run")
+    tab_edit = tabs.add("Edit")
+    edit_body = _speed_up_scroll(ctk.CTkScrollableFrame(tab_edit, fg_color="transparent"))
+    edit_body.pack(fill="both", expand=True, padx=0, pady=0)
+
+    status_row = ctk.CTkFrame(tab_run, fg_color="#252526", corner_radius=6)
     status_row.pack(fill="x", padx=10, pady=(2, 8))
     ctk.CTkLabel(status_row, text="Status", font=("Roboto", 12, "bold"), text_color="gray").pack(side="left", padx=10, pady=8)
     app.lbl_advisor_status = ctk.CTkLabel(
@@ -76,7 +83,7 @@ def open_advisor_popup(app):
     )
     app.lbl_advisor_status.pack(side="right", fill="x", expand=True, padx=10, pady=8)
 
-    settings = ctk.CTkFrame(root, fg_color="transparent")
+    settings = ctk.CTkFrame(tab_run, fg_color="transparent")
     settings.pack(fill="x", padx=10, pady=4)
     settings.grid_columnconfigure(1, weight=1)
 
@@ -107,7 +114,7 @@ def open_advisor_popup(app):
         checkbox_height=18,
     ).grid(row=4, column=0, columnspan=2, sticky="w", pady=(4, 4))
 
-    api_hint = ctk.CTkFrame(root, fg_color="#252526", corner_radius=6)
+    api_hint = ctk.CTkFrame(tab_run, fg_color="#252526", corner_radius=6)
     api_hint.pack(fill="x", padx=10, pady=(8, 2))
     ctk.CTkLabel(
         api_hint,
@@ -146,32 +153,184 @@ def open_advisor_popup(app):
         command=copy_api_cmd,
     ).pack(side="right", padx=(8, 0))
 
-    buttons = ctk.CTkFrame(root, fg_color="transparent")
+    buttons = ctk.CTkFrame(tab_run, fg_color="transparent")
     buttons.pack(fill="x", padx=10, pady=(10, 8))
     ctk.CTkButton(buttons, text="Generate Advisor Package", height=34, fg_color="#00695C", hover_color="#004D40", command=app.generate_advisor_package_ui).pack(side="left", fill="x", expand=True, padx=(0, 5))
-    ctk.CTkButton(buttons, text="Edit Context", width=105, height=34, fg_color="#424242", hover_color="#616161", command=lambda: open_advisor_context_editor(app)).pack(side="left", padx=5)
     ctk.CTkButton(buttons, text="Open Folder", width=105, height=34, fg_color="#424242", hover_color="#616161", command=app.open_advisor_folder).pack(side="left", padx=5)
     ctk.CTkButton(buttons, text="Send API", width=100, height=34, fg_color="#1f538d", hover_color="#14375e", command=app.send_advisor_api_now).pack(side="left", padx=(5, 0))
 
+    from ai_advisor import api_client
+    from ai_advisor.exporter import ensure_advisor_flow, ensure_advisor_response_template, ensure_user_context
+
+    api_client.ensure_advisor_prompt()
+    ensure_advisor_flow()
+    ensure_user_context()
+    ensure_advisor_response_template()
+    if not os.path.exists(api_client.paths.advisor_api_settings_path()):
+        api_client.save_api_settings(api_client.DEFAULT_API_SETTINGS)
+    api_settings = api_client.load_api_settings()
+
+    files_box = ctk.CTkFrame(edit_body, fg_color="#252526", corner_radius=6)
+    files_box.pack(fill="x", padx=10, pady=(10, 8))
+    ctk.CTkLabel(
+        files_box,
+        text="Editable package files",
+        font=("Roboto", 12, "bold"),
+        text_color="#80DEEA",
+    ).pack(anchor="w", padx=10, pady=(8, 2))
+    ctk.CTkLabel(
+        files_box,
+        text="Only these four files are hand-editable. technical_settings.json and advisor_export.xlsx are generated.",
+        font=("Roboto", 10, "bold"),
+        text_color="gray",
+    ).pack(anchor="w", padx=10, pady=(0, 8))
+    file_buttons = ctk.CTkFrame(files_box, fg_color="transparent")
+    file_buttons.pack(fill="x", padx=10, pady=(0, 10))
+    for idx in range(4):
+        file_buttons.grid_columnconfigure(idx, weight=1)
+
+    ctk.CTkButton(
+        file_buttons,
+        text="Edit Prompt",
+        height=30,
+        fg_color="#424242",
+        hover_color="#616161",
+        command=lambda: open_advisor_file_editor(app, api_client.paths.advisor_prompt_path(), "advisor_prompt.md"),
+    ).grid(row=0, column=0, sticky="ew", padx=(0, 4))
+    ctk.CTkButton(
+        file_buttons,
+        text="Edit Flow",
+        height=30,
+        fg_color="#424242",
+        hover_color="#616161",
+        command=lambda: open_advisor_file_editor(app, api_client.paths.advisor_flow_path(), "advisor_flow.md"),
+    ).grid(row=0, column=1, sticky="ew", padx=4)
+    ctk.CTkButton(
+        file_buttons,
+        text="Edit User Context",
+        height=30,
+        fg_color="#424242",
+        hover_color="#616161",
+        command=lambda: open_advisor_file_editor(app, api_client.paths.user_context_path(), "user_context.md"),
+    ).grid(row=0, column=2, sticky="ew", padx=4)
+    ctk.CTkButton(
+        file_buttons,
+        text="Edit Response",
+        height=30,
+        fg_color="#424242",
+        hover_color="#616161",
+        command=lambda: open_advisor_file_editor(app, api_client.paths.advisor_response_path(), "advisor_response.md"),
+    ).grid(row=0, column=3, sticky="ew", padx=(4, 0))
+
+    edit_top = ctk.CTkFrame(edit_body, fg_color="#252526", corner_radius=6)
+    edit_top.pack(fill="x", padx=10, pady=(0, 8))
+    edit_top.grid_columnconfigure(1, weight=1)
+    ctk.CTkLabel(
+        edit_top,
+        text="API Limits",
+        font=("Roboto", 12, "bold"),
+        text_color="#80DEEA",
+    ).grid(row=0, column=0, columnspan=2, sticky="w", padx=10, pady=(8, 2))
+    ctk.CTkLabel(
+        edit_top,
+        text="Internal send limits. This JSON is not part of the manual web-upload package.",
+        font=("Roboto", 10, "bold"),
+        text_color="gray",
+    ).grid(row=1, column=0, columnspan=2, sticky="w", padx=10, pady=(0, 6))
+
+    var_model = tk.StringVar(value=str(api_settings.get("model", api_client.DEFAULT_MODEL)))
+    var_prompt_limit = tk.StringVar(value=str(api_settings.get("advisor_prompt_limit", 200000)))
+    var_flow_limit = tk.StringVar(value=str(api_settings.get("advisor_flow_limit", 200000)))
+    var_context_limit = tk.StringVar(value=str(api_settings.get("user_context_limit", 100000)))
+    var_tech_limit = tk.StringVar(value=str(api_settings.get("technical_settings_limit", 1000000)))
+    var_workbook_rows = tk.StringVar(value=str(api_settings.get("workbook_limit_rows", 80)))
+    var_response_limit = tk.StringVar(value=str(api_settings.get("previous_response_limit", 60000)))
+
+    def _edit_row(label, variable, row, values=None):
+        ctk.CTkLabel(edit_top, text=label, font=("Roboto", 11, "bold"), text_color="#D7DCE2").grid(row=row, column=0, sticky="w", padx=10, pady=4)
+        if values:
+            ctk.CTkOptionMenu(edit_top, values=values, variable=variable, width=150, height=28).grid(row=row, column=1, sticky="e", padx=10, pady=4)
+        else:
+            ctk.CTkEntry(edit_top, textvariable=variable, width=150, height=28).grid(row=row, column=1, sticky="e", padx=10, pady=4)
+
+    _edit_row("model", var_model, 2, values=api_client.SUPPORTED_MODELS)
+    _edit_row("advisor_prompt limit chars", var_prompt_limit, 3)
+    _edit_row("advisor_flow limit chars", var_flow_limit, 4)
+    _edit_row("user_context limit chars", var_context_limit, 5)
+    _edit_row("technical_settings limit chars", var_tech_limit, 6)
+    _edit_row("advisor_export rows/sheet", var_workbook_rows, 7)
+    _edit_row("advisor_response limit chars (if sent)", var_response_limit, 8)
+
+    limit_buttons = ctk.CTkFrame(edit_top, fg_color="transparent")
+    limit_buttons.grid(row=9, column=0, columnspan=2, sticky="ew", padx=10, pady=(6, 10))
+
+    def save_api_edit():
+        try:
+            saved = api_client.save_api_settings(
+                {
+                    "model": var_model.get(),
+                    "advisor_prompt_limit": var_prompt_limit.get(),
+                    "advisor_flow_limit": var_flow_limit.get(),
+                    "user_context_limit": var_context_limit.get(),
+                    "technical_settings_limit": var_tech_limit.get(),
+                    "workbook_limit_rows": var_workbook_rows.get(),
+                    "previous_response_limit": var_response_limit.get(),
+                }
+            )
+            var_model.set(str(saved.get("model", api_client.DEFAULT_MODEL)))
+            var_prompt_limit.set(str(saved.get("advisor_prompt_limit")))
+            var_flow_limit.set(str(saved.get("advisor_flow_limit")))
+            var_context_limit.set(str(saved.get("user_context_limit")))
+            var_tech_limit.set(str(saved.get("technical_settings_limit")))
+            var_workbook_rows.set(str(saved.get("workbook_limit_rows")))
+            var_response_limit.set(str(saved.get("previous_response_limit")))
+            app.preview_advisor_api_payload()
+            app._set_advisor_status("API settings saved")
+        except Exception as exc:
+            app._set_advisor_status("API settings ERR", str(exc))
+
+    ctk.CTkButton(limit_buttons, text="Save Limits", height=30, fg_color="#00695C", hover_color="#004D40", command=save_api_edit).pack(side="left", fill="x", expand=True, padx=(0, 6))
+    ctk.CTkButton(limit_buttons, text="Preview Token/Cost", width=160, height=30, fg_color="#1f538d", hover_color="#14375e", command=app.preview_advisor_api_payload).pack(side="right")
+
+    preview_box = ctk.CTkFrame(edit_body, fg_color="#252526", corner_radius=6)
+    preview_box.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+    app.lbl_advisor_api_preview = ctk.CTkLabel(
+        preview_box,
+        text=getattr(app, "advisor_api_preview_text", "API payload: not estimated"),
+        font=("Roboto", 12, "bold"),
+        text_color="#E3F2FD",
+        anchor="w",
+        justify="left",
+    )
+    app.lbl_advisor_api_preview.pack(fill="x", padx=10, pady=(8, 4))
+    app.lbl_advisor_api_preview_detail = ctk.CTkLabel(
+        preview_box,
+        text=getattr(app, "advisor_api_preview_detail_text", ""),
+        font=("Consolas", 11, "bold"),
+        text_color="#B3E5FC",
+        anchor="w",
+        justify="left",
+        wraplength=560,
+    )
+    app.lbl_advisor_api_preview_detail.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+
 # --- BẢNG MÀU & FONT CHUẨN ---
 
-def open_advisor_context_editor(app):
-    from ai_advisor.exporter import ensure_user_context
-    from ai_advisor import paths
-
-    path = ensure_user_context()
+def open_advisor_file_editor(app, path, title):
     top = ctk.CTkToplevel(app)
-    top.title("Edit Advisor Context")
+    top.title(f"Edit {title}")
     top.geometry("760x620")
     top.minsize(620, 460)
     top.attributes("-topmost", True)
+    top.lift()
     top.focus_force()
+    top.after(150, lambda: (top.lift(), top.focus_force(), top.attributes("-topmost", True)))
 
     root = ctk.CTkFrame(top, fg_color="#1E1E1E", corner_radius=0)
     root.pack(fill="both", expand=True, padx=10, pady=10)
     ctk.CTkLabel(
         root,
-        text="user_context.md",
+        text=title,
         font=("Roboto", 16, "bold"),
         text_color="#80DEEA",
     ).pack(anchor="w", padx=8, pady=(6, 2))
@@ -188,28 +347,59 @@ def open_advisor_context_editor(app):
         with open(path, "r", encoding="utf-8", errors="replace") as f:
             text.insert("1.0", f.read())
     except Exception as exc:
-        text.insert("1.0", f"# Failed to read context\n\n{exc}")
+        text.insert("1.0", f"# Failed to read file\n\n{exc}")
 
     footer = ctk.CTkFrame(root, fg_color="transparent")
     footer.pack(fill="x", padx=8, pady=(0, 6))
     status = ctk.CTkLabel(footer, text="", font=("Roboto", 11, "bold"), text_color="gray")
     status.pack(side="left", fill="x", expand=True)
 
-    def save_context():
+    def reload_file():
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                content = f.read()
+            text.delete("1.0", "end")
+            text.insert("1.0", content)
+            status.configure(text="Reloaded", text_color="#00C853")
+        except Exception as exc:
+            status.configure(text=f"Reload failed: {exc}", text_color="#D50000")
+
+    def save_file():
         try:
             content = text.get("1.0", "end-1c")
+            os.makedirs(os.path.dirname(path), exist_ok=True)
             with open(path, "w", encoding="utf-8") as f:
-                f.write(content)
-            snapshot_path = paths.user_context_history_path()
-            os.makedirs(os.path.dirname(snapshot_path), exist_ok=True)
-            with open(snapshot_path, "w", encoding="utf-8") as f:
                 f.write(content)
             status.configure(text="Saved", text_color="#00C853")
             if hasattr(app, "_set_advisor_status"):
-                app._set_advisor_status("Context saved")
+                app._set_advisor_status(f"{title} saved")
         except Exception as exc:
             status.configure(text=f"Save failed: {exc}", text_color="#D50000")
 
+    def open_folder():
+        try:
+            os.startfile(os.path.dirname(path))
+        except Exception as exc:
+            status.configure(text=f"Open folder failed: {exc}", text_color="#D50000")
+
+    ctk.CTkButton(
+        footer,
+        text="Open Folder",
+        width=115,
+        height=32,
+        fg_color="#424242",
+        hover_color="#616161",
+        command=open_folder,
+    ).pack(side="right", padx=(8, 0))
+    ctk.CTkButton(
+        footer,
+        text="Reload",
+        width=90,
+        height=32,
+        fg_color="#424242",
+        hover_color="#616161",
+        command=reload_file,
+    ).pack(side="right", padx=(8, 0))
     ctk.CTkButton(
         footer,
         text="Save",
@@ -217,7 +407,7 @@ def open_advisor_context_editor(app):
         height=32,
         fg_color="#00695C",
         hover_color="#004D40",
-        command=save_context,
+        command=save_file,
     ).pack(side="right", padx=(8, 0))
     ctk.CTkButton(
         footer,
@@ -228,6 +418,12 @@ def open_advisor_context_editor(app):
         hover_color="#616161",
         command=top.destroy,
     ).pack(side="right")
+
+
+def open_advisor_context_editor(app):
+    from ai_advisor.exporter import ensure_user_context
+
+    open_advisor_file_editor(app, ensure_user_context(), "user_context.md")
 
 
 FONT_BOLD = ("Roboto", 13, "bold")

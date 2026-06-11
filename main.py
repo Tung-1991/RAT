@@ -160,6 +160,8 @@ class BotUI(ctk.CTk):
         self.var_advisor_global_emergency = tk.BooleanVar(value=True)
         self.var_advisor_send_response_file = tk.BooleanVar(value=False)
         self.var_advisor_send_previous_response = self.var_advisor_send_response_file
+        self.advisor_api_preview_text = "API payload: not estimated"
+        self.advisor_api_preview_detail_text = ""
         self.advisor_last_export_status = "Never"
         self.advisor_last_error = ""
         self._advisor_worker_active = False
@@ -3060,11 +3062,14 @@ class BotUI(ctk.CTk):
                 include_response_file = bool(response_file_var.get()) if response_file_var else False
                 api_result = send_package_to_api(include_previous_response=include_response_file)
                 if not api_result.get("ok"):
+                    err = api_result.get("error", "API failed")
+                    self.after(0, lambda e=err: self._set_advisor_status("Advisor API ERR", e))
                     self.log_message(
-                        f"[AI ADVISOR] API skipped/failed: {api_result.get('error')}",
+                        f"[AI ADVISOR] API skipped/failed: {err}",
                         error=True,
                         target="manual",
                     )
+                    return
 
             msg = (
                 f"Advisor OK | export={result.get('export_days', days)}d "
@@ -3088,6 +3093,56 @@ class BotUI(ctk.CTk):
     def send_advisor_api_now(self):
         self._set_advisor_status("Advisor API sending...")
         threading.Thread(target=self._advisor_worker, kwargs={"send_api": True, "reason": "api_button"}, daemon=True).start()
+
+    def preview_advisor_api_payload(self):
+        try:
+            from ai_advisor.api_client import estimate_api_payload
+
+            response_file_var = getattr(
+                self,
+                "var_advisor_send_response_file",
+                getattr(self, "var_advisor_send_previous_response", None),
+            )
+            include_response_file = bool(response_file_var.get()) if response_file_var else False
+            estimate = estimate_api_payload(include_previous_response=include_response_file)
+            tokens = estimate.get("tokens", 0)
+            cost = estimate.get("input_cost_usd", 0.0)
+            out_2k = estimate.get("estimated_output_2k_usd", 0.0)
+            out_4k = estimate.get("estimated_output_4k_usd", 0.0)
+            model = estimate.get("model", "gpt-5.4-mini")
+            text = (
+                f"API payload: ~{tokens:,} input tokens\n"
+                f"Input cost: ~${cost:.4f} | Output 2k/4k: ~${out_2k:.4f}/${out_4k:.4f}\n"
+                f"Model: {model}"
+            )
+            detail_parts = []
+            for item in estimate.get("breakdown", []):
+                name = str(item.get("name") or "")
+                marker = "[AUTO]" if name in {"technical_settings.json", "advisor_export.xlsx"} else "[EDIT]"
+                detail_parts.append(
+                    f"{marker} {name:<24} ~{int(item.get('tokens', 0)):>8,} tok   {int(item.get('chars', 0)):>10,} chars"
+                )
+            detail = "\n".join(detail_parts)
+            self.advisor_api_preview_text = text
+            self.advisor_api_preview_detail_text = detail
+            label = getattr(self, "lbl_advisor_api_preview", None)
+            if label and label.winfo_exists():
+                label.configure(text=text, text_color="#E3F2FD")
+            detail_label = getattr(self, "lbl_advisor_api_preview_detail", None)
+            if detail_label and detail_label.winfo_exists():
+                detail_label.configure(text=detail, text_color="#B3E5FC")
+            self._set_advisor_status("API preview OK")
+        except Exception as exc:
+            text = f"API payload preview ERR: {exc}"
+            self.advisor_api_preview_text = text
+            self.advisor_api_preview_detail_text = ""
+            label = getattr(self, "lbl_advisor_api_preview", None)
+            if label and label.winfo_exists():
+                label.configure(text=text, text_color=COL_RED)
+            detail_label = getattr(self, "lbl_advisor_api_preview_detail", None)
+            if detail_label and detail_label.winfo_exists():
+                detail_label.configure(text="", text_color=COL_RED)
+            self._set_advisor_status("API preview ERR", str(exc))
 
     def open_advisor_folder(self):
         try:

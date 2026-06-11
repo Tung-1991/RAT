@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 from datetime import datetime, timedelta
+import os
 from pathlib import Path
 
 from openpyxl import Workbook, load_workbook
@@ -33,6 +34,10 @@ def test_advisor_paths_split_history_and_export(monkeypatch, tmp_path):
     assert paths.history_path().replace("\\", "/").endswith("history/advisor_history.xlsx")
     assert paths.export_path().replace("\\", "/").endswith("advisor/advisor_export.xlsx")
     assert paths.advisor_flow_path().replace("\\", "/").endswith("advisor/advisor_flow.md")
+    assert paths.advisor_prompt_path().replace("\\", "/").endswith("advisor/advisor_prompt.md")
+    assert paths.advisor_api_settings_path().replace("\\", "/").endswith("advisor_api_settings.json")
+    assert not paths.advisor_api_settings_path().replace("\\", "/").endswith("advisor/advisor_api_settings.json")
+    assert paths.legacy_advisor_api_settings_path().replace("\\", "/").endswith("advisor/advisor_api_settings.json")
     assert paths.advisor_response_path().replace("\\", "/").endswith("advisor/advisor_response.md")
     assert paths.advisor_response_history_path().replace("\\", "/").endswith(".md")
     assert "/history/advisor_response_" in paths.advisor_response_history_path().replace("\\", "/")
@@ -296,6 +301,64 @@ def test_generate_package_creates_advisor_response_template(monkeypatch, tmp_pat
     with open(paths.advisor_response_path(), "r", encoding="utf-8") as f:
         text = f.read()
     assert "No API response has been saved yet." in text
+    assert "AI Advisor for RAT6" in api_client.load_advisor_prompt()
+    assert api_client.load_api_settings()["technical_settings_limit"] == 1000000
+
+
+def test_generate_package_clones_editable_files_from_global_templates(monkeypatch, tmp_path):
+    _patch_account_dir(monkeypatch, tmp_path / "account")
+    template_root = tmp_path / "templates"
+    template_root.mkdir(parents=True)
+    monkeypatch.setattr(paths, "template_root", lambda: str(template_root))
+    for name in ("advisor_prompt.md", "advisor_flow.md", "user_context.md", "advisor_response.md"):
+        with open(template_root / name, "w", encoding="utf-8") as f:
+            f.write(f"template::{name}")
+
+    result = exporter.generate_advisor_package()
+
+    assert result["ok"] is True
+    for path_func, name in (
+        (paths.advisor_prompt_path, "advisor_prompt.md"),
+        (paths.advisor_flow_path, "advisor_flow.md"),
+        (paths.user_context_path, "user_context.md"),
+        (paths.advisor_response_path, "advisor_response.md"),
+    ):
+        with open(path_func(), "r", encoding="utf-8") as f:
+            assert f.read() == f"template::{name}"
+
+
+def test_generate_package_does_not_overwrite_existing_editable_files(monkeypatch, tmp_path):
+    _patch_account_dir(monkeypatch, tmp_path / "account")
+    template_root = tmp_path / "templates"
+    template_root.mkdir(parents=True)
+    monkeypatch.setattr(paths, "template_root", lambda: str(template_root))
+    for name in ("advisor_prompt.md", "advisor_flow.md", "user_context.md", "advisor_response.md"):
+        with open(template_root / name, "w", encoding="utf-8") as f:
+            f.write(f"template::{name}")
+    paths.ensure_advisor_dirs()
+    with open(paths.user_context_path(), "w", encoding="utf-8") as f:
+        f.write("custom context")
+
+    result = exporter.generate_advisor_package()
+
+    assert result["ok"] is True
+    with open(paths.user_context_path(), "r", encoding="utf-8") as f:
+        assert f.read() == "custom context"
+
+
+def test_api_settings_migrates_from_legacy_advisor_folder(monkeypatch, tmp_path):
+    _patch_account_dir(monkeypatch, tmp_path)
+    paths.ensure_advisor_dirs()
+    with open(paths.legacy_advisor_api_settings_path(), "w", encoding="utf-8") as f:
+        f.write('{"technical_settings_limit": 1234, "workbook_limit_rows": 9, "previous_response_limit": 77}')
+
+    settings = api_client.load_api_settings()
+
+    assert settings["technical_settings_limit"] == 1234
+    assert settings["workbook_limit_rows"] == 9
+    assert settings["previous_response_limit"] == 77
+    assert os.path.exists(paths.advisor_api_settings_path())
+    assert not os.path.exists(paths.legacy_advisor_api_settings_path())
 
 
 def test_api_client_only_sends_advisor_response_when_enabled(monkeypatch, tmp_path):
@@ -344,3 +407,113 @@ def test_api_client_only_sends_advisor_response_when_enabled(monkeypatch, tmp_pa
     assert api_client.send_package_to_api(include_previous_response=True)["ok"] is True
     assert "previous_advisor_response.md" in seen_inputs[-1]
     assert "previous advice marker" in seen_inputs[-1]
+
+
+def test_api_client_uses_large_limit_for_technical_settings(monkeypatch, tmp_path):
+    _patch_account_dir(monkeypatch, tmp_path)
+    export_wb = _new_history_workbook()
+    export_wb.save(paths.export_path())
+    with open(paths.advisor_flow_path(), "w", encoding="utf-8") as f:
+        f.write("flow")
+    with open(paths.technical_settings_path(), "w", encoding="utf-8") as f:
+        f.write("A" * 150000)
+    with open(paths.user_context_path(), "w", encoding="utf-8") as f:
+        f.write("context")
+
+    text = api_client.build_api_input()
+
+    assert "A" * 130000 in text
+
+
+def test_api_client_estimates_payload(monkeypatch, tmp_path):
+    _patch_account_dir(monkeypatch, tmp_path)
+    export_wb = _new_history_workbook()
+    export_wb.save(paths.export_path())
+    with open(paths.advisor_flow_path(), "w", encoding="utf-8") as f:
+        f.write("flow")
+    with open(paths.technical_settings_path(), "w", encoding="utf-8") as f:
+        f.write("{}")
+    with open(paths.user_context_path(), "w", encoding="utf-8") as f:
+        f.write("context")
+
+    estimate = api_client.estimate_api_payload()
+
+    assert estimate["tokens"] > 0
+    assert estimate["input_cost_usd"] > 0
+    assert estimate["model"] == "gpt-5.4-mini"
+    names = [item["name"] for item in estimate["breakdown"]]
+    assert "advisor_prompt.md" in names
+    assert "advisor_flow.md" in names
+    assert "technical_settings.json" in names
+    assert "advisor_export.xlsx" in names
+    assert "user_context.md" in names
+    assert "advisor_response.md" not in names
+
+
+def test_api_client_reads_prompt_and_limits_from_advisor_files(monkeypatch, tmp_path):
+    _patch_account_dir(monkeypatch, tmp_path)
+    export_wb = _new_history_workbook()
+    export_wb.save(paths.export_path())
+    with open(paths.advisor_flow_path(), "w", encoding="utf-8") as f:
+        f.write("flow")
+    with open(paths.technical_settings_path(), "w", encoding="utf-8") as f:
+        f.write("B" * 2000)
+    with open(paths.user_context_path(), "w", encoding="utf-8") as f:
+        f.write("context")
+    api_client.save_api_settings(
+        {
+            "model": "not-a-real-model",
+            "advisor_prompt_limit": 1000,
+            "advisor_flow_limit": 1000,
+            "user_context_limit": 1000,
+            "technical_settings_limit": 1200,
+            "workbook_limit_rows": 3,
+            "previous_response_limit": 7,
+        }
+    )
+    api_client.save_advisor_prompt("custom opening prompt")
+    with open(paths.advisor_response_path(), "w", encoding="utf-8") as f:
+        f.write("response marker")
+
+    text = api_client.build_api_input(include_previous_response=True)
+
+    assert "B" * 1200 in text
+    assert "B" * 1300 not in text
+    assert "response" in text
+    assert "response marker" not in text
+    assert api_client.load_advisor_prompt() == "custom opening prompt"
+    estimate = api_client.estimate_api_payload(include_previous_response=True)
+    assert "advisor_response.md" in [item["name"] for item in estimate["breakdown"]]
+    assert estimate["model"] == "gpt-5.4-mini"
+
+
+def test_api_client_applies_prompt_flow_and_context_limits(monkeypatch, tmp_path):
+    _patch_account_dir(monkeypatch, tmp_path)
+    export_wb = _new_history_workbook()
+    export_wb.save(paths.export_path())
+    api_client.save_api_settings(
+        {
+            "advisor_prompt_limit": 1200,
+            "advisor_flow_limit": 1300,
+            "user_context_limit": 1400,
+            "technical_settings_limit": 1500,
+        }
+    )
+    with open(paths.advisor_prompt_path(), "w", encoding="utf-8") as f:
+        f.write("P" * 2000)
+    with open(paths.advisor_flow_path(), "w", encoding="utf-8") as f:
+        f.write("F" * 2000)
+    with open(paths.user_context_path(), "w", encoding="utf-8") as f:
+        f.write("U" * 2000)
+    with open(paths.technical_settings_path(), "w", encoding="utf-8") as f:
+        f.write("T" * 2000)
+
+    assert len(api_client.load_advisor_prompt()) == 1200
+    text = api_client.build_api_input()
+
+    assert "F" * 1300 in text
+    assert "F" * 1400 not in text
+    assert "U" * 1400 in text
+    assert "U" * 1500 not in text
+    assert "T" * 1500 in text
+    assert "T" * 1600 not in text
