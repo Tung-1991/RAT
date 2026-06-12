@@ -20,7 +20,14 @@ ADVISOR_FLOW_LIMIT = 200000
 USER_CONTEXT_LIMIT = 100000
 PREVIOUS_RESPONSE_LIMIT = 60000
 WORKBOOK_LIMIT_ROWS = 80
+DEFAULT_MAX_OUTPUT_TOKENS = 8000
+WORKBOOK_CELL_LIMIT = 6000
 SUPPORTED_MODELS = ["gpt-5.4-mini", "gpt-5.4", "gpt-5.5"]
+MODEL_CONTEXT_TOKENS = {
+    "gpt-5.4-mini": 400000,
+    "gpt-5.4": 1000000,
+    "gpt-5.5": 1000000,
+}
 MODEL_PRICING_PER_1M = {
     "gpt-5.4-mini": {"input": 0.75, "output": 4.50},
     "gpt-5.4": {"input": 2.50, "output": 15.00},
@@ -37,6 +44,7 @@ DEFAULT_API_SETTINGS = {
     "technical_settings_limit": TECHNICAL_SETTINGS_LIMIT,
     "previous_response_limit": PREVIOUS_RESPONSE_LIMIT,
     "workbook_limit_rows": WORKBOOK_LIMIT_ROWS,
+    "max_output_tokens": DEFAULT_MAX_OUTPUT_TOKENS,
 }
 
 
@@ -104,6 +112,12 @@ def load_api_settings():
         min_value=1,
         max_value=10000,
     )
+    settings["max_output_tokens"] = _safe_int(
+        settings.get("max_output_tokens"),
+        DEFAULT_MAX_OUTPUT_TOKENS,
+        min_value=1024,
+        max_value=128000,
+    )
     settings["model"] = normalize_model(settings.get("model"))
     if os.path.exists(legacy_path) and (source_path == legacy_path or os.path.exists(path)):
         try:
@@ -159,6 +173,12 @@ def load_api_settings_from_dict(data):
             min_value=1,
             max_value=10000,
         ),
+        "max_output_tokens": _safe_int(
+            data.get("max_output_tokens"),
+            DEFAULT_MAX_OUTPUT_TOKENS,
+            min_value=1024,
+            max_value=128000,
+        ),
     }
 
 
@@ -212,7 +232,13 @@ def _workbook_text(limit_rows=None):
             chunks.append(f"\n## {name}")
             max_row = min(ws.max_row, limit_rows)
             for row in ws.iter_rows(min_row=1, max_row=max_row, values_only=True):
-                chunks.append(" | ".join("" if v is None else str(v) for v in row))
+                cells = []
+                for value in row:
+                    text = "" if value is None else str(value)
+                    if len(text) > WORKBOOK_CELL_LIMIT:
+                        text = text[:WORKBOOK_CELL_LIMIT] + "...[truncated_for_api]"
+                    cells.append(text)
+                chunks.append(" | ".join(cells))
         return "\n".join(chunks)
     except Exception as exc:
         return f"advisor_export.xlsx read warning: {exc}"
@@ -250,7 +276,8 @@ def build_api_input(include_previous_response=False):
 def estimate_api_payload(include_previous_response=False):
     prompt_text = load_advisor_prompt()
     input_sections = build_api_sections(include_previous_response=include_previous_response)
-    model = load_api_settings().get("model", DEFAULT_MODEL)
+    settings = load_api_settings()
+    model = settings.get("model", DEFAULT_MODEL)
     pricing = MODEL_PRICING_PER_1M.get(model, MODEL_PRICING_PER_1M[DEFAULT_MODEL])
     text = "\n\n".join(
         part
@@ -259,9 +286,13 @@ def estimate_api_payload(include_previous_response=False):
     )
     chars = len(text) + len(prompt_text)
     tokens = max(1, int(chars / 4))
+    context_tokens = MODEL_CONTEXT_TOKENS.get(model, MODEL_CONTEXT_TOKENS[DEFAULT_MODEL])
+    max_output_tokens = settings.get("max_output_tokens", DEFAULT_MAX_OUTPUT_TOKENS)
+    context_remaining_tokens = context_tokens - tokens - max_output_tokens
     input_cost = (tokens / 1000000.0) * pricing["input"]
     output_2k_cost = (2000 / 1000000.0) * pricing["output"]
     output_4k_cost = (4000 / 1000000.0) * pricing["output"]
+    output_limit_cost = (max_output_tokens / 1000000.0) * pricing["output"]
     breakdown = []
     prompt_chars = len(prompt_text)
     breakdown.append(
@@ -288,8 +319,13 @@ def estimate_api_payload(include_previous_response=False):
         "input_cost_usd": input_cost,
         "estimated_output_2k_usd": output_2k_cost,
         "estimated_output_4k_usd": output_4k_cost,
+        "estimated_output_limit_usd": output_limit_cost,
         "model": model,
-        "settings": load_api_settings(),
+        "context_tokens": context_tokens,
+        "max_output_tokens": max_output_tokens,
+        "context_remaining_tokens": context_remaining_tokens,
+        "fits_context": context_remaining_tokens >= 0,
+        "settings": settings,
         "breakdown": breakdown,
     }
 
@@ -312,6 +348,22 @@ def send_package_to_api(prompt=None, include_previous_response=False):
     endpoint = os.environ.get("ADVISOR_API_URL", "https://api.openai.com/v1/responses")
     body_text = build_api_input(include_previous_response=include_previous_response)
     estimate = estimate_api_payload(include_previous_response=include_previous_response)
+    if not estimate.get("fits_context"):
+        msg = (
+            f"Advisor API payload too large for {model}: "
+            f"~{estimate.get('tokens')} input tokens + "
+            f"{estimate.get('max_output_tokens')} output reserve > "
+            f"{estimate.get('context_tokens')} context tokens. "
+            "Lower advisor_export rows/sheet or switch to gpt-5.4/gpt-5.5."
+        )
+        _stdout_log(msg)
+        history.record_event(
+            "advisor_api_payload_too_large",
+            msg,
+            severity="ERROR",
+            payload={"model": model, "estimate": estimate},
+        )
+        return {"ok": False, "error": msg, "estimate": estimate}
     _stdout_log(
         "sending "
         f"model={model} endpoint={endpoint} "
@@ -322,6 +374,7 @@ def send_package_to_api(prompt=None, include_previous_response=False):
         "model": model,
         "instructions": prompt or load_advisor_prompt(),
         "input": body_text,
+        "max_output_tokens": estimate.get("max_output_tokens", DEFAULT_MAX_OUTPUT_TOKENS),
     }
     req = urllib.request.Request(
         endpoint,

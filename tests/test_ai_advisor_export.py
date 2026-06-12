@@ -218,6 +218,56 @@ def test_export_skips_unknown_legacy_closed_trades(monkeypatch, tmp_path):
     assert [export_wb["closed_trades"].cell(r, 2).value for r in range(2, export_wb["closed_trades"].max_row + 1)] == ["known-date"]
 
 
+def test_export_workbook_compacts_config_snapshots(monkeypatch, tmp_path):
+    _patch_account_dir(monkeypatch, tmp_path)
+    now = datetime.now()
+    wb = _new_history_workbook()
+
+    closed_headers = history.SHEETS["closed_trades"]
+    wb["closed_trades"].append(
+        _row(
+            closed_headers,
+            **{
+                "Recorded At": now.isoformat(timespec="seconds"),
+                "Ticket": "recent",
+                "Symbol": "ETHUSD",
+                "Exit Time": now.isoformat(timespec="seconds"),
+                "Profit": "10",
+                "Config Snapshot ID": "used-snap",
+            },
+        )
+    )
+    snapshot_headers = history.SHEETS["config_snapshots"]
+    for snapshot_id in ("used-snap", "unused-snap", "latest-snap"):
+        wb["config_snapshots"].append(
+            _row(
+                snapshot_headers,
+                **{
+                    "Timestamp": now.isoformat(timespec="seconds"),
+                    "Snapshot ID": snapshot_id,
+                    "Reason": "test",
+                    "Account ID": "TEST",
+                    "Snapshot JSON": "X" * 30000,
+                },
+            )
+        )
+    wb.save(paths.history_path())
+
+    result = history.build_export_workbook(export_days=7)
+
+    assert result["ok"] is True
+    export_wb = load_workbook(paths.export_path())
+    exported_ids = [
+        export_wb["config_snapshots"].cell(row, 2).value
+        for row in range(2, export_wb["config_snapshots"].max_row + 1)
+    ]
+    assert exported_ids == ["used-snap", "latest-snap"]
+    for row in range(2, export_wb["config_snapshots"].max_row + 1):
+        text = export_wb["config_snapshots"].cell(row, 5).value
+        assert len(text) < 7000
+        assert "truncated_for_advisor_export" in text
+
+
 def test_master_csv_sync_uses_real_session_date_for_old_rows(monkeypatch, tmp_path):
     import csv
     import core.storage_manager as storage_manager
@@ -407,6 +457,69 @@ def test_api_client_only_sends_advisor_response_when_enabled(monkeypatch, tmp_pa
     assert api_client.send_package_to_api(include_previous_response=True)["ok"] is True
     assert "previous_advisor_response.md" in seen_inputs[-1]
     assert "previous advice marker" in seen_inputs[-1]
+
+
+def test_api_client_sends_max_output_tokens(monkeypatch, tmp_path):
+    import json
+
+    _patch_account_dir(monkeypatch, tmp_path)
+    export_wb = _new_history_workbook()
+    export_wb.save(paths.export_path())
+    with open(paths.technical_settings_path(), "w", encoding="utf-8") as f:
+        f.write("{}")
+    with open(paths.user_context_path(), "w", encoding="utf-8") as f:
+        f.write("context")
+    with open(paths.advisor_flow_path(), "w", encoding="utf-8") as f:
+        f.write("flow marker")
+    api_client.save_api_settings({"max_output_tokens": 4096})
+
+    seen_payloads = []
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return b'{"output_text":"advisor answer"}'
+
+    def fake_urlopen(req, **_kwargs):
+        seen_payloads.append(json.loads(req.data.decode("utf-8")))
+        return FakeResponse()
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(api_client.urllib.request, "urlopen", fake_urlopen)
+
+    assert api_client.send_package_to_api()["ok"] is True
+    assert seen_payloads[-1]["max_output_tokens"] == 4096
+
+
+def test_api_client_blocks_payload_that_exceeds_context(monkeypatch, tmp_path):
+    _patch_account_dir(monkeypatch, tmp_path)
+    export_wb = _new_history_workbook()
+    export_wb.save(paths.export_path())
+    with open(paths.technical_settings_path(), "w", encoding="utf-8") as f:
+        f.write("{}")
+    with open(paths.user_context_path(), "w", encoding="utf-8") as f:
+        f.write("context")
+    with open(paths.advisor_flow_path(), "w", encoding="utf-8") as f:
+        f.write("flow marker")
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(api_client, "MODEL_CONTEXT_TOKENS", {"gpt-5.4-mini": 10})
+
+    def fail_urlopen(*_args, **_kwargs):
+        raise AssertionError("urlopen should not be called when payload is too large")
+
+    monkeypatch.setattr(api_client.urllib.request, "urlopen", fail_urlopen)
+
+    result = api_client.send_package_to_api()
+
+    assert result["ok"] is False
+    assert "payload too large" in result["error"]
+    assert result["estimate"]["fits_context"] is False
 
 
 def test_api_client_uses_large_limit_for_technical_settings(monkeypatch, tmp_path):

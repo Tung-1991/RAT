@@ -587,6 +587,7 @@ def open_advisor_popup(app):
     var_tech_limit = tk.StringVar(value=str(api_settings.get("technical_settings_limit", 1000000)))
     var_workbook_rows = tk.StringVar(value=str(api_settings.get("workbook_limit_rows", 80)))
     var_response_limit = tk.StringVar(value=str(api_settings.get("previous_response_limit", 60000)))
+    var_max_output = tk.StringVar(value=str(api_settings.get("max_output_tokens", api_client.DEFAULT_MAX_OUTPUT_TOKENS)))
 
     def _edit_row(label, variable, row, values=None):
         ctk.CTkLabel(edit_top, text=label, font=("Roboto", 11, "bold"), text_color="#D7DCE2").grid(row=row, column=0, sticky="w", padx=10, pady=4)
@@ -602,9 +603,10 @@ def open_advisor_popup(app):
     _edit_row("technical_settings limit chars", var_tech_limit, 6)
     _edit_row("advisor_export rows/sheet", var_workbook_rows, 7)
     _edit_row("advisor_response limit chars (if sent)", var_response_limit, 8)
+    _edit_row("max output tokens", var_max_output, 9)
 
     limit_buttons = ctk.CTkFrame(edit_top, fg_color="transparent")
-    limit_buttons.grid(row=9, column=0, columnspan=2, sticky="ew", padx=10, pady=(6, 10))
+    limit_buttons.grid(row=10, column=0, columnspan=2, sticky="ew", padx=10, pady=(6, 10))
 
     def save_api_edit():
         try:
@@ -617,6 +619,7 @@ def open_advisor_popup(app):
                     "technical_settings_limit": var_tech_limit.get(),
                     "workbook_limit_rows": var_workbook_rows.get(),
                     "previous_response_limit": var_response_limit.get(),
+                    "max_output_tokens": var_max_output.get(),
                 }
             )
             var_model.set(str(saved.get("model", api_client.DEFAULT_MODEL)))
@@ -626,6 +629,7 @@ def open_advisor_popup(app):
             var_tech_limit.set(str(saved.get("technical_settings_limit")))
             var_workbook_rows.set(str(saved.get("workbook_limit_rows")))
             var_response_limit.set(str(saved.get("previous_response_limit")))
+            var_max_output.set(str(saved.get("max_output_tokens")))
             app.preview_advisor_api_payload()
             app._set_advisor_status("API settings saved")
         except Exception as exc:

@@ -9,6 +9,10 @@ from datetime import datetime, timedelta
 from . import config_snapshot, paths
 
 
+EXPORT_SNAPSHOT_JSON_LIMIT = 6000
+EXPORT_PAYLOAD_JSON_LIMIT = 4000
+
+
 SHEETS = {
     "closed_trades": [
         "Recorded At", "Ticket", "Symbol", "Direction", "Lot", "Entry Time", "Exit Time",
@@ -136,6 +140,50 @@ def record_event(event_type, message="", severity="INFO", payload=None):
 
 def _row_values(ws, row_idx):
     return [ws.cell(row_idx, col).value for col in range(1, ws.max_column + 1)]
+
+
+def _header_index(headers, name):
+    try:
+        return headers.index(name)
+    except ValueError:
+        return None
+
+
+def _truncate_export_value(value, limit):
+    if value is None:
+        return value
+    text = str(value)
+    if len(text) <= limit:
+        return value
+    return text[:limit] + "...[truncated_for_advisor_export]"
+
+
+def _compact_export_row(sheet_name, headers, row_values):
+    values = list(row_values)
+    if sheet_name == "config_snapshots":
+        pos = _header_index(headers, "Snapshot JSON")
+        if pos is not None and pos < len(values):
+            values[pos] = _truncate_export_value(values[pos], EXPORT_SNAPSHOT_JSON_LIMIT)
+    elif sheet_name in {"events", "trade_config_map"}:
+        pos = _header_index(headers, "Payload JSON")
+        if pos is not None and pos < len(values):
+            values[pos] = _truncate_export_value(values[pos], EXPORT_PAYLOAD_JSON_LIMIT)
+    return values
+
+
+def _config_ids_from_sheet(ws):
+    if ws.max_row < 2:
+        return set()
+    headers = [ws.cell(1, col).value for col in range(1, ws.max_column + 1)]
+    pos = _header_index(headers, "Config Snapshot ID")
+    if pos is None:
+        return set()
+    ids = set()
+    for row_idx in range(2, ws.max_row + 1):
+        value = ws.cell(row_idx, pos + 1).value
+        if value:
+            ids.add(str(value))
+    return ids
 
 
 def _latest_snapshot_from_sheet(ws):
@@ -351,12 +399,14 @@ def _row_trade_datetime(headers, row_values):
     return None
 
 
-def _copy_sheet_rows(src_ws, dst_ws, include_row):
+def _copy_sheet_rows(src_ws, dst_ws, include_row, transform_row=None):
     headers = [src_ws.cell(1, col).value for col in range(1, src_ws.max_column + 1)]
     copied = 0
     for row_idx in range(2, src_ws.max_row + 1):
         row_values = _row_values(src_ws, row_idx)
         if include_row(headers, row_values):
+            if transform_row:
+                row_values = transform_row(headers, row_values)
             dst_ws.append(row_values)
             copied += 1
     return copied
@@ -631,11 +681,80 @@ def build_export_workbook(export_days=7):
             trade_time = _row_trade_datetime(headers, row_values)
             return bool(trade_time and trade_time >= cutoff)
 
-        closed_count = _copy_sheet_rows(closed_src, closed_dst, include_closed)
+        closed_count = _copy_sheet_rows(
+            closed_src,
+            closed_dst,
+            include_closed,
+            lambda headers, row: _compact_export_row("closed_trades", headers, row),
+        )
 
-        for sheet_name in ("open_trades", "config_snapshots", "config_changes", "events", "trade_config_map"):
+        if "open_trades" in source.sheetnames:
+            _copy_sheet_rows(
+                source["open_trades"],
+                export_wb["open_trades"],
+                lambda _h, _r: True,
+                lambda headers, row: _compact_export_row("open_trades", headers, row),
+            )
+
+        used_config_ids = _config_ids_from_sheet(export_wb["closed_trades"]) | _config_ids_from_sheet(export_wb["open_trades"])
+        latest_snapshot_id = None
+        if "config_snapshots" in source.sheetnames and source["config_snapshots"].max_row >= 2:
+            latest_snapshot_id = source["config_snapshots"].cell(source["config_snapshots"].max_row, 2).value
+            if latest_snapshot_id:
+                used_config_ids.add(str(latest_snapshot_id))
+
+        if "trade_config_map" in source.sheetnames:
+            def include_trade_map(headers, row_values):
+                pos = _header_index(headers, "Config Snapshot ID")
+                if pos is None or pos >= len(row_values):
+                    return True
+                return not used_config_ids or str(row_values[pos]) in used_config_ids
+
+            _copy_sheet_rows(
+                source["trade_config_map"],
+                export_wb["trade_config_map"],
+                include_trade_map,
+                lambda headers, row: _compact_export_row("trade_config_map", headers, row),
+            )
+            used_config_ids |= _config_ids_from_sheet(export_wb["trade_config_map"])
+
+        if "config_snapshots" in source.sheetnames:
+            def include_snapshot(headers, row_values):
+                pos = _header_index(headers, "Snapshot ID")
+                if pos is None or pos >= len(row_values):
+                    return True
+                return not used_config_ids or str(row_values[pos]) in used_config_ids
+
+            _copy_sheet_rows(
+                source["config_snapshots"],
+                export_wb["config_snapshots"],
+                include_snapshot,
+                lambda headers, row: _compact_export_row("config_snapshots", headers, row),
+            )
+
+        if "config_changes" in source.sheetnames:
+            def include_change(headers, row_values):
+                old_pos = _header_index(headers, "Old Snapshot ID")
+                new_pos = _header_index(headers, "New Snapshot ID")
+                old_id = row_values[old_pos] if old_pos is not None and old_pos < len(row_values) else ""
+                new_id = row_values[new_pos] if new_pos is not None and new_pos < len(row_values) else ""
+                return not used_config_ids or str(old_id) in used_config_ids or str(new_id) in used_config_ids
+
+            _copy_sheet_rows(
+                source["config_changes"],
+                export_wb["config_changes"],
+                include_change,
+                lambda headers, row: _compact_export_row("config_changes", headers, row),
+            )
+
+        for sheet_name in ("events",):
             if sheet_name in source.sheetnames and sheet_name in export_wb.sheetnames:
-                _copy_sheet_rows(source[sheet_name], export_wb[sheet_name], lambda _h, _r: True)
+                _copy_sheet_rows(
+                    source[sheet_name],
+                    export_wb[sheet_name],
+                    lambda _h, _r: True,
+                    lambda headers, row: _compact_export_row(sheet_name, headers, row),
+                )
 
         rebuild_summaries(wb=export_wb, save=False, path_kind="export")
         _save_export_workbook(export_wb)

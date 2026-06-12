@@ -34,8 +34,13 @@ class FakeConnector:
 
 
 class FakeChecklist:
+    def __init__(self):
+        self.passed = True
+
     def run_pre_trade_checks(self, account_info, state, symbol, strict_mode=True):
-        return {"passed": True, "checks": []}
+        if self.passed:
+            return {"passed": True, "checks": []}
+        return {"passed": False, "checks": [{"status": "FAIL", "msg": "Spr 700 (Max 150)"}]}
 
 
 def _manager(monkeypatch):
@@ -95,6 +100,17 @@ def test_execute_telegram_sandbox_order_rejects_bad_buy_sl(monkeypatch):
 
     assert "BAD_SL" in result
     assert mgr.connector.orders == []
+
+
+def test_execute_telegram_sandbox_order_can_bypass_checklist(monkeypatch):
+    mgr = _manager(monkeypatch)
+    mgr.checklist.passed = False
+
+    blocked = mgr.execute_telegram_sandbox_order("ETHUSD", "BUY", 0.03, 1980.0, 2050.0)
+    bypassed = mgr.execute_telegram_sandbox_order("ETHUSD", "BUY", 0.03, 1980.0, 2050.0, bypass_checklist=True)
+
+    assert "CHECKLIST" in blocked
+    assert bypassed == "SUCCESS|12345"
 
 
 def test_build_telegram_signal_order_uses_sandbox_defaults(monkeypatch):

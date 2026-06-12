@@ -27,9 +27,7 @@ CONTROL_HELP_TEXT = """RAT-control
 /pending
 
 /order
-/set ETHUSD BUY 0.03 1629.11 1733.74
-/order ETHUSD BUY lot=0.03 sl=1629.11 tp=1733.74
-/edit TGxxxx lot=0.02 sl=1630 tp=1730
+/set ETHUSD BUY 0.1 1629.11 1733.74
 """
 
 
@@ -178,7 +176,7 @@ def parse_edit_command(text):
 def parse_set_command(text):
     parts = str(text or "").strip().split()
     if len(parts) < 2 or parts[0].lower() != "/set":
-        raise ValueError("Use /set ETHUSD BUY 0.03 1629.11 1733.74")
+        raise ValueError("Use /set ETHUSD BUY 0.1 1629.11 1733.74")
     if all("=" not in part for part in parts[1:]):
         if len(parts) == 4:
             raw = {"lot": parts[1], "sl": parts[2], "tp": parts[3]}
@@ -190,7 +188,7 @@ def parse_set_command(text):
         raw = _parse_kv(parts[1:])
         unsupported = set(raw) - ORDER_FIELDS
         if unsupported:
-            raise ValueError("Use /set symbol=ETHUSD side=BUY lot=0.03 sl=1629.11 tp=1733.74")
+            raise ValueError("Use /set symbol=ETHUSD side=BUY lot=0.1 sl=1629.11 tp=1733.74")
     return _normalize_order_fields(raw, require_all=False)
 
 
@@ -423,7 +421,7 @@ class TelegramControlService:
         draft = draft or {}
         symbol = draft.get("symbol") or "ETHUSD"
         side = draft.get("side") or "BUY"
-        lot = draft.get("lot") if draft.get("lot") not in (None, "") else "0.03"
+        lot = draft.get("lot") if draft.get("lot") not in (None, "") else "0.1"
         sl = draft.get("sl") if draft.get("sl") not in (None, "") else "1629.11"
         tp = draft.get("tp") if draft.get("tp") not in (None, "") else "1733.74"
         return "\n".join(
@@ -539,7 +537,7 @@ class TelegramControlService:
         except ValueError as exc:
             return client.send_message(chat_id, str(exc))
         if not updates:
-            return client.send_message(chat_id, "Use /set 0.03 1629.11 1733.74")
+            return client.send_message(chat_id, "Use /set ETHUSD BUY 0.1 1629.11 1733.74")
         draft = drafts.update_draft(chat_id, updates)
         return client.send_message_with_keyboard(
             chat_id,

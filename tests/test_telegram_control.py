@@ -660,7 +660,7 @@ def test_order_wizard_sample_sends_copyable_set(monkeypatch, tmp_path):
             }
         },
     )
-    assert "/set ETHUSD BUY 0.03 1629.11 1733.74" in client.messages[-1][1]
+    assert "/set ETHUSD BUY 0.1 1629.11 1733.74" in client.messages[-1][1]
     assert client.messages[-1][1].count("/set") == 1
 
 

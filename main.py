@@ -258,7 +258,14 @@ class BotUI(ctk.CTk):
                 set_bot_enabled_cb=self.set_auto_trade_enabled,
                 get_brain_status_cb=lambda: getattr(self, "brain_status", ""),
                 get_active_symbols_cb=lambda: list(getattr(self, "brain_active_symbols", []) or []),
-                execute_order_cb=self.trade_mgr.execute_telegram_sandbox_order,
+                execute_order_cb=lambda symbol, side, lot, sl, tp: self.trade_mgr.execute_telegram_sandbox_order(
+                    symbol,
+                    side,
+                    lot,
+                    sl,
+                    tp,
+                    bypass_checklist=bool(self.var_bypass_checklist.get()),
+                ),
                 log_cb=lambda msg, error=False: self.log_message(msg, error=error, target="manual"),
             )
             self.telegram_control_service.start()
@@ -3153,10 +3160,15 @@ class BotUI(ctk.CTk):
             out_2k = estimate.get("estimated_output_2k_usd", 0.0)
             out_4k = estimate.get("estimated_output_4k_usd", 0.0)
             model = estimate.get("model", "gpt-5.4-mini")
+            context_tokens = estimate.get("context_tokens", 0)
+            max_output_tokens = estimate.get("max_output_tokens", 0)
+            remaining_tokens = estimate.get("context_remaining_tokens", 0)
+            context_status = "OK" if estimate.get("fits_context") else "TOO LARGE"
             text = (
                 f"API payload: ~{tokens:,} input tokens\n"
                 f"Input cost: ~${cost:.4f} | Output 2k/4k: ~${out_2k:.4f}/${out_4k:.4f}\n"
-                f"Model: {model}"
+                f"Model: {model} | Context: {context_status} "
+                f"(limit {context_tokens:,}, output reserve {max_output_tokens:,}, remain {remaining_tokens:,})"
             )
             detail_parts = []
             for item in estimate.get("breakdown", []):

@@ -1093,7 +1093,7 @@ class TradeManager:
 
         return "MT5_ERROR"
 
-    def execute_telegram_sandbox_order(self, symbol, side, lot, sl, tp):
+    def execute_telegram_sandbox_order(self, symbol, side, lot, sl, tp, bypass_checklist=False):
         symbol = str(symbol or "").strip().upper()
         side = str(side or "").strip().upper()
         try:
@@ -1149,7 +1149,8 @@ class TradeManager:
         res = self.checklist.run_pre_trade_checks(acc_info, self.state, symbol, strict_mode=True)
         if not res.get("passed"):
             fail_reasons = [c.get("msg", "") for c in res.get("checks", []) if c.get("status") == "FAIL"]
-            return f"TELEGRAM_FAIL|CHECKLIST|{' | '.join(fail_reasons) or 'Checklist fail'}"
+            if not bypass_checklist:
+                return f"TELEGRAM_FAIL|CHECKLIST|{' | '.join(fail_reasons) or 'Checklist fail'}"
 
         import core.storage_manager as storage_manager
 
