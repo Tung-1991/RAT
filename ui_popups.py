@@ -17,6 +17,17 @@ import os
 import json
 
 
+def _bring_popup_to_front(window, delay_ms=150):
+    try:
+        window.attributes("-topmost", True)
+        window.lift()
+        window.focus_force()
+        window.after(delay_ms, lambda: (window.lift(), window.focus_force(), window.attributes("-topmost", True)))
+    except Exception:
+        pass
+    return window
+
+
 def _speed_up_scroll(frame, factor=5):
     canvas = getattr(frame, "_parent_canvas", None)
     if canvas is None:
@@ -56,8 +67,7 @@ def open_advisor_popup(app):
     top.title("AI Advisor")
     top.geometry("660x760")
     top.minsize(600, 640)
-    top.attributes("-topmost", True)
-    top.focus_force()
+    _bring_popup_to_front(top)
 
     root = ctk.CTkFrame(top, fg_color="#1E1E1E", corner_radius=0)
     root.pack(fill="both", expand=True, padx=10, pady=10)
@@ -88,18 +98,18 @@ def open_advisor_popup(app):
     settings.pack(fill="x", padx=10, pady=4)
     settings.grid_columnconfigure(1, weight=1)
 
-    ctk.CTkLabel(settings, text="Export days", font=("Roboto", 12, "bold"), text_color="#D7DCE2").grid(row=0, column=0, sticky="w", pady=6)
+    ctk.CTkLabel(settings, text="Số ngày export", font=("Roboto", 12, "bold"), text_color="#D7DCE2").grid(row=0, column=0, sticky="w", pady=6)
     ctk.CTkOptionMenu(settings, values=["1", "3", "7", "14", "30"], variable=app.var_advisor_export_days, width=110, height=28).grid(row=0, column=1, sticky="e", pady=6)
 
-    ctk.CTkLabel(settings, text="Mode", font=("Roboto", 12, "bold"), text_color="#D7DCE2").grid(row=1, column=0, sticky="w", pady=6)
+    ctk.CTkLabel(settings, text="Chế độ", font=("Roboto", 12, "bold"), text_color="#D7DCE2").grid(row=1, column=0, sticky="w", pady=6)
     ctk.CTkOptionMenu(settings, values=["Manual Only", "API Trigger"], variable=app.var_advisor_mode, width=160, height=28).grid(row=1, column=1, sticky="e", pady=6)
 
-    ctk.CTkLabel(settings, text="Fixed time", font=("Roboto", 12, "bold"), text_color="#D7DCE2").grid(row=2, column=0, sticky="w", pady=6)
+    ctk.CTkLabel(settings, text="Giờ cố định", font=("Roboto", 12, "bold"), text_color="#D7DCE2").grid(row=2, column=0, sticky="w", pady=6)
     ctk.CTkEntry(settings, textvariable=app.var_advisor_fixed_time, width=110, height=28, placeholder_text="HH:MM").grid(row=2, column=1, sticky="e", pady=6)
 
     ctk.CTkCheckBox(
         settings,
-        text="Global cooldown emergency",
+        text="Cảnh báo khi bot bị global cooldown",
         variable=app.var_advisor_global_emergency,
         font=("Roboto", 12, "bold"),
         checkbox_width=18,
@@ -108,7 +118,7 @@ def open_advisor_popup(app):
 
     ctk.CTkCheckBox(
         settings,
-        text="Send advisor_response.md with API",
+        text="Gửi kèm advisor_response.md khi gọi API",
         variable=app.var_advisor_send_response_file,
         font=("Roboto", 12, "bold"),
         checkbox_width=18,
@@ -119,9 +129,9 @@ def open_advisor_popup(app):
     api_hint.pack(fill="x", padx=10, pady=(8, 2))
     ctk.CTkLabel(
         api_hint,
-        text="API key is read from the current PowerShell session.",
+        text="API key chỉ đọc từ PowerShell hiện tại, không lưu xuống file.",
         font=("Roboto", 10, "bold"),
-        text_color="gray",
+        text_color="#FBC02D",
     ).pack(anchor="w", padx=10, pady=(7, 2))
     api_cmd_row = ctk.CTkFrame(api_hint, fg_color="transparent")
     api_cmd_row.pack(fill="x", padx=10, pady=(0, 8))
@@ -173,12 +183,17 @@ def open_advisor_popup(app):
 
     from telegram_notify import reporter as telegram_reporter
     from telegram_notify import settings as telegram_settings
+    from telegram_notify.control import CONTROL_HELP_TEXT
 
     tg_settings = telegram_settings.load_settings()
     var_tg_enabled = tk.BooleanVar(value=bool(tg_settings.get("enabled")))
+    var_tg_control_enabled = tk.BooleanVar(value=bool(tg_settings.get("control_enabled")))
     var_tg_env = tk.StringVar(value=str(tg_settings.get("bot_token_env", "TELE_BOT_KEY")))
     var_tg_report_chat = tk.StringVar(value=str(tg_settings.get("report_chat_id", "1003772881044")))
     var_tg_control_chat = tk.StringVar(value=str(tg_settings.get("control_chat_id", "1003941549878")))
+    var_tg_owner_id = tk.StringVar(value=str(tg_settings.get("owner_user_id", "")))
+    var_tg_operator_ids = tk.StringVar(value=str(tg_settings.get("operator_user_ids", "")))
+    var_tg_poll_interval = tk.StringVar(value=str(tg_settings.get("control_poll_interval_seconds", 2.0)))
     var_tg_chunk = tk.StringVar(value=str(tg_settings.get("chunk_size", 3500)))
     var_tg_env_cmd = tk.StringVar()
 
@@ -203,9 +218,9 @@ def open_advisor_popup(app):
     ).pack(anchor="w", padx=10, pady=(8, 2))
     ctk.CTkLabel(
         tg_status,
-        text="Bot key is read only from the PowerShell ENV. It is never saved to disk.",
+        text="Token đọc từ ENV, không lưu file.",
         font=("Roboto", 11, "bold"),
-        text_color="gray",
+        text_color="#FBC02D",
         anchor="w",
     ).pack(anchor="w", padx=10, pady=(0, 6))
 
@@ -220,7 +235,7 @@ def open_advisor_popup(app):
 
     ctk.CTkCheckBox(
         tg_body,
-        text="When AI API has a response, send it to RAT-report",
+        text="Gửi phản hồi AI API sang kênh RAT-report",
         variable=var_tg_enabled,
         font=("Roboto", 12, "bold"),
         checkbox_width=18,
@@ -228,11 +243,26 @@ def open_advisor_popup(app):
     ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(0, 10))
     ctk.CTkLabel(
         tg_body,
-        text="Only for the Send API flow. Manual/web-chat sending is opened below and always manual.",
+        text="Send API xong thì tự bắn sang RAT-report.",
         font=("Roboto", 10, "bold"),
-        text_color="gray",
+        text_color="#FBC02D",
         anchor="w",
     ).grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+    ctk.CTkCheckBox(
+        tg_body,
+        text="Bật nghe lệnh Telegram RAT-control",
+        variable=var_tg_control_enabled,
+        font=("Roboto", 12, "bold"),
+        checkbox_width=18,
+        checkbox_height=18,
+    ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(0, 10))
+    ctk.CTkLabel(
+        tg_body,
+        text="RAT6 nghe Control chat ID: /status, /order, /pending.",
+        font=("Roboto", 10, "bold"),
+        text_color="#FBC02D",
+        anchor="w",
+    ).grid(row=4, column=0, columnspan=2, sticky="ew", pady=(0, 8))
 
     def _tg_row(label, variable, row):
         ctk.CTkLabel(tg_body, text=label, font=("Roboto", 11, "bold"), text_color="#D7DCE2").grid(
@@ -242,13 +272,16 @@ def open_advisor_popup(app):
             row=row, column=1, sticky="ew", padx=(10, 0), pady=5
         )
 
-    _tg_row("Token ENV name", var_tg_env, 3)
-    _tg_row("Report chat ID", var_tg_report_chat, 4)
-    _tg_row("Control chat ID", var_tg_control_chat, 5)
-    _tg_row("Chunk size", var_tg_chunk, 6)
+    _tg_row("Token ENV name", var_tg_env, 5)
+    _tg_row("Report chat ID", var_tg_report_chat, 6)
+    _tg_row("Control chat ID", var_tg_control_chat, 7)
+    _tg_row("Owner user ID", var_tg_owner_id, 8)
+    _tg_row("Operator user IDs", var_tg_operator_ids, 9)
+    _tg_row("Control poll seconds", var_tg_poll_interval, 10)
+    _tg_row("Chunk size", var_tg_chunk, 11)
 
     tg_buttons = ctk.CTkFrame(tg_body, fg_color="transparent")
-    tg_buttons.grid(row=7, column=0, columnspan=2, sticky="ew", pady=(12, 0))
+    tg_buttons.grid(row=12, column=0, columnspan=2, sticky="ew", pady=(12, 0))
     tg_buttons.grid_columnconfigure((0, 1), weight=1)
 
     def save_telegram_settings():
@@ -256,16 +289,24 @@ def open_advisor_popup(app):
             saved = telegram_settings.save_settings(
                 {
                     "enabled": var_tg_enabled.get(),
+                    "control_enabled": var_tg_control_enabled.get(),
                     "bot_token_env": var_tg_env.get(),
                     "report_chat_id": var_tg_report_chat.get(),
                     "control_chat_id": var_tg_control_chat.get(),
+                    "owner_user_id": var_tg_owner_id.get(),
+                    "operator_user_ids": var_tg_operator_ids.get(),
+                    "control_poll_interval_seconds": var_tg_poll_interval.get(),
                     "chunk_size": var_tg_chunk.get(),
                 }
             )
             var_tg_enabled.set(bool(saved.get("enabled")))
+            var_tg_control_enabled.set(bool(saved.get("control_enabled")))
             var_tg_env.set(str(saved.get("bot_token_env", "TELE_BOT_KEY")))
             var_tg_report_chat.set(str(saved.get("report_chat_id", "")))
             var_tg_control_chat.set(str(saved.get("control_chat_id", "")))
+            var_tg_owner_id.set(str(saved.get("owner_user_id", "")))
+            var_tg_operator_ids.set(str(saved.get("operator_user_ids", "")))
+            var_tg_poll_interval.set(str(saved.get("control_poll_interval_seconds", 2.0)))
             var_tg_chunk.set(str(saved.get("chunk_size", 3500)))
             refresh_telegram_env_cmd()
             app._set_advisor_status("Telegram settings saved")
@@ -283,16 +324,6 @@ def open_advisor_popup(app):
         except Exception:
             pass
 
-    ctk.CTkButton(
-        tg_env_row,
-        text="Copy Set Key",
-        width=120,
-        height=28,
-        fg_color="#424242",
-        hover_color="#616161",
-        command=copy_telegram_env,
-    ).pack(side="right", padx=(8, 0))
-
     def open_telegram_report_sender():
         saved = save_telegram_settings()
         if not saved:
@@ -302,8 +333,7 @@ def open_advisor_popup(app):
         sender.title("Send Telegram Report")
         sender.geometry("820x620")
         sender.minsize(640, 460)
-        sender.attributes("-topmost", True)
-        sender.focus_force()
+        _bring_popup_to_front(sender)
 
         body = ctk.CTkFrame(sender, fg_color="#1E1E1E", corner_radius=0)
         body.pack(fill="both", expand=True, padx=10, pady=10)
@@ -318,7 +348,7 @@ def open_advisor_popup(app):
         ).grid(row=0, column=0, sticky="w", padx=10, pady=(8, 4))
         ctk.CTkLabel(
             body,
-            text="Paste AI web-chat output or any test text here. It will be split automatically if too long.",
+            text="Paste nội dung, bấm gửi. Dài sẽ tự cắt.",
             font=("Roboto", 11, "bold"),
             text_color="gray",
             anchor="w",
@@ -326,6 +356,7 @@ def open_advisor_popup(app):
 
         txt_report = ctk.CTkTextbox(body, font=("Consolas", 12))
         txt_report.grid(row=2, column=0, sticky="nsew", padx=10, pady=(0, 10))
+        txt_report.focus_set()
 
         actions = ctk.CTkFrame(body, fg_color="transparent")
         actions.grid(row=3, column=0, sticky="ew", padx=10, pady=(0, 10))
@@ -373,6 +404,74 @@ def open_advisor_popup(app):
             command=clear_report,
         ).grid(row=0, column=1, sticky="ew", padx=(5, 0))
 
+    def open_telegram_help():
+        helper = ctk.CTkToplevel(top)
+        helper.title("Telegram Control Help")
+        helper.geometry("760x560")
+        helper.minsize(620, 460)
+        _bring_popup_to_front(helper)
+
+        body = ctk.CTkFrame(helper, fg_color="#1E1E1E", corner_radius=0)
+        body.pack(fill="both", expand=True, padx=10, pady=10)
+        body.grid_columnconfigure(0, weight=1)
+        body.grid_rowconfigure(2, weight=1)
+
+        ctk.CTkLabel(
+            body,
+            text="RAT-CONTROL TELEGRAM HELP",
+            font=("Roboto", 16, "bold"),
+            text_color="#80DEEA",
+        ).grid(row=0, column=0, sticky="w", padx=10, pady=(8, 4))
+        ctk.CTkLabel(
+            body,
+            text="Samples only. Owner approve bằng button.",
+            font=("Roboto", 11, "bold"),
+            text_color="#FBC02D",
+            anchor="w",
+        ).grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 8))
+
+        txt_help = ctk.CTkTextbox(body, font=("Consolas", 12), wrap="word")
+        txt_help.grid(row=2, column=0, sticky="nsew", padx=10, pady=(0, 10))
+        txt_help.insert("1.0", CONTROL_HELP_TEXT)
+        txt_help.configure(state="disabled")
+
+        def copy_help():
+            try:
+                helper.clipboard_clear()
+                helper.clipboard_append(CONTROL_HELP_TEXT)
+                helper.update()
+                app._set_advisor_status("Telegram help copied")
+            except Exception:
+                pass
+
+        ctk.CTkButton(
+            body,
+            text="Copy Help",
+            height=34,
+            fg_color="#424242",
+            hover_color="#616161",
+            command=copy_help,
+        ).grid(row=3, column=0, sticky="ew", padx=10, pady=(0, 10))
+
+    ctk.CTkButton(
+        tg_env_row,
+        text="Copy Set Key",
+        width=120,
+        height=28,
+        fg_color="#424242",
+        hover_color="#616161",
+        command=copy_telegram_env,
+    ).pack(side="right", padx=(8, 0))
+    ctk.CTkButton(
+        tg_env_row,
+        text="Telegram Help",
+        width=130,
+        height=28,
+        fg_color="#1f538d",
+        hover_color="#14375e",
+        command=open_telegram_help,
+    ).pack(side="right", padx=(8, 0))
+
     ctk.CTkButton(
         tg_buttons,
         text="Save Telegram",
@@ -388,7 +487,7 @@ def open_advisor_popup(app):
         fg_color="#1f538d",
         hover_color="#14375e",
         command=open_telegram_report_sender,
-    ).grid(row=0, column=1, sticky="ew", padx=(5, 0))
+    ).grid(row=0, column=1, sticky="ew", padx=5)
 
     files_box = ctk.CTkFrame(edit_body, fg_color="#252526", corner_radius=6)
     files_box.pack(fill="x", padx=10, pady=(10, 8))
@@ -541,10 +640,7 @@ def open_advisor_file_editor(app, path, title):
     top.title(f"Edit {title}")
     top.geometry("760x620")
     top.minsize(620, 460)
-    top.attributes("-topmost", True)
-    top.lift()
-    top.focus_force()
-    top.after(150, lambda: (top.lift(), top.focus_force(), top.attributes("-topmost", True)))
+    _bring_popup_to_front(top)
 
     root = ctk.CTkFrame(top, fg_color="#1E1E1E", corner_radius=0)
     root.pack(fill="both", expand=True, padx=10, pady=10)
@@ -707,8 +803,7 @@ def open_symbol_config_popup(app, symbol, on_change=None):
     top.title(f"Cấu hình riêng: {symbol}")
     top.geometry("720x720")
     top.minsize(620, 520)
-    top.attributes("-topmost", True)
-    top.focus_force()
+    _bring_popup_to_front(top)
     body = _speed_up_scroll(ctk.CTkScrollableFrame(top, fg_color="transparent"))
     body.pack(fill="both", expand=True, padx=12, pady=(10, 4))
     top.grab_set()  # Khóa (Block) cửa sổ mẹ, bắt buộc người dùng thao tác trên popup này
@@ -922,7 +1017,7 @@ def open_bot_setting_popup(app):
     top.title("Cấu hình Lõi Hệ Thống (Core Settings)")
     top.geometry("1050x720")
     top.minsize(860, 560)
-    top.attributes("-topmost", True)
+    _bring_popup_to_front(top)
     # top.transient(app) # Khóa Z-index, luôn nổi trên App chính
     tab_core = _speed_up_scroll(ctk.CTkScrollableFrame(top, fg_color="transparent"))
     tab_core.pack(fill="both", expand=True, padx=15, pady=15)
@@ -1523,11 +1618,9 @@ def open_advanced_tools_popup(app):
     top.resizable(True, True)
     try:
         top.transient(app)
-        top.lift()
-        top.after(100, top.lift)
     except Exception:
         pass
-    top.focus_force()
+    _bring_popup_to_front(top, delay_ms=100)
     top._advanced_tools_zoomed = False
 
     def _toggle_advanced_tools_fullscreen():
@@ -2495,7 +2588,7 @@ def open_preset_config_popup(app):
     top.title(f"Preset: {p_name}")
     top.geometry("540x780")
     top.minsize(500, 520)
-    top.attributes("-topmost", True)
+    _bring_popup_to_front(top)
     # top.transient(app)
     body = _speed_up_scroll(ctk.CTkScrollableFrame(top, fg_color="transparent"))
     body.pack(fill="both", expand=True, padx=10, pady=(10, 4))
@@ -2764,7 +2857,7 @@ def open_tsl_popup(app, override_symbol=None):
     top.title(title)
     top.geometry("980x780")
     top.minsize(860, 600)
-    top.attributes("-topmost", True)
+    _bring_popup_to_front(top)
     top.resizable(True, True)  # Khôi phục tính năng co giãn/phóng to
     if override_symbol:
         top.grab_set()  # Modal: Không cho chạm vào UI mẹ khi đang chỉnh UI con
@@ -3569,7 +3662,7 @@ def open_edit_popup(app, ticket):
     top = ctk.CTkToplevel(app)
     top.title(f"Sửa lệnh #{ticket}")
     top.geometry("450x830")
-    top.attributes("-topmost", True)
+    _bring_popup_to_front(top)
     # top.transient(app)
     is_buy = pos.type == 0
     bal = (
@@ -3946,8 +4039,7 @@ def show_history_popup(app):
     top.title("Lịch sử giao dịch theo chiến thuật")
     top.geometry("1400x650")
     top.minsize(1100, 550)
-    top.attributes("-topmost", True)
-    top.focus_force()
+    _bring_popup_to_front(top)
 
     history_tabs = ctk.CTkTabview(top)
     history_tabs.pack(fill="both", expand=True)
@@ -4163,10 +4255,8 @@ def open_minibrain_popup(app, title, mb_cfg, on_save_callback):
     top = ctk.CTkToplevel()
     top.title(title)
     top.geometry("700x520")
-    top.attributes("-topmost", True)
-    top.lift()
+    _bring_popup_to_front(top)
     top.grab_set()
-    top.focus_force()
     f_top = ctk.CTkFrame(top)
     f_top.pack(fill="x", padx=10, pady=10)
     var_active = ctk.BooleanVar(value=mb_cfg.get("active", False))

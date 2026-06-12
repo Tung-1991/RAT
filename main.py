@@ -248,6 +248,24 @@ class BotUI(ctk.CTk):
             ),
         )
         self.signal_listener.start()
+        try:
+            from telegram_notify.control import TelegramControlService
+
+            self.telegram_control_service = TelegramControlService(
+                connector=self.connector,
+                get_state_cb=lambda: getattr(self.trade_mgr, "state", {}),
+                get_bot_enabled_cb=lambda: bool(self.var_auto_trade.get()),
+                set_bot_enabled_cb=self.set_auto_trade_enabled,
+                get_brain_status_cb=lambda: getattr(self, "brain_status", ""),
+                get_active_symbols_cb=lambda: list(getattr(self, "brain_active_symbols", []) or []),
+                execute_order_cb=self.trade_mgr.execute_telegram_sandbox_order,
+                log_cb=lambda msg, error=False: self.log_message(msg, error=error, target="manual"),
+            )
+            self.telegram_control_service.start()
+            self.log_message("[TELEGRAM CONTROL] Service ready.", target="manual")
+        except Exception as exc:
+            self.telegram_control_service = None
+            self.log_message(f"[TELEGRAM CONTROL] Service failed: {exc}", error=True, target="manual")
 
         self.log_message(
             "RAT6.0 ready."
@@ -316,6 +334,8 @@ class BotUI(ctk.CTk):
         self.reset_hedge_runtime_switch()
         if hasattr(self, "signal_listener"):
             self.signal_listener.stop()
+        if getattr(self, "telegram_control_service", None):
+            self.telegram_control_service.stop()
         if self.daemon_process:
             self.daemon_process.terminate()
             self.daemon_process.wait()

@@ -13,7 +13,7 @@ import config
 from core.exness_connector import ExnessConnector
 from core.data_engine import data_engine
 from core.market_hours import is_symbol_trade_window_open
-from core.position_classifier import is_bot_position
+from core.position_classifier import is_bot_position, is_manual_position
 from signals.signal_generator import signal_generator
 from core.storage_manager import get_brain_settings_for_symbol
 from core.logger_setup import setup_logging  # [NEW V4.3] Import hệ thống Log
@@ -30,6 +30,16 @@ SIGNAL_FILE = "data/live_signals.json"
 SIGNAL_FILE_TMP = SIGNAL_FILE + ".tmp"
 BRAIN_SETTINGS_FILE = "data/brain_settings.json"
 DEBUG_STATE_FILE = "data/current_signal_state.json"
+
+
+def _is_telegram_auto_scale_position(pos, magics, trade_tactics):
+    if not is_manual_position(pos, magics):
+        return False
+    comment = str(getattr(pos, "comment", "") or "")
+    if "[USER]_TELEGRAM" not in comment:
+        return False
+    tactic = str((trade_tactics or {}).get(str(getattr(pos, "ticket", "")), "") or "")
+    return "AUTO_DCA" in tactic or "AUTO_PCA" in tactic
 
 def update_daemon_paths(account_id: str):
     global SIGNAL_FILE, SIGNAL_FILE_TMP, BRAIN_SETTINGS_FILE, DEBUG_STATE_FILE
@@ -342,9 +352,11 @@ class StandaloneBotDaemon:
 
         import core.storage_manager as storage_manager
         magics = storage_manager.get_magic_numbers()
+        state = storage_manager.load_state()
+        trade_tactics = state.get("trade_tactics", {}) if isinstance(state, dict) else {}
         bot_positions = {}
         for pos in positions:
-            if is_bot_position(pos, magics):
+            if is_bot_position(pos, magics) or _is_telegram_auto_scale_position(pos, magics, trade_tactics):
                 if pos.symbol not in bot_positions:
                     bot_positions[pos.symbol] = []
                 bot_positions[pos.symbol].append(pos)

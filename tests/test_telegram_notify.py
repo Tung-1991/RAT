@@ -14,18 +14,27 @@ def test_telegram_settings_defaults_and_save_load(monkeypatch, tmp_path):
     assert loaded["bot_token_env"] == "TELE_BOT_KEY"
     assert loaded["report_chat_id"] == "1003772881044"
     assert loaded["control_chat_id"] == "1003941549878"
+    assert loaded["control_enabled"] is False
+    assert loaded["owner_user_id"] == ""
 
     saved = settings.save_settings(
         {
             "enabled": True,
+            "control_enabled": True,
             "bot_token_env": "TELE_BOT_KEY",
             "report_chat_id": "123",
             "control_chat_id": "456",
+            "owner_user_id": "111",
+            "operator_user_ids": "222,333",
+            "control_poll_interval_seconds": "0",
             "chunk_size": "999999",
         }
     )
     assert saved["enabled"] is True
+    assert saved["control_enabled"] is True
     assert saved["chunk_size"] == 3900
+    assert saved["control_poll_interval_seconds"] == 0.5
+    assert settings.allowed_user_ids(saved) == {111, 222, 333}
     assert settings.load_settings()["report_chat_id"] == "123"
 
 

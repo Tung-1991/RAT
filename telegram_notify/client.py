@@ -74,6 +74,35 @@ class TelegramClient:
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
+    def _json_request(self, method, payload):
+        if not self.token:
+            return {"ok": False, "error": f"{self.token_env} is not configured."}
+        url = f"https://api.telegram.org/bot{self.token}/{method}"
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload or {}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                raw = resp.read().decode("utf-8", errors="replace")
+            parsed = json.loads(raw) if raw else {}
+            if not parsed.get("ok", False):
+                return {"ok": False, "error": parsed.get("description", "Telegram API returned ok=false"), "raw": parsed}
+            return {"ok": True, "raw": parsed}
+        except urllib.error.HTTPError as exc:
+            detail = ""
+            try:
+                detail = exc.read().decode("utf-8", errors="replace")
+                parsed = json.loads(detail)
+                detail = parsed.get("description", detail)
+            except Exception:
+                detail = detail or str(exc)
+            return {"ok": False, "error": f"HTTP {exc.code}: {detail}"}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
     def send_message(self, chat_id, text, parse_mode=None):
         last_error = ""
         for candidate in _chat_id_candidates(chat_id):
@@ -100,6 +129,52 @@ class TelegramClient:
                     return result
             last_error = result.get("error", "Telegram send failed")
         return {"ok": False, "error": last_error or "Telegram chat_id is not configured."}
+
+    def send_message_with_keyboard(self, chat_id, text, keyboard=None):
+        last_error = ""
+        for candidate in _chat_id_candidates(chat_id):
+            payload = {
+                "chat_id": candidate,
+                "text": text,
+                "disable_web_page_preview": True,
+            }
+            if keyboard:
+                payload["reply_markup"] = {"inline_keyboard": keyboard}
+            result = self._json_request("sendMessage", payload)
+            if result.get("ok"):
+                result["chat_id"] = candidate
+                return result
+            last_error = result.get("error", "Telegram send failed")
+        return {"ok": False, "error": last_error or "Telegram chat_id is not configured."}
+
+    def edit_message_text(self, chat_id, message_id, text, keyboard=None):
+        payload = {
+            "chat_id": chat_id,
+            "message_id": message_id,
+            "text": text,
+            "disable_web_page_preview": True,
+        }
+        if keyboard:
+            payload["reply_markup"] = {"inline_keyboard": keyboard}
+        return self._json_request("editMessageText", payload)
+
+    def answer_callback_query(self, callback_query_id, text=""):
+        payload = {"callback_query_id": callback_query_id}
+        if text:
+            payload["text"] = text
+        return self._json_request("answerCallbackQuery", payload)
+
+    def get_updates(self, offset=None, timeout=15):
+        payload = {
+            "timeout": int(timeout),
+            "allowed_updates": json.dumps(["message", "channel_post", "callback_query"]),
+        }
+        if offset is not None:
+            payload["offset"] = int(offset)
+        result = self._request("getUpdates", payload)
+        if not result.get("ok"):
+            return result
+        return {"ok": True, "updates": result.get("raw", {}).get("result", []) or []}
 
     def send_long_message(self, chat_id, text, chunk_size=3500, title="RAT6 Report"):
         if not self.token:

@@ -1093,6 +1093,139 @@ class TradeManager:
 
         return "MT5_ERROR"
 
+    def execute_telegram_sandbox_order(self, symbol, side, lot, sl, tp):
+        symbol = str(symbol or "").strip().upper()
+        side = str(side or "").strip().upper()
+        try:
+            lot = float(lot)
+            sl = float(sl)
+            tp = float(tp)
+        except Exception:
+            return "TELEGRAM_FAIL|BAD_NUMERIC|lot/sl/tp không hợp lệ"
+
+        if side not in ("BUY", "SELL"):
+            return "TELEGRAM_FAIL|BAD_SIDE|side phải là BUY hoặc SELL"
+        if lot <= 0 or sl <= 0 or tp < 0:
+            return "TELEGRAM_FAIL|BAD_PRICE|lot/sl/tp không hợp lệ"
+
+        config.SYMBOL = symbol
+        self._sync_state_lifecycle()
+        acc_info = self.connector.get_account_info()
+        if not acc_info:
+            return "TELEGRAM_FAIL|NO_ACCOUNT|Không lấy được tài khoản MT5"
+
+        is_open, closed_reason = is_symbol_trade_window_open(symbol)
+        if not is_open:
+            return f"TELEGRAM_FAIL|Market Hours|{closed_reason}"
+
+        tick = mt5.symbol_info_tick(symbol)
+        sym_info = mt5.symbol_info(symbol)
+        if not tick or not sym_info:
+            return "TELEGRAM_FAIL|NO_TICK|Không lấy được tick/symbol info"
+
+        order_type = mt5.ORDER_TYPE_BUY if side == "BUY" else mt5.ORDER_TYPE_SELL
+        price = tick.ask if side == "BUY" else tick.bid
+        if side == "BUY":
+            if sl >= price:
+                return "TELEGRAM_FAIL|BAD_SL|BUY cần SL thấp hơn giá hiện tại"
+            if tp and tp <= price:
+                return "TELEGRAM_FAIL|BAD_TP|BUY cần TP cao hơn giá hiện tại"
+        else:
+            if sl <= price:
+                return "TELEGRAM_FAIL|BAD_SL|SELL cần SL cao hơn giá hiện tại"
+            if tp and tp >= price:
+                return "TELEGRAM_FAIL|BAD_TP|SELL cần TP thấp hơn giá hiện tại"
+
+        vol_min = float(getattr(sym_info, "volume_min", getattr(config, "MIN_LOT_SIZE", 0.01)) or 0.01)
+        vol_max = float(getattr(sym_info, "volume_max", getattr(config, "MAX_LOT_SIZE", 200.0)) or 200.0)
+        vol_step = float(getattr(sym_info, "volume_step", getattr(config, "LOT_STEP", 0.01)) or 0.01)
+        if lot < vol_min or lot > vol_max:
+            return f"TELEGRAM_FAIL|BAD_LOT|Lot ngoài biên {vol_min}-{vol_max}"
+        step_units = round((lot - vol_min) / vol_step) if vol_step > 0 else 0
+        normalized = vol_min + (step_units * vol_step)
+        if vol_step > 0 and abs(normalized - lot) > max(1e-8, vol_step / 1000.0):
+            return f"TELEGRAM_FAIL|BAD_LOT_STEP|Lot phải theo step {vol_step}"
+
+        res = self.checklist.run_pre_trade_checks(acc_info, self.state, symbol, strict_mode=True)
+        if not res.get("passed"):
+            fail_reasons = [c.get("msg", "") for c in res.get("checks", []) if c.get("status") == "FAIL"]
+            return f"TELEGRAM_FAIL|CHECKLIST|{' | '.join(fail_reasons) or 'Checklist fail'}"
+
+        import core.storage_manager as storage_manager
+
+        magics = storage_manager.get_magic_numbers()
+        manual_magic = magics.get("manual_magic", 8888)
+        result = self.connector.place_order(
+            symbol,
+            order_type,
+            lot,
+            sl,
+            tp,
+            manual_magic,
+            "[USER]_TELEGRAM",
+        )
+        if not (result and result.retcode == 10009):
+            return "TELEGRAM_FAIL|MT5_ERROR|Đặt lệnh thất bại"
+
+        ticket_id = result.order
+        brain = self._get_brain_settings(symbol)
+        risk_tsl = brain.get("risk_tsl", {}) or {}
+        safeguard_cfg = brain.get("bot_safeguard", {}) or {}
+        tactic = risk_tsl.get("bot_tsl", getattr(config, "BOT_DEFAULT_TSL", "BE+STEP_R+SWING"))
+        dca_cfg = brain.get("dca_config", getattr(config, "DCA_CONFIG", {}))
+        pca_cfg = brain.get("pca_config", getattr(config, "PCA_CONFIG", {}))
+        if dca_cfg.get("ENABLED", False) and "AUTO_DCA" not in tactic:
+            tactic += "+AUTO_DCA"
+        if pca_cfg.get("ENABLED", False) and "AUTO_PCA" not in tactic:
+            tactic += "+AUTO_PCA"
+        if safeguard_cfg.get("CLOSE_ON_REVERSE", False) and "REV_C" not in tactic:
+            tactic += "+REV_C"
+
+        self.update_trade_tactic(ticket_id, tactic)
+        entry_exit_cfg = brain.get("entry_exit", {}) or {}
+        if entry_exit_cfg.get("enabled"):
+            active = entry_exit_cfg.get("active_tactics") or entry_exit_cfg.get("entry_tactics") or []
+            if isinstance(active, str):
+                active = [active]
+            ee_label = "+".join(str(x) for x in active if x) or "SANDBOX"
+            exit_label = entry_exit_cfg.get("exit_tactic")
+            if exit_label:
+                ee_label = f"{ee_label}->{exit_label}"
+            self.update_trade_entry_exit_tactic(ticket_id, ee_label)
+
+        self.state["initial_r_dist"][str(ticket_id)] = abs(price - sl)
+        self.state.setdefault("initial_r_usd", {})[str(ticket_id)] = self._calc_risk_usd(
+            symbol, order_type, lot, price, sl
+        )
+        self.state["manual_trades_today"] = self.state.get("manual_trades_today", 0) + 1
+        self.state["trades_today_count"] = self.state.get("trades_today_count", 0) + 1
+        save_state(self.state)
+        try:
+            from ai_advisor.history import record_trade_opened_data
+
+            record_trade_opened_data(
+                ticket_id,
+                symbol=symbol,
+                open_time=time.time(),
+                source="telegram_order_success",
+                payload={
+                    "direction": side,
+                    "volume": lot,
+                    "entry_price": price,
+                    "sl": sl,
+                    "tp": tp,
+                    "tactic": tactic,
+                    "entry_exit_tactic": self.get_trade_entry_exit_tactic(ticket_id),
+                },
+            )
+        except Exception:
+            pass
+        self.log(
+            f"🚀 [TELEGRAM EXEC] {side} {symbol} #{ticket_id} | Lot: {lot:.2f} | Entry: {price:.5f} | SL: {sl:.5f} | TP: {tp:.5f} | TSL: {tactic}",
+            target="bot",
+        )
+        return f"SUCCESS|{ticket_id}"
+
     def update_trade_tactic(self, ticket, tactic_str):
         self.state["trade_tactics"][str(ticket)] = tactic_str
         save_state(self.state)
