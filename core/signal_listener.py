@@ -276,6 +276,17 @@ class SignalListener:
 
         if not self.get_auto_trade():
             try:
+                from telegram_notify.signal_bridge import maybe_send_signal_proposal
+
+                maybe_send_signal_proposal(
+                    self.trade_manager,
+                    signal,
+                    log_cb=lambda msg, error=False: self.log_ui(msg, error=error),
+                )
+            except Exception as exc:
+                logger.error(f"[Listener] Telegram signal proposal error: {exc}")
+
+            try:
                 cpath = _get_brain_file()
                 manual_log_enable = getattr(config, "BOT_SAFEGUARD", {}).get(
                     "MANUAL_SIGNAL_LOG_ENABLE", False

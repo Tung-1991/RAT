@@ -19,7 +19,7 @@ from .settings import allowed_user_ids, load_settings, normalize_settings
 ORDER_FIELDS = {"symbol", "side", "lot", "sl", "tp"}
 
 
-CONTROL_HELP_TEXT = """RAT-control
+CONTROL_HELP_TEXT = """RAT-control samples
 
 /status
 /positions
@@ -28,10 +28,9 @@ CONTROL_HELP_TEXT = """RAT-control
 /order ETHUSD BUY lot=0.03 sl=1629.11 tp=1733.74
 /edit TGxxxx lot=0.02 sl=1630 tp=1730
 
-Buttons:
-Approve = owner only
-Cancel = cancel pending
-Refresh = reload proposal
+Approve = owner
+Cancel = huy pending
+Refresh = reload
 """
 
 
@@ -173,12 +172,17 @@ def parse_edit_command(text):
 def format_proposal(proposal):
     if not proposal:
         return "Proposal not found."
+    source = str(proposal.get("source") or "MANUAL").upper()
+    title = "SIGNAL" if source == "SIGNAL" else "ORDER"
     lines = [
-        f"Order {proposal.get('order_id')}",
+        f"{title} {proposal.get('order_id')}",
         f"Status: {proposal.get('status')}",
         f"Creator: {proposal.get('created_by_label') or proposal.get('created_by')}",
         f"{proposal.get('symbol')} {proposal.get('side')} lot={proposal.get('lot')} sl={proposal.get('sl')} tp={proposal.get('tp')}",
     ]
+    if source == "SIGNAL":
+        meta = proposal.get("metadata") or {}
+        lines.append(f"Bot: OFF | Mode: {meta.get('market_mode') or '-'}")
     if proposal.get("ticket"):
         lines.append(f"Ticket: {proposal.get('ticket')}")
     if proposal.get("error"):

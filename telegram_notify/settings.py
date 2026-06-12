@@ -6,6 +6,7 @@ import os
 DEFAULT_SETTINGS = {
     "enabled": False,
     "control_enabled": False,
+    "signal_proposals_enabled": False,
     "bot_token_env": "TELE_BOT_KEY",
     "report_chat_id": "1003772881044",
     "control_chat_id": "1003941549878",
@@ -13,6 +14,7 @@ DEFAULT_SETTINGS = {
     "operator_user_ids": "",
     "chunk_size": 3500,
     "control_poll_interval_seconds": 2.0,
+    "signal_proposal_cooldown_minutes": 15.0,
 }
 
 
@@ -51,6 +53,7 @@ def normalize_settings(data):
         clean.update(data)
     clean["enabled"] = bool(clean.get("enabled"))
     clean["control_enabled"] = bool(clean.get("control_enabled"))
+    clean["signal_proposals_enabled"] = bool(clean.get("signal_proposals_enabled"))
     clean["bot_token_env"] = str(clean.get("bot_token_env") or DEFAULT_SETTINGS["bot_token_env"]).strip()
     clean["report_chat_id"] = str(clean.get("report_chat_id") or "").strip()
     clean["control_chat_id"] = str(clean.get("control_chat_id") or "").strip()
@@ -60,6 +63,12 @@ def normalize_settings(data):
     clean["control_poll_interval_seconds"] = _safe_float(
         clean.get("control_poll_interval_seconds"),
         DEFAULT_SETTINGS["control_poll_interval_seconds"],
+    )
+    clean["signal_proposal_cooldown_minutes"] = _safe_float(
+        clean.get("signal_proposal_cooldown_minutes"),
+        DEFAULT_SETTINGS["signal_proposal_cooldown_minutes"],
+        min_value=0.5,
+        max_value=1440.0,
     )
     return clean
 

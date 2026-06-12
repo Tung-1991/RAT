@@ -188,12 +188,14 @@ def open_advisor_popup(app):
     tg_settings = telegram_settings.load_settings()
     var_tg_enabled = tk.BooleanVar(value=bool(tg_settings.get("enabled")))
     var_tg_control_enabled = tk.BooleanVar(value=bool(tg_settings.get("control_enabled")))
+    var_tg_signal_enabled = tk.BooleanVar(value=bool(tg_settings.get("signal_proposals_enabled")))
     var_tg_env = tk.StringVar(value=str(tg_settings.get("bot_token_env", "TELE_BOT_KEY")))
     var_tg_report_chat = tk.StringVar(value=str(tg_settings.get("report_chat_id", "1003772881044")))
     var_tg_control_chat = tk.StringVar(value=str(tg_settings.get("control_chat_id", "1003941549878")))
     var_tg_owner_id = tk.StringVar(value=str(tg_settings.get("owner_user_id", "")))
     var_tg_operator_ids = tk.StringVar(value=str(tg_settings.get("operator_user_ids", "")))
     var_tg_poll_interval = tk.StringVar(value=str(tg_settings.get("control_poll_interval_seconds", 2.0)))
+    var_tg_signal_cooldown = tk.StringVar(value=str(tg_settings.get("signal_proposal_cooldown_minutes", 15.0)))
     var_tg_chunk = tk.StringVar(value=str(tg_settings.get("chunk_size", 3500)))
     var_tg_env_cmd = tk.StringVar()
 
@@ -218,7 +220,7 @@ def open_advisor_popup(app):
     ).pack(anchor="w", padx=10, pady=(8, 2))
     ctk.CTkLabel(
         tg_status,
-        text="Token đọc từ ENV, không lưu file.",
+        text="Token doc tu ENV, khong luu file.",
         font=("Roboto", 11, "bold"),
         text_color="#FBC02D",
         anchor="w",
@@ -235,7 +237,7 @@ def open_advisor_popup(app):
 
     ctk.CTkCheckBox(
         tg_body,
-        text="Gửi phản hồi AI API sang kênh RAT-report",
+        text="Gui AI report",
         variable=var_tg_enabled,
         font=("Roboto", 12, "bold"),
         checkbox_width=18,
@@ -243,14 +245,14 @@ def open_advisor_popup(app):
     ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(0, 10))
     ctk.CTkLabel(
         tg_body,
-        text="Send API xong thì tự bắn sang RAT-report.",
+        text="AI API tra loi -> gui sang RAT-report.",
         font=("Roboto", 10, "bold"),
         text_color="#FBC02D",
         anchor="w",
     ).grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 8))
     ctk.CTkCheckBox(
         tg_body,
-        text="Bật nghe lệnh Telegram RAT-control",
+        text="Nghe RAT-control",
         variable=var_tg_control_enabled,
         font=("Roboto", 12, "bold"),
         checkbox_width=18,
@@ -258,11 +260,27 @@ def open_advisor_popup(app):
     ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(0, 10))
     ctk.CTkLabel(
         tg_body,
-        text="RAT6 nghe Control chat ID: /status, /order, /pending.",
+        text="Nhan /status, /order va button approve tu Control chat.",
         font=("Roboto", 10, "bold"),
         text_color="#FBC02D",
         anchor="w",
     ).grid(row=4, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+
+    ctk.CTkCheckBox(
+        tg_body,
+        text="Ban signal khi bot OFF",
+        variable=var_tg_signal_enabled,
+        font=("Roboto", 12, "bold"),
+        checkbox_width=18,
+        checkbox_height=18,
+    ).grid(row=5, column=0, columnspan=2, sticky="w", pady=(0, 10))
+    ctk.CTkLabel(
+        tg_body,
+        text="Chi tao pending proposal. Owner approve moi vao lenh.",
+        font=("Roboto", 10, "bold"),
+        text_color="#FBC02D",
+        anchor="w",
+    ).grid(row=6, column=0, columnspan=2, sticky="ew", pady=(0, 8))
 
     def _tg_row(label, variable, row):
         ctk.CTkLabel(tg_body, text=label, font=("Roboto", 11, "bold"), text_color="#D7DCE2").grid(
@@ -272,16 +290,17 @@ def open_advisor_popup(app):
             row=row, column=1, sticky="ew", padx=(10, 0), pady=5
         )
 
-    _tg_row("Token ENV name", var_tg_env, 5)
-    _tg_row("Report chat ID", var_tg_report_chat, 6)
-    _tg_row("Control chat ID", var_tg_control_chat, 7)
-    _tg_row("Owner user ID", var_tg_owner_id, 8)
-    _tg_row("Operator user IDs", var_tg_operator_ids, 9)
-    _tg_row("Control poll seconds", var_tg_poll_interval, 10)
-    _tg_row("Chunk size", var_tg_chunk, 11)
+    _tg_row("Token ENV", var_tg_env, 7)
+    _tg_row("RAT-report chat ID", var_tg_report_chat, 8)
+    _tg_row("RAT-control chat ID", var_tg_control_chat, 9)
+    _tg_row("Owner user ID", var_tg_owner_id, 10)
+    _tg_row("Operator IDs", var_tg_operator_ids, 11)
+    _tg_row("Poll giay", var_tg_poll_interval, 12)
+    _tg_row("Cooldown signal phut", var_tg_signal_cooldown, 13)
+    _tg_row("Chunk report", var_tg_chunk, 14)
 
     tg_buttons = ctk.CTkFrame(tg_body, fg_color="transparent")
-    tg_buttons.grid(row=12, column=0, columnspan=2, sticky="ew", pady=(12, 0))
+    tg_buttons.grid(row=15, column=0, columnspan=2, sticky="ew", pady=(12, 0))
     tg_buttons.grid_columnconfigure((0, 1), weight=1)
 
     def save_telegram_settings():
@@ -290,23 +309,27 @@ def open_advisor_popup(app):
                 {
                     "enabled": var_tg_enabled.get(),
                     "control_enabled": var_tg_control_enabled.get(),
+                    "signal_proposals_enabled": var_tg_signal_enabled.get(),
                     "bot_token_env": var_tg_env.get(),
                     "report_chat_id": var_tg_report_chat.get(),
                     "control_chat_id": var_tg_control_chat.get(),
                     "owner_user_id": var_tg_owner_id.get(),
                     "operator_user_ids": var_tg_operator_ids.get(),
                     "control_poll_interval_seconds": var_tg_poll_interval.get(),
+                    "signal_proposal_cooldown_minutes": var_tg_signal_cooldown.get(),
                     "chunk_size": var_tg_chunk.get(),
                 }
             )
             var_tg_enabled.set(bool(saved.get("enabled")))
             var_tg_control_enabled.set(bool(saved.get("control_enabled")))
+            var_tg_signal_enabled.set(bool(saved.get("signal_proposals_enabled")))
             var_tg_env.set(str(saved.get("bot_token_env", "TELE_BOT_KEY")))
             var_tg_report_chat.set(str(saved.get("report_chat_id", "")))
             var_tg_control_chat.set(str(saved.get("control_chat_id", "")))
             var_tg_owner_id.set(str(saved.get("owner_user_id", "")))
             var_tg_operator_ids.set(str(saved.get("operator_user_ids", "")))
             var_tg_poll_interval.set(str(saved.get("control_poll_interval_seconds", 2.0)))
+            var_tg_signal_cooldown.set(str(saved.get("signal_proposal_cooldown_minutes", 15.0)))
             var_tg_chunk.set(str(saved.get("chunk_size", 3500)))
             refresh_telegram_env_cmd()
             app._set_advisor_status("Telegram settings saved")
@@ -330,7 +353,7 @@ def open_advisor_popup(app):
             return
 
         sender = ctk.CTkToplevel(top)
-        sender.title("Send Telegram Report")
+        sender.title("RAT-report Sender")
         sender.geometry("820x620")
         sender.minsize(640, 460)
         _bring_popup_to_front(sender)
@@ -348,7 +371,7 @@ def open_advisor_popup(app):
         ).grid(row=0, column=0, sticky="w", padx=10, pady=(8, 4))
         ctk.CTkLabel(
             body,
-            text="Paste nội dung, bấm gửi. Dài sẽ tự cắt.",
+            text="Paste -> Send. Noi dung dai tu chia chunk.",
             font=("Roboto", 11, "bold"),
             text_color="gray",
             anchor="w",
@@ -389,7 +412,7 @@ def open_advisor_popup(app):
 
         ctk.CTkButton(
             actions,
-            text="Send To RAT-report",
+            text="Send RAT-report",
             height=34,
             fg_color="#1f538d",
             hover_color="#14375e",
@@ -397,7 +420,7 @@ def open_advisor_popup(app):
         ).grid(row=0, column=0, sticky="ew", padx=(0, 5))
         ctk.CTkButton(
             actions,
-            text="Clear",
+            text="Xoa",
             height=34,
             fg_color="#424242",
             hover_color="#616161",
@@ -406,7 +429,7 @@ def open_advisor_popup(app):
 
     def open_telegram_help():
         helper = ctk.CTkToplevel(top)
-        helper.title("Telegram Control Help")
+        helper.title("RAT-control Help")
         helper.geometry("760x560")
         helper.minsize(620, 460)
         _bring_popup_to_front(helper)
@@ -418,13 +441,13 @@ def open_advisor_popup(app):
 
         ctk.CTkLabel(
             body,
-            text="RAT-CONTROL TELEGRAM HELP",
+            text="RAT-CONTROL HELP",
             font=("Roboto", 16, "bold"),
             text_color="#80DEEA",
         ).grid(row=0, column=0, sticky="w", padx=10, pady=(8, 4))
         ctk.CTkLabel(
             body,
-            text="Samples only. Owner approve bằng button.",
+            text="Sample lenh. Owner approve bang button.",
             font=("Roboto", 11, "bold"),
             text_color="#FBC02D",
             anchor="w",
@@ -446,7 +469,7 @@ def open_advisor_popup(app):
 
         ctk.CTkButton(
             body,
-            text="Copy Help",
+            text="Copy",
             height=34,
             fg_color="#424242",
             hover_color="#616161",
@@ -455,7 +478,7 @@ def open_advisor_popup(app):
 
     ctk.CTkButton(
         tg_env_row,
-        text="Copy Set Key",
+        text="Copy ENV",
         width=120,
         height=28,
         fg_color="#424242",
@@ -464,7 +487,7 @@ def open_advisor_popup(app):
     ).pack(side="right", padx=(8, 0))
     ctk.CTkButton(
         tg_env_row,
-        text="Telegram Help",
+        text="Help",
         width=130,
         height=28,
         fg_color="#1f538d",
@@ -474,7 +497,7 @@ def open_advisor_popup(app):
 
     ctk.CTkButton(
         tg_buttons,
-        text="Save Telegram",
+        text="Luu Telegram",
         height=30,
         fg_color="#00695C",
         hover_color="#004D40",
@@ -482,7 +505,7 @@ def open_advisor_popup(app):
     ).grid(row=0, column=0, sticky="ew", padx=(0, 5))
     ctk.CTkButton(
         tg_buttons,
-        text="Open Report Sender",
+        text="Gui report tay",
         height=30,
         fg_color="#1f538d",
         hover_color="#14375e",

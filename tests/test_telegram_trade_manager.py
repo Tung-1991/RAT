@@ -25,6 +25,9 @@ class FakeConnector:
     def calculate_profit(self, symbol, side, volume, entry_price, sl_price):
         return -10.0
 
+    def calculate_lot_size(self, symbol, risk_usd, sl_price, order_type, strict_fee_per_lot=0.0):
+        return 0.03, sl_price
+
     def place_order(self, symbol, order_type, lot, sl, tp, magic, comment):
         self.orders.append((symbol, order_type, lot, sl, tp, magic, comment))
         return SimpleNamespace(retcode=10009, order=12345)
@@ -92,3 +95,21 @@ def test_execute_telegram_sandbox_order_rejects_bad_buy_sl(monkeypatch):
 
     assert "BAD_SL" in result
     assert mgr.connector.orders == []
+
+
+def test_build_telegram_signal_order_uses_sandbox_defaults(monkeypatch):
+    mgr = _manager(monkeypatch)
+    context = {
+        "atr_G2": 10.0,
+        "swing_low_G2": 1980.0,
+        "swing_high_G2": 2020.0,
+    }
+
+    result = mgr.build_telegram_signal_order("ETHUSD", "BUY", context=context, market_mode="TREND")
+
+    assert result["ok"] is True
+    assert result["symbol"] == "ETHUSD"
+    assert result["side"] == "BUY"
+    assert result["lot"] == 0.03
+    assert result["sl"] == 1978.0
+    assert result["tp"] > 2000.0

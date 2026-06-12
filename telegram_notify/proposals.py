@@ -46,7 +46,7 @@ def save_proposals(data):
     return True
 
 
-def create_proposal(user_id, order, user_label=None):
+def create_proposal(user_id, order, user_label=None, source="MANUAL", metadata=None):
     data = load_proposals()
     order_id = new_order_id()
     now = _now()
@@ -57,6 +57,7 @@ def create_proposal(user_id, order, user_label=None):
         "created_by_label": str(user_label or int(user_id)),
         "updated_by_label": str(user_label or int(user_id)),
         "status": ACTIVE_STATUS,
+        "source": str(source or "MANUAL").upper(),
         "symbol": order["symbol"],
         "side": order["side"],
         "lot": float(order["lot"]),
@@ -67,6 +68,7 @@ def create_proposal(user_id, order, user_label=None):
         "created_at": now,
         "updated_at": now,
         "executed_at": "",
+        "metadata": metadata or {},
     }
     data[order_id] = proposal
     save_proposals(data)

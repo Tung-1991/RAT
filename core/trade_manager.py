@@ -1226,6 +1226,145 @@ class TradeManager:
         )
         return f"SUCCESS|{ticket_id}"
 
+    def build_telegram_signal_order(self, symbol, side, context=None, market_mode="ANY"):
+        symbol = str(symbol or "").strip().upper()
+        side = str(side or "").strip().upper()
+        context = context or {}
+        if side not in ("BUY", "SELL"):
+            return {"ok": False, "error": "BAD_SIDE"}
+
+        config.SYMBOL = symbol
+        self._sync_state_lifecycle()
+        acc_info = self.connector.get_account_info()
+        if not acc_info:
+            return {"ok": False, "error": "NO_ACCOUNT"}
+
+        is_open, closed_reason = is_symbol_trade_window_open(symbol)
+        if not is_open:
+            return {"ok": False, "error": f"MARKET_CLOSED|{closed_reason}"}
+
+        tick = mt5.symbol_info_tick(symbol)
+        sym_info = mt5.symbol_info(symbol)
+        if not tick or not sym_info:
+            return {"ok": False, "error": "NO_TICK"}
+
+        brain = self._get_brain_settings(symbol)
+        risk_tsl = brain.get("risk_tsl", {}) or {}
+        safeguard_cfg = brain.get("bot_safeguard", {}) or {}
+        entry_exit_cfg = brain.get("entry_exit", {}) or {}
+        price = tick.ask if side == "BUY" else tick.bid
+        order_type = mt5.ORDER_TYPE_BUY if side == "BUY" else mt5.ORDER_TYPE_SELL
+
+        ee_sl_override = None
+        ee_tp_override = None
+        ee_decision = None
+        try:
+            pending_key = f"{symbol}|{side}"
+            pending = (self.state.get("pending_entry_exit", {}) or {}).get(pending_key)
+            ee_decision = evaluate_entry_exit(
+                symbol,
+                side,
+                price,
+                context,
+                entry_exit_cfg,
+                pending=pending,
+            )
+            if (
+                entry_exit_cfg.get("enabled")
+                and not entry_exit_cfg.get("preview_only", True)
+                and ee_decision.get("status") == "READY"
+            ):
+                ee_sl_override = ee_decision.get("sl")
+                ee_tp_override = ee_decision.get("tp")
+        except Exception:
+            ee_decision = None
+
+        sl_group = risk_tsl.get("base_sl", "G2")
+        if "DYNAMIC" in str(sl_group).upper():
+            sl_group = "G1" if market_mode in ["TREND", "BREAKOUT"] else "G2"
+        atr_key = f"atr_{sl_group}"
+        swing_l_key = f"swing_low_{sl_group}"
+        swing_h_key = f"swing_high_{sl_group}"
+        atr_val = context.get(atr_key) or context.get("atr_entry") or 0.0
+        swing_l = context.get(swing_l_key)
+        swing_h = context.get(swing_h_key)
+        sl_mult = float(risk_tsl.get("sl_atr_multiplier", getattr(config, "sl_atr_multiplier", 0.2)))
+        buffer_atr = float(atr_val or 0.0) * sl_mult
+
+        if ee_sl_override:
+            sl_price = float(ee_sl_override)
+        else:
+            if atr_key not in context or swing_l_key not in context or swing_h_key not in context:
+                return {"ok": False, "error": f"NO_DATA|{sl_group}"}
+            sl_price = float(swing_l) - buffer_atr if side == "BUY" else float(swing_h) + buffer_atr
+        sl_distance = abs(price - sl_price)
+        if sl_distance < price * 0.0005:
+            return {"ok": False, "error": "SL_TOO_TIGHT"}
+
+        strict_fee_per_lot = 0.0
+        if risk_tsl.get("strict_risk", False):
+            acc_type = getattr(config, "DEFAULT_ACCOUNT_TYPE", "STANDARD")
+            comm_rate = 0.0 if acc_type in ["PRO", "STANDARD"] else getattr(
+                config,
+                "COMMISSION_RATES",
+                {},
+            ).get(
+                symbol,
+                getattr(config, "ACCOUNT_TYPES_CONFIG", {}).get(acc_type, {}).get("COMMISSION_PER_LOT", 7.0),
+            )
+            strict_fee_per_lot = comm_rate + (
+                sym_info.spread * sym_info.point * sym_info.trade_contract_size if sym_info else 0.0
+            )
+
+        sym_cfgs = brain.get("symbol_configs", {}).get(symbol, {}) or {}
+        fixed_lot = float(sym_cfgs.get("fixed_lot", 0.0) or 0.0)
+        if fixed_lot > 0:
+            lot = fixed_lot
+            _, safe_sl = self.connector.calculate_lot_size(symbol, 10.0, sl_price, order_type, 0)
+            sl_price = safe_sl if safe_sl else sl_price
+        else:
+            base_risk = float(risk_tsl.get("base_risk", getattr(config, "BOT_RISK_PERCENT", 0.3)) or 0.3)
+            mode_multiplier = float((risk_tsl.get("mode_multipliers", {}) or {}).get(market_mode, 1.0) or 1.0)
+            risk_usd = float(acc_info.get("equity", 0.0) or 0.0) * ((base_risk * mode_multiplier) / 100.0)
+            lot, safe_sl = self.connector.calculate_lot_size(symbol, risk_usd, sl_price, order_type, strict_fee_per_lot)
+            if not lot:
+                return {"ok": False, "error": "LOT_CALC_FAILED"}
+            sl_price = safe_sl if safe_sl else sl_price
+
+        max_lot_cap = float(sym_cfgs.get("max_lot_cap", 0.0) or 0.0)
+        if max_lot_cap > 0:
+            lot = min(float(lot), max_lot_cap)
+
+        use_swing_tp = safeguard_cfg.get("BOT_USE_SWING_TP", False)
+        use_rr_tp = safeguard_cfg.get("BOT_USE_RR_TP", True)
+        ee_exit_tactic = str(entry_exit_cfg.get("exit_tactic", "")).upper()
+        ee_tp_disabled = ee_exit_tactic in ("NO_TP", "OFF") or (
+            ee_decision and ee_decision.get("tp_disabled")
+        )
+        if ee_tp_disabled:
+            tp_price = 0.0
+        elif ee_tp_override is not None:
+            tp_price = float(ee_tp_override)
+        elif use_swing_tp and swing_h and swing_l and atr_val:
+            tp_price = (float(swing_h) - buffer_atr) if side == "BUY" else (float(swing_l) + buffer_atr)
+        elif use_rr_tp:
+            reward_ratio = float(safeguard_cfg.get("BOT_TP_RR_RATIO", getattr(config, "BOT_TP_RR_RATIO", 1.5)) or 1.5)
+            tp_price = price + (abs(price - sl_price) * reward_ratio) if side == "BUY" else price - (abs(price - sl_price) * reward_ratio)
+        else:
+            tp_price = 0.0
+
+        digits = int(getattr(sym_info, "digits", 2) or 2)
+        return {
+            "ok": True,
+            "symbol": symbol,
+            "side": side,
+            "lot": round(float(lot), 4),
+            "sl": round(float(sl_price), digits),
+            "tp": round(float(tp_price), digits) if tp_price else 0.0,
+            "price": float(price),
+            "market_mode": market_mode,
+        }
+
     def update_trade_tactic(self, ticket, tactic_str):
         self.state["trade_tactics"][str(ticket)] = tactic_str
         save_state(self.state)
