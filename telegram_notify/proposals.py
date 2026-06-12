@@ -103,6 +103,24 @@ def pending_proposals():
     ]
 
 
+def clear_pending(user_id=None):
+    data = load_proposals()
+    count = 0
+    now = _now()
+    for key, proposal in list(data.items()):
+        if isinstance(proposal, dict) and proposal.get("status") == ACTIVE_STATUS:
+            proposal["status"] = "CANCELLED"
+            proposal["executed_at"] = now
+            proposal["updated_at"] = now
+            if user_id is not None:
+                proposal["updated_by"] = int(user_id)
+            data[key] = proposal
+            count += 1
+    if count:
+        save_proposals(data)
+    return count
+
+
 def mark_executed(order_id, ticket):
     return update_proposal(order_id, {"status": "EXECUTED", "ticket": ticket, "error": "", "executed_at": _now()})
 

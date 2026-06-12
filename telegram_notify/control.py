@@ -12,25 +12,24 @@ from core.position_classifier import (
 )
 
 from .client import TelegramClient
-from . import proposals
+from . import drafts, proposals
 from .settings import allowed_user_ids, load_settings, normalize_settings
 
 
 ORDER_FIELDS = {"symbol", "side", "lot", "sl", "tp"}
+PENDING_PAGE_SIZE = 5
 
 
-CONTROL_HELP_TEXT = """RAT-control samples
+CONTROL_HELP_TEXT = """RAT-control
 
 /status
 /positions
 /pending
 
+/order
+/set ETHUSD BUY 0.03 1629.11 1733.74
 /order ETHUSD BUY lot=0.03 sl=1629.11 tp=1733.74
 /edit TGxxxx lot=0.02 sl=1630 tp=1730
-
-Approve = owner
-Cancel = huy pending
-Refresh = reload
 """
 
 
@@ -39,6 +38,13 @@ def _money(value):
         return f"{float(value):,.2f}"
     except Exception:
         return "n/a"
+
+
+def _command_name(text):
+    token = str(text or "").strip().split()[0].lower() if str(text or "").strip() else ""
+    if "@" in token:
+        token = token.split("@", 1)[0]
+    return token
 
 
 def _side(pos):
@@ -169,6 +175,25 @@ def parse_edit_command(text):
     return order_id, updates
 
 
+def parse_set_command(text):
+    parts = str(text or "").strip().split()
+    if len(parts) < 2 or parts[0].lower() != "/set":
+        raise ValueError("Use /set ETHUSD BUY 0.03 1629.11 1733.74")
+    if all("=" not in part for part in parts[1:]):
+        if len(parts) == 4:
+            raw = {"lot": parts[1], "sl": parts[2], "tp": parts[3]}
+        elif len(parts) == 6:
+            raw = {"symbol": parts[1], "side": parts[2], "lot": parts[3], "sl": parts[4], "tp": parts[5]}
+        else:
+            raise ValueError("Use /set SYMBOL BUY LOT SL TP")
+    else:
+        raw = _parse_kv(parts[1:])
+        unsupported = set(raw) - ORDER_FIELDS
+        if unsupported:
+            raise ValueError("Use /set symbol=ETHUSD side=BUY lot=0.03 sl=1629.11 tp=1733.74")
+    return _normalize_order_fields(raw, require_all=False)
+
+
 def format_proposal(proposal):
     if not proposal:
         return "Proposal not found."
@@ -194,9 +219,43 @@ def proposal_keyboard(order_id):
     return [
         [
             {"text": "Approve", "callback_data": f"ord:approve:{order_id}"},
+            {"text": "Edit", "callback_data": f"wiz:edit:{order_id}"},
             {"text": "Cancel", "callback_data": f"ord:cancel:{order_id}"},
         ],
         [{"text": "Refresh", "callback_data": f"ord:refresh:{order_id}"}],
+    ]
+
+
+def pending_keyboard(items, page=0, total=0):
+    rows = []
+    for item in items:
+        order_id = item.get("order_id")
+        label = f"{item.get('symbol')} {item.get('side')} {item.get('lot')}"
+        rows.append(
+            [
+                {"text": f"Open {label}", "callback_data": f"ord:refresh:{order_id}"},
+                {"text": "Edit", "callback_data": f"wiz:edit:{order_id}"},
+                {"text": "Cancel", "callback_data": f"ord:cancel:{order_id}"},
+            ]
+        )
+    nav = []
+    if page > 0:
+        nav.append({"text": "Prev", "callback_data": f"pend:page:{page - 1}"})
+    if (page + 1) * PENDING_PAGE_SIZE < total:
+        nav.append({"text": "Next", "callback_data": f"pend:page:{page + 1}"})
+    if nav:
+        rows.append(nav)
+    rows.append([{"text": "Clear all pending", "callback_data": "pend:clear_all"}])
+    return rows
+
+
+def wizard_keyboard(symbols=None, draft=None):
+    return [
+        [
+            {"text": "Sample", "callback_data": "wiz:sample"},
+            {"text": "Save", "callback_data": "wiz:save"},
+            {"text": "Cancel", "callback_data": "wiz:cancel"},
+        ]
     ]
 
 
@@ -336,6 +395,51 @@ class TelegramControlService:
         except Exception:
             return []
 
+    def _symbol_choices(self):
+        seen = []
+        for sym in list(self.get_active_symbols() or []) + list(getattr(config, "COIN_LIST", []) or []):
+            sym = str(sym or "").strip().upper()
+            if sym and sym not in seen:
+                seen.append(sym)
+        return seen
+
+    def _draft_text(self, draft):
+        draft = draft or {}
+        mode = "EDIT" if draft.get("mode") == "edit" else "ORDER"
+        order_id = draft.get("order_id")
+        lines = [f"{mode}" + (f" {order_id}" if order_id else "")]
+        lines.append(f"{draft.get('symbol') or 'SYMBOL'} {draft.get('side') or 'BUY/SELL'}")
+        lines.append(
+            "lot={} sl={} tp={}".format(
+                draft.get("lot", "-"),
+                draft.get("sl", "-"),
+                draft.get("tp", "-"),
+            )
+        )
+        lines.append("Sample: /set SYMBOL SIDE LOT SL TP")
+        return "\n".join(lines)
+
+    def _draft_sample_text(self, draft):
+        draft = draft or {}
+        symbol = draft.get("symbol") or "ETHUSD"
+        side = draft.get("side") or "BUY"
+        lot = draft.get("lot") if draft.get("lot") not in (None, "") else "0.03"
+        sl = draft.get("sl") if draft.get("sl") not in (None, "") else "1629.11"
+        tp = draft.get("tp") if draft.get("tp") not in (None, "") else "1733.74"
+        return "\n".join(
+            [
+                f"/set {symbol} {side} {lot} {sl} {tp}",
+            ]
+        )
+
+    def _send_draft(self, client, chat_id):
+        draft = drafts.get_draft(chat_id)
+        return client.send_message_with_keyboard(
+            chat_id,
+            self._draft_text(draft),
+            keyboard=wizard_keyboard(self._symbol_choices(), draft),
+        )
+
     def _send_status(self, client, chat_id, positions_only=False, plain=False):
         positions = self._positions()
         magics = self._magics()
@@ -398,6 +502,16 @@ class TelegramControlService:
         return {"ok": False, "error": result}
 
     def _handle_order(self, client, settings, chat_id, user_id, text, channel_text=False):
+        if str(text or "").strip().lower() == "/order":
+            drafts.upsert_draft(
+                chat_id,
+                {
+                    "mode": "new",
+                    "created_by": int(user_id or 0),
+                    "created_by_label": "CHANNEL" if channel_text else str(int(user_id or 0)),
+                },
+            )
+            return self._send_draft(client, chat_id)
         try:
             order = parse_order_command(text)
         except ValueError as exc:
@@ -414,6 +528,23 @@ class TelegramControlService:
             chat_id,
             format_proposal(proposal) + "\nOwner approve required.",
             keyboard=proposal_keyboard(proposal["order_id"]),
+        )
+
+    def _handle_set(self, client, chat_id, user_id, text, channel_text=False):
+        draft = drafts.get_draft(chat_id)
+        if not draft:
+            return client.send_message(chat_id, "No draft. Use /order first.")
+        try:
+            updates = parse_set_command(text)
+        except ValueError as exc:
+            return client.send_message(chat_id, str(exc))
+        if not updates:
+            return client.send_message(chat_id, "Use /set 0.03 1629.11 1733.74")
+        draft = drafts.update_draft(chat_id, updates)
+        return client.send_message_with_keyboard(
+            chat_id,
+            self._draft_text(draft),
+            keyboard=wizard_keyboard(self._symbol_choices(), draft),
         )
 
     def _handle_edit(self, client, chat_id, user_id, text, channel_text=False):
@@ -438,16 +569,98 @@ class TelegramControlService:
             keyboard=proposal_keyboard(order_id),
         )
 
-    def _handle_pending(self, client, chat_id):
+    def _start_edit_draft(self, client, chat_id, order_id):
+        proposal = proposals.get_proposal(order_id)
+        if not proposal:
+            return client.send_message(chat_id, f"Order {order_id} not found.")
+        if proposal.get("status") != "PENDING":
+            return client.send_message(chat_id, f"Order {order_id} is {proposal.get('status')}, cannot edit.")
+        draft = drafts.upsert_draft(
+            chat_id,
+            {
+                "mode": "edit",
+                "order_id": proposal.get("order_id"),
+                "symbol": proposal.get("symbol"),
+                "side": proposal.get("side"),
+                "lot": proposal.get("lot"),
+                "sl": proposal.get("sl"),
+                "tp": proposal.get("tp"),
+            },
+        )
+        return client.send_message_with_keyboard(
+            chat_id,
+            self._draft_text(draft),
+            keyboard=wizard_keyboard(self._symbol_choices(), draft),
+        )
+
+    def _save_draft(self, client, settings, chat_id, user_id, channel_text=False):
+        draft = drafts.get_draft(chat_id)
+        if not draft:
+            return client.send_message(chat_id, "No draft. Use /order first.")
+        try:
+            normalized = _normalize_order_fields(draft, require_all=True)
+            order = {field: normalized[field] for field in ("symbol", "side", "lot", "sl", "tp")}
+        except ValueError as exc:
+            return client.send_message_with_keyboard(
+                chat_id,
+                f"{exc}\n" + self._draft_text(draft),
+                keyboard=wizard_keyboard(self._symbol_choices(), draft),
+            )
+
+        if draft.get("mode") == "edit":
+            order_id = draft.get("order_id")
+            proposal = proposals.get_proposal(order_id)
+            if not proposal:
+                return client.send_message(chat_id, f"Order {order_id} not found.")
+            if proposal.get("status") != "PENDING":
+                return client.send_message(chat_id, f"Order {order_id} is {proposal.get('status')}, cannot edit.")
+            proposal = proposals.update_proposal(
+                order_id,
+                order,
+                user_id=user_id,
+                user_label="CHANNEL" if channel_text else None,
+            )
+            drafts.clear_draft(chat_id)
+            return client.send_message_with_keyboard(
+                chat_id,
+                "Edit saved.\n" + format_proposal(proposal),
+                keyboard=proposal_keyboard(order_id),
+            )
+
+        label = draft.get("created_by_label") or ("CHANNEL" if channel_text else None)
+        proposal = proposals.create_proposal(user_id or 0, order, user_label=label)
+        drafts.clear_draft(chat_id)
+        if not channel_text and _is_owner(user_id, settings):
+            client.send_message(chat_id, "Owner order received. Executing...\n" + format_proposal(proposal))
+            result = self._execute_proposal(proposal)
+            if result.get("ok"):
+                return client.send_message(chat_id, f"Order executed. Ticket #{result.get('ticket')}")
+            return client.send_message(chat_id, f"Order failed: {result.get('error')}")
+        return client.send_message_with_keyboard(
+            chat_id,
+            format_proposal(proposal) + "\nOwner approve required.",
+            keyboard=proposal_keyboard(proposal["order_id"]),
+        )
+
+    def _handle_pending(self, client, chat_id, page=0):
         pending = proposals.pending_proposals()
         if not pending:
             return client.send_message(chat_id, "Pending: 0")
-        lines = ["Pending:"]
-        for item in pending:
+        total = len(pending)
+        max_page = max(0, (total - 1) // PENDING_PAGE_SIZE)
+        page = max(0, min(int(page or 0), max_page))
+        start = page * PENDING_PAGE_SIZE
+        items = pending[start : start + PENDING_PAGE_SIZE]
+        lines = [f"Pending proposal: {total} | page {page + 1}/{max_page + 1}"]
+        for idx, item in enumerate(items, start=start + 1):
             lines.append(
-                f"{item.get('order_id')}: {item.get('symbol')} {item.get('side')} lot={item.get('lot')} sl={item.get('sl')} tp={item.get('tp')} by={item.get('created_by')}"
+                f"{idx}. {item.get('order_id')} {item.get('symbol')} {item.get('side')} lot={item.get('lot')} sl={item.get('sl')} tp={item.get('tp')}"
             )
-        return client.send_message(chat_id, "\n".join(lines))
+        return client.send_message_with_keyboard(
+            chat_id,
+            "\n".join(lines),
+            keyboard=pending_keyboard(items, page=page, total=total),
+        )
 
     def _approve_order(self, client, chat_id, user_id, settings, order_id):
         order_id = str(order_id or "").strip().upper()
@@ -466,8 +679,6 @@ class TelegramControlService:
 
     def _cancel_order(self, client, chat_id, user_id, settings, order_id):
         order_id = str(order_id or "").strip().upper()
-        if not _is_owner(user_id, settings):
-            return client.send_message(chat_id, "Owner only: cancel/veto order.")
         return self._cancel_order_unchecked(client, chat_id, user_id, order_id)
 
     def _cancel_order_unchecked(self, client, chat_id, user_id, order_id):
@@ -480,6 +691,57 @@ class TelegramControlService:
         proposals.mark_cancelled(order_id, user_id=user_id)
         return client.send_message(chat_id, f"Order {order_id} cancelled.")
 
+    def _handle_wizard_callback(self, client, settings, chat_id, user_id, data, channel_text=False):
+        parts = data.split(":")
+        action = parts[1] if len(parts) > 1 else ""
+        if action == "new":
+            drafts.upsert_draft(
+                chat_id,
+                {
+                    "mode": "new",
+                    "created_by": int(user_id or 0),
+                    "created_by_label": "CHANNEL" if channel_text else str(int(user_id or 0)),
+                },
+            )
+            return self._send_draft(client, chat_id)
+        if action == "edit":
+            order_id = parts[2] if len(parts) > 2 else ""
+            return self._start_edit_draft(client, chat_id, order_id)
+        if action == "cancel":
+            drafts.clear_draft(chat_id)
+            return client.send_message(chat_id, "Draft cancelled.")
+        if action == "sample":
+            draft = drafts.get_draft(chat_id)
+            return client.send_message(chat_id, self._draft_sample_text(draft))
+        if action == "save":
+            return self._save_draft(client, settings, chat_id, user_id, channel_text=channel_text)
+        if action == "side":
+            side = parts[2] if len(parts) > 2 else ""
+            if side not in ("BUY", "SELL"):
+                return client.send_message(chat_id, "Bad side.")
+            drafts.update_draft(chat_id, {"side": side})
+            return self._send_draft(client, chat_id)
+        if action == "symbol":
+            symbol = parts[2] if len(parts) > 2 else ""
+            if symbol not in self._symbol_choices():
+                return client.send_message(chat_id, "Bad symbol.")
+            drafts.update_draft(chat_id, {"symbol": symbol})
+            return self._send_draft(client, chat_id)
+
+    def _handle_pending_callback(self, client, chat_id, user_id, data):
+        parts = data.split(":")
+        action = parts[1] if len(parts) > 1 else ""
+        if action == "page":
+            try:
+                page = int(parts[2])
+            except Exception:
+                page = 0
+            return self._handle_pending(client, chat_id, page=page)
+        if action == "clear_all":
+            count = proposals.clear_pending(user_id=user_id)
+            drafts.clear_draft(chat_id)
+            return client.send_message(chat_id, f"Cleared pending: {count}")
+
     def _handle_text(self, client, settings, message):
         chat = message.get("chat", {})
         user = message.get("from", {})
@@ -487,11 +749,8 @@ class TelegramControlService:
         user_id = user.get("id")
         if not self._control_chat_matches(chat_id, settings):
             return
-        if not self._authorized(user_id, settings):
-            client.send_message(chat_id, "Unauthorized.")
-            return
         text = str(message.get("text") or "").strip()
-        cmd = text.split()[0].lower() if text else ""
+        cmd = _command_name(text)
         if cmd in {"/start", "/help"}:
             client.send_message(chat_id, CONTROL_HELP_TEXT)
         elif cmd == "/status":
@@ -499,22 +758,18 @@ class TelegramControlService:
         elif cmd == "/positions":
             self._send_status(client, chat_id, positions_only=True)
         elif cmd == "/bot_on":
-            if not self._owner_required(client, chat_id, user_id, settings, "bot_on"):
-                return
             self._toggle_bot(client, chat_id, True)
         elif cmd == "/bot_off":
-            if not self._owner_required(client, chat_id, user_id, settings, "bot_off"):
-                return
             self._toggle_bot(client, chat_id, False)
         elif cmd == "/close":
-            if not self._owner_required(client, chat_id, user_id, settings, "close ticket"):
-                return
             parts = text.split(maxsplit=1)
             self._close_ticket(client, chat_id, parts[1] if len(parts) > 1 else "")
         elif cmd == "/order":
             self._handle_order(client, settings, chat_id, user_id, text)
         elif cmd == "/edit":
             self._handle_edit(client, chat_id, user_id, text)
+        elif cmd == "/set":
+            self._handle_set(client, chat_id, user_id, text)
         elif cmd == "/approve":
             parts = text.split(maxsplit=1)
             self._approve_order(client, chat_id, user_id, settings, parts[1] if len(parts) > 1 else "")
@@ -531,7 +786,7 @@ class TelegramControlService:
             return
         user_id = 0
         text = str(message.get("text") or "").strip()
-        cmd = text.split()[0].lower() if text else ""
+        cmd = _command_name(text)
         if cmd in {"/start", "/help"}:
             client.send_message(chat_id, CONTROL_HELP_TEXT)
         elif cmd == "/status":
@@ -539,19 +794,23 @@ class TelegramControlService:
         elif cmd == "/positions":
             self._send_status(client, chat_id, positions_only=True, plain=True)
         elif cmd == "/bot_on":
-            client.send_message(chat_id, "Use Bot ON button.")
+            self._toggle_bot(client, chat_id, True)
         elif cmd == "/bot_off":
-            client.send_message(chat_id, "Use Bot OFF button.")
+            self._toggle_bot(client, chat_id, False)
         elif cmd == "/close":
-            client.send_message(chat_id, "Use Close #ticket button.")
+            parts = text.split(maxsplit=1)
+            self._close_ticket(client, chat_id, parts[1] if len(parts) > 1 else "")
         elif cmd == "/order":
             self._handle_order(client, settings, chat_id, user_id, text, channel_text=True)
         elif cmd == "/edit":
             self._handle_edit(client, chat_id, user_id, text, channel_text=True)
+        elif cmd == "/set":
+            self._handle_set(client, chat_id, user_id, text, channel_text=True)
         elif cmd == "/approve":
             client.send_message(chat_id, "Use Approve button.")
         elif cmd in {"/cancel", "/veto"}:
-            client.send_message(chat_id, "Use Cancel button.")
+            parts = text.split(maxsplit=1)
+            self._cancel_order_unchecked(client, chat_id, user_id, parts[1] if len(parts) > 1 else "")
         elif cmd == "/pending":
             self._handle_pending(client, chat_id)
 
@@ -565,24 +824,15 @@ class TelegramControlService:
         if not self._control_chat_matches(chat_id, settings):
             return
         is_channel_callback = (msg.get("chat") or {}).get("type") == "channel"
-        if not is_channel_callback and not self._authorized(user_id, settings):
-            client.send_message(chat_id, "Unauthorized.")
-            return
         if data == "ctl:status":
             self._send_status(client, chat_id, positions_only=False)
         elif data == "ctl:positions":
             self._send_status(client, chat_id, positions_only=True)
         elif data == "ctl:bot_on":
-            if not self._owner_required(client, chat_id, user_id, settings, "bot_on"):
-                return
             self._toggle_bot(client, chat_id, True)
         elif data == "ctl:bot_off":
-            if not self._owner_required(client, chat_id, user_id, settings, "bot_off"):
-                return
             self._toggle_bot(client, chat_id, False)
         elif data.startswith("ctl:close:"):
-            if not self._owner_required(client, chat_id, user_id, settings, "close ticket"):
-                return
             self._close_ticket(client, chat_id, data.split(":", 2)[2])
         elif data == "ctl:help_close":
             client.send_message(chat_id, "Sample: /close 123456")
@@ -593,10 +843,7 @@ class TelegramControlService:
             if action == "approve":
                 self._approve_order(client, chat_id, user_id, settings, order_id)
             elif action == "cancel":
-                if is_channel_callback:
-                    self._cancel_order_unchecked(client, chat_id, user_id, order_id)
-                else:
-                    self._cancel_order(client, chat_id, user_id, settings, order_id)
+                self._cancel_order_unchecked(client, chat_id, user_id, order_id)
             elif action == "refresh":
                 proposal = proposals.get_proposal(order_id)
                 client.send_message_with_keyboard(
@@ -604,6 +851,17 @@ class TelegramControlService:
                     format_proposal(proposal),
                     keyboard=proposal_keyboard(order_id) if proposal and proposal.get("status") == "PENDING" else None,
                 )
+        elif data.startswith("wiz:"):
+            self._handle_wizard_callback(
+                client,
+                settings,
+                chat_id,
+                user_id,
+                data,
+                channel_text=is_channel_callback,
+            )
+        elif data.startswith("pend:"):
+            self._handle_pending_callback(client, chat_id, user_id, data)
 
     def process_update(self, client, settings, update):
         if "message" in update:

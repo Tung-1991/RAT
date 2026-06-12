@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from types import SimpleNamespace
 
-from telegram_notify import proposals
+from telegram_notify import drafts, proposals
 from telegram_notify.control import (
     TelegramControlService,
     format_positions,
@@ -118,7 +118,7 @@ def test_format_positions_empty():
     assert format_positions([]) == "Open positions: 0"
 
 
-def test_control_ignores_unauthorized_user():
+def test_control_allows_any_user_in_control_chat():
     service, _toggles, _executions = _service()
     client = FakeClient()
     settings = {"control_chat_id": "1003941549878", "owner_user_id": "1", "operator_user_ids": ""}
@@ -127,7 +127,7 @@ def test_control_ignores_unauthorized_user():
         settings,
         {"message": {"chat": {"id": "-1003941549878"}, "from": {"id": 2}, "text": "/status"}},
     )
-    assert client.messages[-1][1] == "Unauthorized."
+    assert "RAT-control status" in client.messages[-1][1]
 
 
 def test_control_status_command_sends_dashboard():
@@ -143,6 +143,24 @@ def test_control_status_command_sends_dashboard():
     )
     assert "RAT-control status" in client.messages[-1][1]
     assert client.keyboards[-1]
+
+
+def test_control_accepts_commands_with_bot_suffix():
+    service, _toggles, _executions = _service()
+    client = FakeClient()
+    settings = {"control_chat_id": "1003941549878", "owner_user_id": "1", "operator_user_ids": ""}
+    service.process_update(
+        client,
+        settings,
+        {"message": {"chat": {"id": "-1003941549878"}, "from": {"id": 2}, "text": "/help@RATBot"}},
+    )
+    assert "/set ETHUSD BUY" in client.messages[-1][1]
+    service.process_update(
+        client,
+        settings,
+        {"channel_post": {"chat": {"id": "-1003941549878"}, "text": "/status@RATBot"}},
+    )
+    assert "RAT-control status" in client.messages[-1][1]
 
 
 def test_control_primes_offset_and_skips_old_backlog():
@@ -176,7 +194,7 @@ def test_control_channel_post_status_sends_dashboard():
     assert client.keyboards == []
 
 
-def test_control_channel_post_blocks_text_toggle():
+def test_control_channel_post_text_toggle_allowed():
     service, toggles, _executions = _service()
     client = FakeClient()
     settings = {"control_chat_id": "1003941549878", "owner_user_id": "1", "operator_user_ids": "2"}
@@ -185,8 +203,8 @@ def test_control_channel_post_blocks_text_toggle():
         settings,
         {"channel_post": {"chat": {"id": "-1003941549878"}, "text": "/bot_off"}},
     )
-    assert toggles == []
-    assert "Bot OFF button" in client.messages[-1][1]
+    assert toggles == [False]
+    assert "Bot is now OFF" in client.messages[-1][1]
 
 
 def test_control_channel_post_order_creates_pending(monkeypatch, tmp_path):
@@ -224,25 +242,32 @@ def test_control_channel_post_edit_sets_channel_label(monkeypatch, tmp_path):
     assert updated["updated_by_label"] == "CHANNEL"
 
 
-def test_control_channel_post_blocks_text_approve_cancel_close(monkeypatch, tmp_path):
+def test_control_channel_post_blocks_text_approve_but_allows_cancel_close(monkeypatch, tmp_path):
     monkeypatch.setattr(proposals, "account_dir", lambda: str(tmp_path))
     proposal = proposals.create_proposal(0, {"symbol": "ETHUSD", "side": "BUY", "lot": 0.03, "sl": 1980, "tp": 2050}, user_label="CHANNEL")
     service, _toggles, executions = _service()
     client = FakeClient()
     settings = {"control_chat_id": "1003941549878", "owner_user_id": "1", "operator_user_ids": ""}
-    for text, expected in (
-        (f"/approve {proposal['order_id']}", "Approve button"),
-        (f"/cancel {proposal['order_id']}", "Cancel button"),
-        ("/close 88", "Close #ticket button"),
-    ):
-        service.process_update(
-            client,
-            settings,
-            {"channel_post": {"chat": {"id": "-1003941549878"}, "text": text}},
-        )
-        assert expected in client.messages[-1][1]
+    service.process_update(
+        client,
+        settings,
+        {"channel_post": {"chat": {"id": "-1003941549878"}, "text": f"/approve {proposal['order_id']}"}},
+    )
+    assert "Approve button" in client.messages[-1][1]
+    service.process_update(
+        client,
+        settings,
+        {"channel_post": {"chat": {"id": "-1003941549878"}, "text": f"/cancel {proposal['order_id']}"}},
+    )
+    assert "cancelled" in client.messages[-1][1]
+    service.process_update(
+        client,
+        settings,
+        {"channel_post": {"chat": {"id": "-1003941549878"}, "text": "/close 88"}},
+    )
+    assert "not open" in client.messages[-1][1]
     assert executions == []
-    assert proposals.get_proposal(proposal["order_id"])["status"] == "PENDING"
+    assert proposals.get_proposal(proposal["order_id"])["status"] == "CANCELLED"
 
 
 def test_channel_owner_callback_approves_pending(monkeypatch, tmp_path):
@@ -329,7 +354,7 @@ def test_channel_owner_callbacks_toggle_and_close(monkeypatch, tmp_path):
             }
         },
     )
-    assert toggles == []
+    assert toggles == [False]
     service.process_update(
         client,
         settings,
@@ -342,7 +367,7 @@ def test_channel_owner_callbacks_toggle_and_close(monkeypatch, tmp_path):
             }
         },
     )
-    assert toggles == [False]
+    assert toggles == [False, False]
     service.process_update(
         client,
         settings,
@@ -371,7 +396,7 @@ def test_control_bot_toggle_command():
     assert "Bot is now ON" in client.messages[-1][1]
 
 
-def test_operator_bot_toggle_is_denied():
+def test_operator_bot_toggle_is_allowed():
     service, toggles, _executions = _service()
     client = FakeClient()
     settings = {"control_chat_id": "1003941549878", "owner_user_id": "1", "operator_user_ids": "2"}
@@ -380,8 +405,8 @@ def test_operator_bot_toggle_is_denied():
         settings,
         {"message": {"chat": {"id": "-1003941549878"}, "from": {"id": 2}, "text": "/bot_on"}},
     )
-    assert toggles == []
-    assert "Owner only" in client.messages[-1][1]
+    assert toggles == [True]
+    assert "Bot is now ON" in client.messages[-1][1]
 
 
 def test_control_close_ticket_refetches_position():
@@ -525,7 +550,205 @@ def test_owner_cancel_pending(monkeypatch, tmp_path):
     assert proposals.get_proposal(proposal["order_id"])["status"] == "CANCELLED"
 
 
-def test_operator_cancel_is_denied(monkeypatch, tmp_path):
+def test_pending_lists_buttons_for_each_pending(monkeypatch, tmp_path):
+    monkeypatch.setattr(proposals, "account_dir", lambda: str(tmp_path))
+    monkeypatch.setattr(drafts, "account_dir", lambda: str(tmp_path))
+    proposal = proposals.create_proposal(2, {"symbol": "ETHUSD", "side": "BUY", "lot": 0.03, "sl": 1980, "tp": 2050})
+    service, _toggles, _executions = _service()
+    client = FakeClient()
+    settings = {"control_chat_id": "1003941549878", "owner_user_id": "1", "operator_user_ids": "2"}
+    service.process_update(
+        client,
+        settings,
+        {"message": {"chat": {"id": "-1003941549878"}, "from": {"id": 2}, "text": "/pending"}},
+    )
+    assert "Pending proposal: 1" in client.messages[-1][1]
+    assert proposal["order_id"] in client.messages[-1][1]
+    assert client.keyboards[-1][0][0]["callback_data"] == f"ord:refresh:{proposal['order_id']}"
+    assert client.keyboards[-1][0][1]["callback_data"] == f"wiz:edit:{proposal['order_id']}"
+
+
+def test_pending_paginates_and_clear_all_cancels_only_pending(monkeypatch, tmp_path):
+    monkeypatch.setattr(proposals, "account_dir", lambda: str(tmp_path))
+    monkeypatch.setattr(drafts, "account_dir", lambda: str(tmp_path))
+    ids = []
+    for idx in range(6):
+        proposal = proposals.create_proposal(0, {"symbol": "ETHUSD", "side": "BUY", "lot": 0.01 + idx, "sl": 1980, "tp": 2050}, user_label="CHANNEL")
+        ids.append(proposal["order_id"])
+    executed = proposals.create_proposal(0, {"symbol": "BTCUSD", "side": "SELL", "lot": 0.1, "sl": 65000, "tp": 62000}, user_label="CHANNEL")
+    proposals.mark_executed(executed["order_id"], "777")
+    service, _toggles, _executions = _service()
+    client = FakeClient()
+    settings = {"control_chat_id": "1003941549878", "owner_user_id": "1", "operator_user_ids": ""}
+
+    service.process_update(
+        client,
+        settings,
+        {"channel_post": {"chat": {"id": "-1003941549878"}, "text": "/pending"}},
+    )
+    assert "Pending proposal: 6 | page 1/2" in client.messages[-1][1]
+    assert len([row for row in client.keyboards[-1] if row[0]["callback_data"].startswith("ord:refresh")]) == 5
+    assert any(button["callback_data"] == "pend:page:1" for row in client.keyboards[-1] for button in row)
+
+    service.process_update(
+        client,
+        settings,
+        {
+            "callback_query": {
+                "id": "cb-clear",
+                "from": {"id": 2},
+                "message": {"chat": {"id": "-1003941549878", "type": "channel"}},
+                "data": "pend:clear_all",
+            }
+        },
+    )
+    assert "Cleared pending: 6" in client.messages[-1][1]
+    assert proposals.pending_proposals() == []
+    assert proposals.get_proposal(executed["order_id"])["status"] == "EXECUTED"
+
+
+def test_order_wizard_creates_pending_from_short_set(monkeypatch, tmp_path):
+    monkeypatch.setattr(proposals, "account_dir", lambda: str(tmp_path))
+    monkeypatch.setattr(drafts, "account_dir", lambda: str(tmp_path))
+    service, _toggles, executions = _service()
+    client = FakeClient()
+    settings = {"control_chat_id": "1003941549878", "owner_user_id": "1", "operator_user_ids": ""}
+
+    service.process_update(client, settings, {"channel_post": {"chat": {"id": "-1003941549878"}, "text": "/order"}})
+    assert drafts.get_draft("-1003941549878")["mode"] == "new"
+    assert client.keyboards[-1][0][0]["callback_data"] == "wiz:sample"
+    assert client.keyboards[-1][0][1]["callback_data"] == "wiz:save"
+
+    service.process_update(client, settings, {"channel_post": {"chat": {"id": "-1003941549878"}, "text": "/set ETHUSD BUY 0.03 1980 2050"}})
+    service.process_update(
+        client,
+        settings,
+        {
+            "callback_query": {
+                "id": "save",
+                "from": {"id": 2},
+                "message": {"chat": {"id": "-1003941549878", "type": "channel"}},
+                "data": "wiz:save",
+            }
+        },
+    )
+    pending = proposals.pending_proposals()
+    assert len(pending) == 1
+    assert pending[0]["symbol"] == "ETHUSD"
+    assert pending[0]["lot"] == 0.03
+    assert executions == []
+    assert drafts.get_draft("-1003941549878") is None
+
+
+def test_order_wizard_sample_sends_copyable_set(monkeypatch, tmp_path):
+    monkeypatch.setattr(proposals, "account_dir", lambda: str(tmp_path))
+    monkeypatch.setattr(drafts, "account_dir", lambda: str(tmp_path))
+    service, _toggles, _executions = _service()
+    client = FakeClient()
+    settings = {"control_chat_id": "1003941549878", "owner_user_id": "1", "operator_user_ids": ""}
+
+    service.process_update(client, settings, {"channel_post": {"chat": {"id": "-1003941549878"}, "text": "/order"}})
+    service.process_update(
+        client,
+        settings,
+        {
+            "callback_query": {
+                "id": "sample",
+                "from": {"id": 2},
+                "message": {"chat": {"id": "-1003941549878", "type": "channel"}},
+                "data": "wiz:sample",
+            }
+        },
+    )
+    assert "/set ETHUSD BUY 0.03 1629.11 1733.74" in client.messages[-1][1]
+    assert client.messages[-1][1].count("/set") == 1
+
+
+def test_set_accepts_symbol_side_full_line(monkeypatch, tmp_path):
+    monkeypatch.setattr(proposals, "account_dir", lambda: str(tmp_path))
+    monkeypatch.setattr(drafts, "account_dir", lambda: str(tmp_path))
+    service, _toggles, _executions = _service()
+    client = FakeClient()
+    settings = {"control_chat_id": "1003941549878", "owner_user_id": "1", "operator_user_ids": ""}
+
+    service.process_update(client, settings, {"channel_post": {"chat": {"id": "-1003941549878"}, "text": "/order"}})
+    service.process_update(
+        client,
+        settings,
+        {"channel_post": {"chat": {"id": "-1003941549878"}, "text": "/set BTCUSD SELL 0.26 63911.36 61503.2"}},
+    )
+    draft = drafts.get_draft("-1003941549878")
+    assert draft["symbol"] == "BTCUSD"
+    assert draft["side"] == "SELL"
+    assert draft["lot"] == 0.26
+
+
+def test_order_wizard_requires_all_fields(monkeypatch, tmp_path):
+    monkeypatch.setattr(proposals, "account_dir", lambda: str(tmp_path))
+    monkeypatch.setattr(drafts, "account_dir", lambda: str(tmp_path))
+    service, _toggles, _executions = _service()
+    client = FakeClient()
+    settings = {"control_chat_id": "1003941549878", "owner_user_id": "1", "operator_user_ids": ""}
+
+    service.process_update(client, settings, {"channel_post": {"chat": {"id": "-1003941549878"}, "text": "/order"}})
+    service.process_update(
+        client,
+        settings,
+        {
+            "callback_query": {
+                "id": "save",
+                "from": {"id": 2},
+                "message": {"chat": {"id": "-1003941549878", "type": "channel"}},
+                "data": "wiz:save",
+            }
+        },
+    )
+    assert "Missing fields" in client.messages[-1][1]
+    assert proposals.pending_proposals() == []
+
+
+def test_edit_wizard_updates_pending(monkeypatch, tmp_path):
+    monkeypatch.setattr(proposals, "account_dir", lambda: str(tmp_path))
+    monkeypatch.setattr(drafts, "account_dir", lambda: str(tmp_path))
+    proposal = proposals.create_proposal(0, {"symbol": "ETHUSD", "side": "BUY", "lot": 0.03, "sl": 1980, "tp": 2050}, user_label="CHANNEL")
+    service, _toggles, _executions = _service()
+    client = FakeClient()
+    settings = {"control_chat_id": "1003941549878", "owner_user_id": "1", "operator_user_ids": ""}
+
+    service.process_update(
+        client,
+        settings,
+        {
+            "callback_query": {
+                "id": "edit",
+                "from": {"id": 2},
+                "message": {"chat": {"id": "-1003941549878", "type": "channel"}},
+                "data": f"wiz:edit:{proposal['order_id']}",
+            }
+        },
+    )
+    assert drafts.get_draft("-1003941549878")["mode"] == "edit"
+    service.process_update(client, settings, {"channel_post": {"chat": {"id": "-1003941549878"}, "text": "/set lot=0.02 sl=1970 tp=2040"}})
+    service.process_update(
+        client,
+        settings,
+        {
+            "callback_query": {
+                "id": "save-edit",
+                "from": {"id": 2},
+                "message": {"chat": {"id": "-1003941549878", "type": "channel"}},
+                "data": "wiz:save",
+            }
+        },
+    )
+    updated = proposals.get_proposal(proposal["order_id"])
+    assert updated["lot"] == 0.02
+    assert updated["sl"] == 1970.0
+    assert updated["tp"] == 2040.0
+    assert updated["status"] == "PENDING"
+
+
+def test_operator_cancel_is_allowed(monkeypatch, tmp_path):
     monkeypatch.setattr(proposals, "account_dir", lambda: str(tmp_path))
     proposal = proposals.create_proposal(2, {"symbol": "ETHUSD", "side": "BUY", "lot": 0.03, "sl": 1980, "tp": 2050})
     service, _toggles, _executions = _service()
@@ -536,11 +759,11 @@ def test_operator_cancel_is_denied(monkeypatch, tmp_path):
         settings,
         {"message": {"chat": {"id": "-1003941549878"}, "from": {"id": 2}, "text": f"/cancel {proposal['order_id']}"}},
     )
-    assert proposals.get_proposal(proposal["order_id"])["status"] == "PENDING"
-    assert "Owner only" in client.messages[-1][1]
+    assert proposals.get_proposal(proposal["order_id"])["status"] == "CANCELLED"
+    assert "cancelled" in client.messages[-1][1]
 
 
-def test_operator_cancel_callback_is_denied(monkeypatch, tmp_path):
+def test_operator_cancel_callback_is_allowed(monkeypatch, tmp_path):
     monkeypatch.setattr(proposals, "account_dir", lambda: str(tmp_path))
     proposal = proposals.create_proposal(2, {"symbol": "ETHUSD", "side": "BUY", "lot": 0.03, "sl": 1980, "tp": 2050})
     service, _toggles, _executions = _service()
@@ -558,5 +781,4 @@ def test_operator_cancel_callback_is_denied(monkeypatch, tmp_path):
             }
         },
     )
-    assert proposals.get_proposal(proposal["order_id"])["status"] == "PENDING"
-    assert "Owner only" in client.messages[-1][1]
+    assert proposals.get_proposal(proposal["order_id"])["status"] == "CANCELLED"
