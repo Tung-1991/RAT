@@ -10,6 +10,38 @@ import urllib.request
 TELEGRAM_TEXT_LIMIT = 4096
 
 
+def get_env_value(name):
+    name = str(name or "").strip()
+    if not name:
+        return ""
+    value = os.environ.get(name, "")
+    if value:
+        return value
+    if os.name != "nt":
+        return ""
+    try:
+        import winreg
+
+        locations = [
+            (winreg.HKEY_CURRENT_USER, "Environment"),
+            (
+                winreg.HKEY_LOCAL_MACHINE,
+                r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment",
+            ),
+        ]
+        for root, path in locations:
+            try:
+                with winreg.OpenKey(root, path) as key:
+                    registry_value, _value_type = winreg.QueryValueEx(key, name)
+                if registry_value:
+                    return str(registry_value)
+            except OSError:
+                continue
+    except Exception:
+        pass
+    return ""
+
+
 def _chunk_text(text, chunk_size=3500):
     text = str(text or "")
     try:
@@ -41,7 +73,7 @@ def _chat_id_candidates(chat_id):
 class TelegramClient:
     def __init__(self, token=None, token_env="TELE_BOT_KEY", timeout=20):
         self.token_env = token_env or "TELE_BOT_KEY"
-        self.token = token or os.environ.get(self.token_env, "")
+        self.token = token or get_env_value(self.token_env)
         self.timeout = timeout
 
     def enabled(self):

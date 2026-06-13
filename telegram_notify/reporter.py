@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 import os
 
-from .client import TelegramClient
+from .client import TelegramClient, get_env_value
 from .settings import load_settings, settings_path
 
 
 def report_diagnostics(settings=None):
     settings = settings or load_settings()
     token_env = settings.get("bot_token_env", "TELE_BOT_KEY")
-    token = os.environ.get(token_env, "")
+    token = get_env_value(token_env)
     return {
         "settings_path": settings_path(),
         "enabled": bool(settings.get("enabled")),
