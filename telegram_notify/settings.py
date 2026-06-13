@@ -12,7 +12,6 @@ DEFAULT_SETTINGS = {
     "control_chat_id": "1003941549878",
     "owner_user_id": "",
     "operator_user_ids": "",
-    "insecure_ssl": True,
     "chunk_size": 3500,
     "control_poll_interval_seconds": 2.0,
     "signal_proposal_cooldown_minutes": 15.0,
@@ -60,7 +59,6 @@ def normalize_settings(data):
     clean["control_chat_id"] = str(clean.get("control_chat_id") or "").strip()
     clean["owner_user_id"] = str(clean.get("owner_user_id") or "").strip()
     clean["operator_user_ids"] = str(clean.get("operator_user_ids") or "").strip()
-    clean["insecure_ssl"] = True
     clean["chunk_size"] = _safe_int(clean.get("chunk_size"), DEFAULT_SETTINGS["chunk_size"])
     clean["control_poll_interval_seconds"] = _safe_float(
         clean.get("control_poll_interval_seconds"),

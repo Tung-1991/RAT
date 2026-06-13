@@ -2,7 +2,6 @@
 import json
 import os
 import ssl
-import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -82,7 +81,7 @@ def _chat_id_candidates(chat_id):
 
 
 class TelegramClient:
-    def __init__(self, token=None, token_env="TELE_BOT_KEY", timeout=20, allow_insecure_ssl=None):
+    def __init__(self, token=None, token_env="TELE_BOT_KEY", timeout=6, allow_insecure_ssl=None):
         self.token_env = token_env or "TELE_BOT_KEY"
         self.token = token or get_env_value(self.token_env)
         self.timeout = timeout
@@ -170,16 +169,6 @@ class TelegramClient:
             if result.get("ok"):
                 result["chat_id"] = candidate
                 return result
-            retry_after = result.get("retry_after")
-            if retry_after:
-                try:
-                    time.sleep(max(1, int(retry_after)))
-                except Exception:
-                    time.sleep(1)
-                result = self._request("sendMessage", payload)
-                if result.get("ok"):
-                    result["chat_id"] = candidate
-                    return result
             last_error = result.get("error", "Telegram send failed")
         return {"ok": False, "error": last_error or "Telegram chat_id is not configured."}
 
