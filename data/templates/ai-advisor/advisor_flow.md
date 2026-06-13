@@ -1,111 +1,107 @@
 # RAT6 AI Advisor Flow
 
-This document is the business-flow map for the RAT6 advisor package. It helps an LLM understand the bot without receiving the full source code.
+File này là bản đồ nghiệp vụ để AI hiểu RAT6 mà không cần nhận full source code. Hãy xem đây là guide diễn giải, không phải runtime config.
 
-## Advisor Mission
-Review RAT6 as a trader/risk-manager assistant. Diagnose performance, risk, module behavior, missed profit, bad exits, repeated blocks, config drift, and suspicious settings. Do not propose direct automatic order placement, do not claim web research, and do not ask the bot to edit config automatically.
+## Nhiệm vụ
+Review RAT6 như một trader/risk manager: tìm nguyên nhân lời/lỗ, rủi ro, missed profit, bad exit, repeated block, config drift, module bất thường và bối cảnh thị trường liên quan.
 
-## Package Reading Order
-1. Read advisor_flow.md first.
-2. Read user_context.md for the operator's current question and risk preference.
-3. Read technical_settings.json for current config and runtime snapshots.
-4. Read advisor_export.xlsx for trade evidence, summaries, events, and config changes.
-5. If included, read advisor_response.md only as prior advice; verify it against current data.
+Không đề xuất đặt lệnh tự động, không yêu cầu bot tự sửa config, không bịa hành vi module khi thiếu bằng chứng.
 
-## Package Files
-- advisor_prompt.md: Opening instructions sent as API instructions or pasted into web chat.
-- advisor_flow.md: Business flow and glossary.
-- user_context.md: Human notes from the operator.
-- technical_settings.json: Auto-generated config/state snapshot. Do not edit by hand.
-- advisor_export.xlsx: Auto-generated trade/event/config workbook. Do not edit by hand.
-- advisor_response.md: Latest saved LLM response.
+## Thứ tự đọc package
+1. advisor_flow.md: hiểu luồng nghiệp vụ, glossary và cách diễn giải field.
+2. user_context.md: hiểu câu hỏi/mục tiêu hiện tại của operator.
+3. technical_settings.json: đọc config hiện tại, runtime snapshot, advisor_guide và state module.
+4. advisor_export.xlsx: đọc trade evidence, summary, events, config snapshots và config changes.
+5. previous_advisor_response.md nếu có: chỉ là lời khuyên cũ để đối chiếu, không phải fact.
 
-## Config Layers
-- settings.config_py: Static/default values imported from config.py.
-- settings.active_global: Current global brain settings loaded from brain_settings.json.
-- settings.active_by_symbol: Effective merged settings for each active symbol.
-- settings.raw_sources: Raw snapshots of JSON/state files such as brain_settings.json, symbol_overrides.json, tsl_settings.json, presets_config.json, grid_settings.json, hedge_settings.json, bot_state.json, grid_state.json, hedge_state.json, live_signals.json, and system_meta.json.
+## File trong package
+- advisor_prompt.md: instruction chính gửi vào API hoặc paste vào web UI.
+- advisor_flow.md: bản đồ nghiệp vụ và quy tắc đọc hiểu.
+- user_context.md: ghi chú thủ công của operator.
+- technical_settings.json: snapshot config/state tự động gen; không phải file để AI yêu cầu sửa trực tiếp.
+- advisor_export.xlsx: workbook evidence tự động gen theo số ngày export.
+- advisor_response.md: câu trả lời mới nhất của AI sau khi gọi API.
 
-Conflict rule: for symbol-specific review prefer active_by_symbol; for global review prefer active_global; for module-local review inspect raw source files; use config_py only as default/background.
+## Quy tắc dùng web
+- Dữ liệu nội bộ RAT6 là nguồn chính để chẩn đoán bot/config/trade.
+- Nếu web_search được bật, phải kiểm tra bối cảnh thị trường cho symbol active hoặc symbol có trade trong export.
+- Web chỉ dùng để bổ sung bối cảnh thị trường bên ngoài RAT6 khi nó tác động trực tiếp tới chẩn đoán: volatility, trend regime, spread/risk event, news shock, macro, liquidation/funding, Fed/ETF/regulation, signal quality, SL/TP/TSL/BE behavior hoặc operator action.
+- Phải tách rõ nhận định từ nội bộ và nhận định từ web.
+- Không được nói nguyên nhân thị trường nếu web/source không đủ bằng chứng.
+- Không viết bản tin tổng hợp. Nếu web context không làm thay đổi cách hiểu dữ liệu RAT6, hãy nói ngắn trong 1-2 dòng.
 
-## Advisor Workbook Sheets
-- closed_trades: Trade result evidence including close reason, trigger, tactic, MAE/MFE, source type, module tags, and config snapshot id.
-- open_trades: Current open trade evidence.
-- config_snapshots: Stored config snapshots by id.
-- config_changes: Diffs between snapshots.
-- events: Advisor/system/module events.
-- summary_daily, summary_symbol, summary_timeframe, summary_signal_group, summary_close_reason, summary_module: Aggregates for diagnosis.
-- trade_config_map: Ticket-to-config-snapshot mapping.
+## Config layers trong technical_settings.json
+- settings.config_py: default/static từ config.py, chỉ dùng làm nền.
+- settings.active_global: global settings đang active.
+- settings.active_by_symbol: effective settings theo symbol; ưu tiên khi review BTCUSD/ETHUSD/XAUUSD.
+- settings.raw_sources: snapshot file runtime như brain_settings.json, symbol_overrides.json, tsl_settings.json, grid_settings.json, hedge_settings.json, bot_state.json, grid_state.json, hedge_state.json, live_signals.json, system_meta.json.
 
-## Core Trading Modes
-- Manual: Operator-triggered orders using manual magic/comment classification.
-- Bot: Signal-driven automatic order flow using safeguards, Entry/Exit, lot, SL/TP, TSL, DCA/PCA, REV_C.
-- GRID: Isolated grid strategy with its own settings/state, magic, boundaries, levels, spacing, and safeguards.
-- HEDGE: Isolated dual-leg hedge strategy with paired BUY/SELL entry, survivor protection, and post-leg TSL.
+Conflict rule: review symbol thì ưu tiên active_by_symbol; review global risk thì ưu tiên active_global; review module thì đọc raw source tương ứng; config_py chỉ dùng làm default/background.
 
-## Timeframe Groups
-- G0: Macro/base timeframe.
-- G1: Trend/context timeframe.
-- G2: Execution/swing timeframe, often used for SL/TP references.
-- G3: Fast confirmation timeframe.
+## Sheet chính trong advisor_export.xlsx
+- closed_trades: trade đã đóng, gồm symbol, source type, close reason, trigger, tactic, MAE/MFE, module tags, config snapshot id.
+- open_trades: trade đang mở, floating PnL, tactic, market mode, MAE/MFE và snapshot id.
+- config_snapshots: snapshot config theo id.
+- config_changes: diff giữa các snapshot.
+- events: event hệ thống/module/advisor.
+- summary_daily, summary_symbol, summary_timeframe, summary_signal_group, summary_close_reason, summary_module: aggregate để chẩn đoán.
+- trade_config_map: map ticket với config snapshot.
 
-## High-Level Bot Order Flow
-1. Market data and indicators produce symbol context.
-2. Signal engine evaluates configured groups and produces BUY/SELL/NONE.
-3. Router decides whether entry, DCA, PCA, REV_C, GRID, HEDGE, or manual action should be considered.
-4. Safeguards/checklists can block entry before lot/SL/TP are finalized.
-5. Entry/Exit may run as preview-only or real entry gate.
-6. SL, TP, lot, tactic labels, parent/child relation, session id, and comments are resolved.
-7. MT5 order is sent and trade-open metadata/config snapshot is recorded.
-8. Runtime managers apply TSL, BE, BE_CASH, REV_C, DCA/PCA, GRID basket logic, or HEDGE survivor logic.
-9. Closed trades are exported into advisor_export.xlsx.
+## Nguồn trade
+- MANUAL: lệnh do operator kích hoạt hoặc magic/comment thuộc manual.
+- BOT: order flow theo signal/safeguard/EntryExit/SLTP/TSL/DCA/PCA/REV_C.
+- GRID: chiến lược grid riêng, có settings/state/magic/basket logic riêng.
+- HEDGE: chiến lược mở cặp BUY/SELL, survivor protection và TSL sau khi một leg đóng.
 
-## Safeguards And Gates
-Common blocks include market hours, re-entry locks, max daily loss, max open positions, max trades/day, max losing streak, ping, spread, cooldown, Entry/Exit WAIT/BLOCK, missing swing/ATR data, SL too tight, and strict minimum lot rejection.
+## Timeframe groups
+- G0: macro/base timeframe.
+- G1: trend/context timeframe.
+- G2: execution/swing timeframe, hay dùng cho SL/TP reference.
+- G3: fast confirmation timeframe.
 
-Repeated SAFEGUARD_FAIL can mean risk gates are working. If good trades are missed, compare block reason frequency, market mode, spread/ping, cooldown, and Entry/Exit WAIT.
+## Luồng bot cấp cao
+1. Market data và indicator tạo symbol context.
+2. Signal engine đánh giá các group và sinh BUY/SELL/NONE.
+3. Router xét entry, DCA, PCA, REV_C, GRID, HEDGE hoặc manual action.
+4. Safeguards/checklists có thể block entry trước khi lot/SL/TP final.
+5. Entry/Exit có thể là preview-only hoặc real entry gate.
+6. SL, TP, lot, tactic label, parent/child, session id và comment được resolve.
+7. MT5 order được gửi, metadata/config snapshot được ghi.
+8. Runtime managers chạy TSL, BE, BE_CASH, REV_C, DCA/PCA, GRID basket hoặc HEDGE survivor.
+9. Closed trades được export vào advisor_export.xlsx.
 
-## Entry/Exit
-Entry/Exit is a tactic layer. If preview-only, WAIT/BLOCK is not a real order block. If enabled and not preview-only, WAIT/BLOCK can prevent entry. Compare entry_exit_tactic with close reason, MAE/MFE, and signal group.
+## Safeguards và gates
+Block phổ biến: market hours, re-entry lock, max daily loss, max open positions, max trades/day, losing streak, ping, spread, cooldown, Entry/Exit WAIT/BLOCK, thiếu swing/ATR, SL quá gần, lot nhỏ hơn minimum.
 
-## SL, TP, Lot, And Risk
-SL/TP can come from manual fields, swing-based logic, RR/percent/cash logic, HEDGE rules, or GRID TP-only behavior. Lot can be fixed, account-risk based, or module-specific. Compare lot size with symbol volatility, SL distance, account risk percent, max lot cap, DCA/PCA exposure, GRID total lot, and HEDGE max pairs.
+Nếu nhiều SAFEGUARD_FAIL, hãy phân biệt gate đang bảo vệ đúng hay đang bỏ lỡ cơ hội tốt.
 
-## Runtime Modules
-- TSL: General trailing stop layer.
-- BE: Break-even stop behavior.
-- BE_CASH: Cash/profit lock behavior.
-- STEP_R: R-multiple step trailing.
-- SWING: Swing-point trailing or SL/TP reference.
-- PSAR_TRAIL: Parabolic SAR trailing.
-- REV_C: Reverse/recovery close logic.
-- DCA: Adds/averages into adverse basket by rule.
-- PCA: Adds into winning/confirmed basket by rule.
-- A.CUT or ANTI_CASH: Giveback/cash protection.
-- GRID: Grid module.
-- HEDGE: Hedge module.
+## Module glossary
+- TSL: trailing stop tổng.
+- BE: break-even stop.
+- BE_CASH: khóa lợi nhuận theo cash/fee.
+- STEP_R: trailing theo R multiple.
+- SWING: trailing hoặc reference theo swing point.
+- PSAR_TRAIL: trailing theo Parabolic SAR.
+- REV_C: reverse/recovery close.
+- DCA: add/average khi adverse.
+- PCA: add khi đang thắng/confirmed.
+- A.CUT / ANTI_CASH: chống giveback/cash protection.
+- GRID: grid module.
+- HEDGE: hedge module.
 
-## GRID Rules
-GRID uses grid_magic, [GRID] comments, grid_state.json, and grid_settings.json. It does not write BOT/manual runtime counters. Boundaries use manual upper/lower first, otherwise swing high/low. Spacing can be ATR_DYNAMIC, ARITHMETIC, or GEOMETRIC. GRID V1 opens market orders with TP only; per-order SL is not part of V1.
+## MAE/MFE và close reason
+- MAE cao trước khi có profit: entry timing, SL distance hoặc averaging stress.
+- MFE cao nhưng final PnL thấp: exit/trailing/giveback issue.
+- Nhiều SL sau MFE tốt: nghi TSL/BE/giveback/stop placement.
+- Basket close cần phân tích theo GRID/HEDGE/DCA/PCA, không gom chung với BOT thường.
 
-GRID safeguards include MAX_GRID_ORDERS, MAX_TOTAL_LOT, MAX_BASKET_DRAWDOWN, GRID_MAX_DAILY_LOSS, GRID_MAX_TRADES_PER_DAY, BASKET_TP_USD, BASKET_SL_USD, CHECK_PING, and CHECK_SPREAD.
+## Format trả lời khuyến nghị
+## Tóm tắt điều hành
+## Bằng chứng nội bộ RAT6
+## Bối cảnh web/thị trường
+## Chẩn đoán
+## Rủi ro chính
+## Hành động đề xuất
+## Độ tin cậy / Thiếu dữ liệu
 
-## HEDGE Rules
-HEDGE owns hedge_state.json and hedge_settings.json. If signal/EntryExit filters are enabled, they must pass. HEDGE opens BUY and SELL together with same lot. While both legs are open, HEDGE does not run TSL on individual legs. After one leg closes, SURVIVOR_PROTECT runs before TSL on the remaining leg.
-
-## MAE/MFE And Close Reasons
-- MAE: Maximum adverse excursion in USD.
-- MFE: Maximum favorable excursion in USD.
-- High MFE with low final profit suggests exit/trailing/giveback issue.
-- High MAE before profit suggests entry timing, SL distance, or DCA/PCA stress.
-- Many SL closes after high MFE suggest trailing/BE/giveback issues.
-- Many basket closes require GRID/HEDGE/DCA/PCA basket analysis.
-
-## Recommended Answer Format
-1. Executive summary.
-2. Key evidence from sheets/fields.
-3. Diagnosis by source type: BOT, MANUAL, GRID, HEDGE.
-4. Risk issues.
-5. Module review.
-6. Suggested manual review actions, not automatic edits.
-7. Uncertainty and missing evidence.
+Ưu tiên câu trả lời gọn để đọc trên Telegram, khoảng 700-1000 từ và 1-2 chunks khi dữ liệu ít hoặc trung bình. Nếu có nhiều evidence quan trọng, được trả lời dài hơn nhưng phải giữ cấu trúc gọn. Không dùng markdown bold/italic, không dùng ký tự **, không dùng bảng Markdown, không paste URL dài trong thân bài. Mỗi kết luận lớn cần có evidence và confidence: Cao / Trung bình / Thấp. Không lặp lại quá nhiều số liệu nếu đã nêu ở evidence; các phần Chẩn đoán/Rủi ro/Hành động chỉ nhắc lại số liệu thật cần thiết.

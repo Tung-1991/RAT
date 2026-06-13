@@ -8,11 +8,12 @@ import urllib.request
 from . import history, paths
 
 
-DEFAULT_PROMPT = """You are an AI Advisor for RAT6. Analyze only the provided internal package.
-Read advisor_flow.md first, then advisor_guide inside technical_settings.json before interpreting internal keys.
-Do not suggest automatic trading actions. Do not claim web research. Do not tell the bot to edit config.
-Act like a trader/risk manager reviewing performance, risk, close reasons, modules, and config history.
-When uncertain about an internal key, say what evidence you used instead of inventing behavior."""
+DEFAULT_PROMPT = """Bạn là AI Advisor cho RAT6. Luôn trả lời bằng tiếng Việt, chuyên nghiệp, sắc gọn và dựa trên bằng chứng.
+Đọc advisor_flow.md trước để hiểu RAT6, sau đó đọc user_context.md, technical_settings.json, advisor_export.xlsx và previous_advisor_response.md nếu có.
+Nếu web_search được bật, bắt buộc kiểm tra bối cảnh thị trường mới cho symbol active hoặc symbol có trade trong export; chỉ giữ thông tin web có tác động trực tiếp tới chẩn đoán RAT6.
+Tách rõ dữ liệu nội bộ RAT6 với bối cảnh thị trường/web. Không viết bản tin tổng hợp, không lặp lại quá nhiều số liệu nếu đã nêu ở evidence.
+Không dùng markdown bold/italic, không dùng ký tự **, không paste URL dài trong thân bài, không dùng bảng Markdown. Ưu tiên report khoảng 700-1000 từ và 1-2 Telegram chunks; nếu dữ liệu phức tạp, được dài hơn nhưng phải gọn và không lặp số liệu.
+Không đề xuất đặt lệnh tự động, không yêu cầu bot tự sửa config, và không biến lời khuyên trước đó thành sự thật nếu chưa kiểm chứng bằng dữ liệu hiện tại."""
 
 TECHNICAL_SETTINGS_LIMIT = 1000000
 PROMPT_LIMIT = 200000
@@ -38,6 +39,7 @@ DEFAULT_MODEL = "gpt-5.4-mini"
 
 DEFAULT_API_SETTINGS = {
     "model": DEFAULT_MODEL,
+    "web_search_enabled": True,
     "advisor_prompt_limit": PROMPT_LIMIT,
     "advisor_flow_limit": ADVISOR_FLOW_LIMIT,
     "user_context_limit": USER_CONTEXT_LIMIT,
@@ -54,6 +56,20 @@ def _safe_int(value, default, min_value=1, max_value=5000000):
     except Exception:
         return default
     return max(min_value, min(max_value, parsed))
+
+
+def _safe_bool(value, default=False):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on", "y"}:
+            return True
+        if normalized in {"0", "false", "no", "off", "n"}:
+            return False
+    return bool(default)
 
 
 def normalize_model(value):
@@ -119,6 +135,7 @@ def load_api_settings():
         max_value=128000,
     )
     settings["model"] = normalize_model(settings.get("model"))
+    settings["web_search_enabled"] = _safe_bool(settings.get("web_search_enabled"), True)
     if os.path.exists(legacy_path) and (source_path == legacy_path or os.path.exists(path)):
         try:
             save_api_settings(settings)
@@ -142,6 +159,7 @@ def load_api_settings_from_dict(data):
     data = data or {}
     return {
         "model": normalize_model(data.get("model")),
+        "web_search_enabled": _safe_bool(data.get("web_search_enabled"), True),
         "advisor_prompt_limit": _safe_int(
             data.get("advisor_prompt_limit"),
             PROMPT_LIMIT,
@@ -325,6 +343,7 @@ def estimate_api_payload(include_previous_response=False):
         "max_output_tokens": max_output_tokens,
         "context_remaining_tokens": context_remaining_tokens,
         "fits_context": context_remaining_tokens >= 0,
+        "web_search_enabled": bool(settings.get("web_search_enabled")),
         "settings": settings,
         "breakdown": breakdown,
     }
@@ -376,6 +395,8 @@ def send_package_to_api(prompt=None, include_previous_response=False):
         "input": body_text,
         "max_output_tokens": estimate.get("max_output_tokens", DEFAULT_MAX_OUTPUT_TOKENS),
     }
+    if settings.get("web_search_enabled"):
+        payload["tools"] = [{"type": "web_search"}]
     req = urllib.request.Request(
         endpoint,
         data=json.dumps(payload).encode("utf-8"),

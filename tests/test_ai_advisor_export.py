@@ -351,7 +351,7 @@ def test_generate_package_creates_advisor_response_template(monkeypatch, tmp_pat
     with open(paths.advisor_response_path(), "r", encoding="utf-8") as f:
         text = f.read()
     assert "No API response has been saved yet." in text
-    assert "AI Advisor for RAT6" in api_client.load_advisor_prompt()
+    assert "AI Advisor cho RAT6" in api_client.load_advisor_prompt()
     assert api_client.load_api_settings()["technical_settings_limit"] == 1000000
 
 
@@ -496,6 +496,80 @@ def test_api_client_sends_max_output_tokens(monkeypatch, tmp_path):
     assert seen_payloads[-1]["max_output_tokens"] == 4096
 
 
+def test_api_client_sends_web_search_tool_by_default(monkeypatch, tmp_path):
+    import json
+
+    _patch_account_dir(monkeypatch, tmp_path)
+    export_wb = _new_history_workbook()
+    export_wb.save(paths.export_path())
+    with open(paths.technical_settings_path(), "w", encoding="utf-8") as f:
+        f.write("{}")
+    with open(paths.user_context_path(), "w", encoding="utf-8") as f:
+        f.write("context")
+    with open(paths.advisor_flow_path(), "w", encoding="utf-8") as f:
+        f.write("flow marker")
+
+    seen_payloads = []
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return b'{"output_text":"advisor answer"}'
+
+    def fake_urlopen(req, **_kwargs):
+        seen_payloads.append(json.loads(req.data.decode("utf-8")))
+        return FakeResponse()
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(api_client.urllib.request, "urlopen", fake_urlopen)
+
+    assert api_client.send_package_to_api()["ok"] is True
+    assert seen_payloads[-1]["tools"] == [{"type": "web_search"}]
+
+
+def test_api_client_omits_web_search_tool_when_disabled(monkeypatch, tmp_path):
+    import json
+
+    _patch_account_dir(monkeypatch, tmp_path)
+    export_wb = _new_history_workbook()
+    export_wb.save(paths.export_path())
+    with open(paths.technical_settings_path(), "w", encoding="utf-8") as f:
+        f.write("{}")
+    with open(paths.user_context_path(), "w", encoding="utf-8") as f:
+        f.write("context")
+    with open(paths.advisor_flow_path(), "w", encoding="utf-8") as f:
+        f.write("flow marker")
+    api_client.save_api_settings({"web_search_enabled": False})
+
+    seen_payloads = []
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return b'{"output_text":"advisor answer"}'
+
+    def fake_urlopen(req, **_kwargs):
+        seen_payloads.append(json.loads(req.data.decode("utf-8")))
+        return FakeResponse()
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(api_client.urllib.request, "urlopen", fake_urlopen)
+
+    assert api_client.send_package_to_api()["ok"] is True
+    assert "tools" not in seen_payloads[-1]
+    assert api_client.load_api_settings()["web_search_enabled"] is False
+
+
 def test_api_client_blocks_payload_that_exceeds_context(monkeypatch, tmp_path):
     _patch_account_dir(monkeypatch, tmp_path)
     export_wb = _new_history_workbook()
@@ -554,6 +628,7 @@ def test_api_client_estimates_payload(monkeypatch, tmp_path):
     assert estimate["tokens"] > 0
     assert estimate["input_cost_usd"] > 0
     assert estimate["model"] == "gpt-5.4-mini"
+    assert estimate["web_search_enabled"] is True
     names = [item["name"] for item in estimate["breakdown"]]
     assert "advisor_prompt.md" in names
     assert "advisor_flow.md" in names

@@ -208,7 +208,7 @@ def open_advisor_popup(app):
 
     tg_body = _speed_up_scroll(ctk.CTkScrollableFrame(tab_telegram, fg_color="transparent"), factor=12)
     tg_body.pack(fill="both", expand=True, padx=10, pady=10)
-    tg_body.grid_columnconfigure(1, weight=1)
+    tg_body.grid_columnconfigure((0, 1), weight=1, uniform="telegram_cols")
 
     tg_status = ctk.CTkFrame(tg_body, fg_color="#252526", corner_radius=6)
     tg_status.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 10))
@@ -235,72 +235,58 @@ def open_advisor_popup(app):
         font=("Consolas", 11, "bold"),
     ).pack(side="left", fill="x", expand=True)
 
-    ctk.CTkCheckBox(
-        tg_body,
-        text="Gui AI report",
-        variable=var_tg_enabled,
-        font=("Roboto", 12, "bold"),
-        checkbox_width=18,
-        checkbox_height=18,
-    ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(0, 10))
+    tg_settings_col = ctk.CTkFrame(tg_body, fg_color="#252526", corner_radius=6)
+    tg_settings_col.grid(row=1, column=0, sticky="nsew", padx=(0, 5), pady=(0, 10))
+    tg_settings_col.grid_columnconfigure(1, weight=1)
     ctk.CTkLabel(
-        tg_body,
-        text="AI API tra loi -> gui sang RAT-report.",
-        font=("Roboto", 10, "bold"),
-        text_color="#FBC02D",
-        anchor="w",
-    ).grid(row=2, column=0, columnspan=2, sticky="ew", pady=(0, 8))
-    ctk.CTkCheckBox(
-        tg_body,
-        text="Nghe RAT-control",
-        variable=var_tg_control_enabled,
+        tg_settings_col,
+        text="Telegram Settings",
         font=("Roboto", 12, "bold"),
-        checkbox_width=18,
-        checkbox_height=18,
-    ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(0, 10))
-    ctk.CTkLabel(
-        tg_body,
-        text="Nhan /status, /order va button approve tu Control chat.",
-        font=("Roboto", 10, "bold"),
-        text_color="#FBC02D",
-        anchor="w",
-    ).grid(row=4, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+        text_color="#80DEEA",
+    ).grid(row=0, column=0, columnspan=2, sticky="w", padx=10, pady=(8, 6))
 
-    ctk.CTkCheckBox(
-        tg_body,
-        text="Ban signal khi bot OFF",
-        variable=var_tg_signal_enabled,
-        font=("Roboto", 12, "bold"),
-        checkbox_width=18,
-        checkbox_height=18,
-    ).grid(row=5, column=0, columnspan=2, sticky="w", pady=(0, 10))
+    tg_rules_col = ctk.CTkFrame(tg_body, fg_color="#252526", corner_radius=6)
+    tg_rules_col.grid(row=1, column=1, sticky="nsew", padx=(5, 0), pady=(0, 10))
+    tg_rules_col.grid_columnconfigure(1, weight=1)
     ctk.CTkLabel(
-        tg_body,
-        text="Chi tao pending proposal. Owner approve moi vao lenh.",
-        font=("Roboto", 10, "bold"),
-        text_color="#FBC02D",
-        anchor="w",
-    ).grid(row=6, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+        tg_rules_col,
+        text="Rules / Cooldown",
+        font=("Roboto", 12, "bold"),
+        text_color="#80DEEA",
+    ).grid(row=0, column=0, columnspan=2, sticky="w", padx=10, pady=(8, 6))
 
-    def _tg_row(label, variable, row):
-        ctk.CTkLabel(tg_body, text=label, font=("Roboto", 11, "bold"), text_color="#D7DCE2").grid(
-            row=row, column=0, sticky="w", pady=5
+    def _tg_row(parent, label, variable, row):
+        ctk.CTkLabel(parent, text=label, font=("Roboto", 11, "bold"), text_color="#D7DCE2").grid(
+            row=row, column=0, sticky="w", padx=(10, 0), pady=5
         )
-        ctk.CTkEntry(tg_body, textvariable=variable, height=28).grid(
-            row=row, column=1, sticky="ew", padx=(10, 0), pady=5
+        ctk.CTkEntry(parent, textvariable=variable, height=28).grid(
+            row=row, column=1, sticky="ew", padx=10, pady=5
         )
 
-    _tg_row("Token ENV", var_tg_env, 7)
-    _tg_row("RAT-report chat ID", var_tg_report_chat, 8)
-    _tg_row("RAT-control chat ID", var_tg_control_chat, 9)
-    _tg_row("Owner user ID", var_tg_owner_id, 10)
-    _tg_row("Operator IDs", var_tg_operator_ids, 11)
-    _tg_row("Poll giay", var_tg_poll_interval, 12)
-    _tg_row("Cooldown signal phut", var_tg_signal_cooldown, 13)
-    _tg_row("Chunk report", var_tg_chunk, 14)
+    def _tg_check(parent, label, variable, row):
+        ctk.CTkCheckBox(
+            parent,
+            text=label,
+            variable=variable,
+            font=("Roboto", 12, "bold"),
+            checkbox_width=18,
+            checkbox_height=18,
+        ).grid(row=row, column=0, columnspan=2, sticky="w", padx=10, pady=6)
+
+    _tg_row(tg_settings_col, "Token ENV", var_tg_env, 1)
+    _tg_row(tg_settings_col, "RAT-report chat ID", var_tg_report_chat, 2)
+    _tg_row(tg_settings_col, "RAT-control chat ID", var_tg_control_chat, 3)
+    _tg_row(tg_settings_col, "Owner user ID", var_tg_owner_id, 4)
+    _tg_row(tg_settings_col, "Chunk report", var_tg_chunk, 5)
+
+    _tg_check(tg_rules_col, "Gui AI report", var_tg_enabled, 1)
+    _tg_check(tg_rules_col, "Nghe RAT-control", var_tg_control_enabled, 2)
+    _tg_check(tg_rules_col, "Ban signal khi bot OFF", var_tg_signal_enabled, 3)
+    _tg_row(tg_rules_col, "Poll giay", var_tg_poll_interval, 4)
+    _tg_row(tg_rules_col, "Cooldown signal phut", var_tg_signal_cooldown, 5)
 
     tg_buttons = ctk.CTkFrame(tg_body, fg_color="transparent")
-    tg_buttons.grid(row=15, column=0, columnspan=2, sticky="ew", pady=(12, 0))
+    tg_buttons.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(2, 0))
     tg_buttons.grid_columnconfigure((0, 1), weight=1)
 
     def save_telegram_settings():
@@ -314,7 +300,7 @@ def open_advisor_popup(app):
                     "report_chat_id": var_tg_report_chat.get(),
                     "control_chat_id": var_tg_control_chat.get(),
                     "owner_user_id": var_tg_owner_id.get(),
-                    "operator_user_ids": var_tg_operator_ids.get(),
+                    "operator_user_ids": "",
                     "control_poll_interval_seconds": var_tg_poll_interval.get(),
                     "signal_proposal_cooldown_minutes": var_tg_signal_cooldown.get(),
                     "chunk_size": var_tg_chunk.get(),
@@ -327,7 +313,7 @@ def open_advisor_popup(app):
             var_tg_report_chat.set(str(saved.get("report_chat_id", "")))
             var_tg_control_chat.set(str(saved.get("control_chat_id", "")))
             var_tg_owner_id.set(str(saved.get("owner_user_id", "")))
-            var_tg_operator_ids.set(str(saved.get("operator_user_ids", "")))
+            var_tg_operator_ids.set("")
             var_tg_poll_interval.set(str(saved.get("control_poll_interval_seconds", 2.0)))
             var_tg_signal_cooldown.set(str(saved.get("signal_proposal_cooldown_minutes", 15.0)))
             var_tg_chunk.set(str(saved.get("chunk_size", 3500)))
@@ -588,6 +574,7 @@ def open_advisor_popup(app):
     var_workbook_rows = tk.StringVar(value=str(api_settings.get("workbook_limit_rows", 80)))
     var_response_limit = tk.StringVar(value=str(api_settings.get("previous_response_limit", 60000)))
     var_max_output = tk.StringVar(value=str(api_settings.get("max_output_tokens", api_client.DEFAULT_MAX_OUTPUT_TOKENS)))
+    var_web_search = tk.BooleanVar(value=bool(api_settings.get("web_search_enabled", True)))
 
     def _edit_row(label, variable, row, values=None):
         ctk.CTkLabel(edit_top, text=label, font=("Roboto", 11, "bold"), text_color="#D7DCE2").grid(row=row, column=0, sticky="w", padx=10, pady=4)
@@ -597,16 +584,21 @@ def open_advisor_popup(app):
             ctk.CTkEntry(edit_top, textvariable=variable, width=150, height=28).grid(row=row, column=1, sticky="e", padx=10, pady=4)
 
     _edit_row("model", var_model, 2, values=api_client.SUPPORTED_MODELS)
-    _edit_row("advisor_prompt limit chars", var_prompt_limit, 3)
-    _edit_row("advisor_flow limit chars", var_flow_limit, 4)
-    _edit_row("user_context limit chars", var_context_limit, 5)
-    _edit_row("technical_settings limit chars", var_tech_limit, 6)
-    _edit_row("advisor_export rows/sheet", var_workbook_rows, 7)
-    _edit_row("advisor_response limit chars (if sent)", var_response_limit, 8)
-    _edit_row("max output tokens", var_max_output, 9)
+    _edit_row("technical_settings.json limit (CHAR)", var_tech_limit, 3)
+    _edit_row("advisor_export.xlsx rows/sheet", var_workbook_rows, 4)
+    _edit_row("max output tokens", var_max_output, 5)
+
+    ctk.CTkCheckBox(
+        edit_top,
+        text="Enable web search",
+        variable=var_web_search,
+        font=("Roboto", 11, "bold"),
+        checkbox_width=18,
+        checkbox_height=18,
+    ).grid(row=6, column=0, columnspan=2, sticky="w", padx=10, pady=(6, 4))
 
     limit_buttons = ctk.CTkFrame(edit_top, fg_color="transparent")
-    limit_buttons.grid(row=10, column=0, columnspan=2, sticky="ew", padx=10, pady=(6, 10))
+    limit_buttons.grid(row=7, column=0, columnspan=2, sticky="ew", padx=10, pady=(6, 10))
 
     def save_api_edit():
         try:
@@ -620,6 +612,7 @@ def open_advisor_popup(app):
                     "workbook_limit_rows": var_workbook_rows.get(),
                     "previous_response_limit": var_response_limit.get(),
                     "max_output_tokens": var_max_output.get(),
+                    "web_search_enabled": var_web_search.get(),
                 }
             )
             var_model.set(str(saved.get("model", api_client.DEFAULT_MODEL)))
@@ -630,6 +623,7 @@ def open_advisor_popup(app):
             var_workbook_rows.set(str(saved.get("workbook_limit_rows")))
             var_response_limit.set(str(saved.get("previous_response_limit")))
             var_max_output.set(str(saved.get("max_output_tokens")))
+            var_web_search.set(bool(saved.get("web_search_enabled", True)))
             app.preview_advisor_api_payload()
             app._set_advisor_status("API settings saved")
         except Exception as exc:

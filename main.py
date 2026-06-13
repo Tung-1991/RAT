@@ -3164,11 +3164,13 @@ class BotUI(ctk.CTk):
             max_output_tokens = estimate.get("max_output_tokens", 0)
             remaining_tokens = estimate.get("context_remaining_tokens", 0)
             context_status = "OK" if estimate.get("fits_context") else "TOO LARGE"
+            web_status = "ON" if estimate.get("web_search_enabled") else "OFF"
             text = (
                 f"API payload: ~{tokens:,} input tokens\n"
                 f"Input cost: ~${cost:.4f} | Output 2k/4k: ~${out_2k:.4f}/${out_4k:.4f}\n"
                 f"Model: {model} | Context: {context_status} "
-                f"(limit {context_tokens:,}, output reserve {max_output_tokens:,}, remain {remaining_tokens:,})"
+                f"(limit {context_tokens:,}, output reserve {max_output_tokens:,}, remain {remaining_tokens:,})\n"
+                f"Web Search: {web_status} | Tool cost is not included in this token preview"
             )
             detail_parts = []
             for item in estimate.get("breakdown", []):

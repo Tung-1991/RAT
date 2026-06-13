@@ -31,7 +31,7 @@ ADVISOR_FLOW_TEMPLATE = """# RAT6 AI Advisor Flow
 This document is the business-flow map for the RAT6 advisor package. It is designed so an LLM can understand the bot without receiving the full source code. Treat this file as the interpretation guide, not as runtime config.
 
 ## Advisor mission
-The advisor should review RAT6 as a trader/risk-manager assistant. It should diagnose performance, risk, module behavior, missed profit, bad exits, repeated blocks, config drift, and suspicious settings. It must not propose direct automatic order placement, must not claim web research, and must not tell the bot to edit config by itself.
+The advisor should review RAT6 as a trader/risk-manager assistant. It should diagnose performance, risk, module behavior, missed profit, bad exits, repeated blocks, config drift, suspicious settings, and external market context when web search is available. It must not propose direct automatic order placement and must not tell the bot to edit config by itself.
 
 ## Package reading order
 1. Read advisor_flow.md first to understand the business flow and glossary.
@@ -39,6 +39,12 @@ The advisor should review RAT6 as a trader/risk-manager assistant. It should dia
 3. Read technical_settings.json to inspect current configuration and runtime snapshots.
 4. Read advisor_export.xlsx to inspect trade evidence, summaries, events, config snapshots, and config changes.
 5. If the UI option "Send advisor_response.md with API" is enabled, read previous_advisor_response.md as prior advice only. Prior advice is not fact; verify it against current data.
+
+## Web context rules
+- Internal RAT6 data is the primary source for bot/config/trade diagnosis.
+- When web search is available, use it for external market context such as news, macro, crypto, XAU, risk-on/risk-off, Fed, ETF, regulation, liquidation, funding, or fresh price drivers.
+- Separate internal RAT6 evidence from web/market context.
+- Do not claim a market/news cause without enough source evidence.
 
 ## Package files
 - advisor_flow.md: Human-readable business-flow map and glossary.
@@ -367,15 +373,17 @@ Advisor interpretation:
 - Missing master CSV or snapshot warnings reduce confidence in historical diagnosis.
 
 ## Recommended advisor answer format
-Return concise but evidence-based output:
+Always answer in Vietnamese. Return concise but evidence-based output:
 
-1. Executive summary: 3-6 bullets.
-2. Key evidence: cite sheet/field names, symbols, modules, close reasons, and config ids when available.
-3. Diagnosis by source type: BOT, MANUAL, GRID, HEDGE.
-4. Risk issues: exposure, lot, SL/TP, daily loss, basket drawdown, cooldown, spread/ping.
-5. Module review: TSL/BE_CASH/REV_C/DCA/PCA/GRID/HEDGE/EntryExit as relevant.
-6. Suggested manual review actions: safe config checks for the operator to consider, not automatic edits.
-7. Uncertainty: list missing evidence or assumptions.
+1. Tóm tắt điều hành.
+2. Bằng chứng nội bộ RAT6.
+3. Bối cảnh web/thị trường.
+4. Chẩn đoán.
+5. Rủi ro chính.
+6. Hành động đề xuất: safe config checks for the operator to consider, not automatic edits.
+7. Độ tin cậy / Thiếu dữ liệu.
+
+Important conclusions should include short evidence and confidence: Cao / Trung bình / Thấp.
 
 ## Strict response rules
 - Separate facts from assumptions.
