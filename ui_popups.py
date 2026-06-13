@@ -386,6 +386,7 @@ def open_advisor_popup(app):
                 f"env={diag.get('token_env')} "
                 f"token_present={diag.get('token_present')} "
                 f"token_len={diag.get('token_length')} "
+                f"insecure_ssl={diag.get('insecure_ssl')} "
                 f"chat={diag.get('report_chat_id')}",
                 target="manual",
             )
@@ -408,6 +409,7 @@ def open_advisor_popup(app):
                     f"Settings: {result_diag.get('settings_path')}\n"
                     f"ENV: {result_diag.get('token_env')} "
                     f"(present={result_diag.get('token_present')}, len={result_diag.get('token_length')})\n"
+                    f"Insecure SSL: {result_diag.get('insecure_ssl')}\n"
                     f"Chat ID: {result_diag.get('report_chat_id')}"
                 )
                 app._set_advisor_status("Telegram report ERR", err)

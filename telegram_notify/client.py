@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import json
 import os
+import ssl
 import time
 import urllib.error
 import urllib.parse
@@ -42,6 +43,20 @@ def get_env_value(name):
     return ""
 
 
+def _env_truthy(name):
+    return str(get_env_value(name) or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _is_ssl_verify_error(exc):
+    if isinstance(exc, ssl.SSLCertVerificationError):
+        return True
+    reason = getattr(exc, "reason", None)
+    if isinstance(reason, ssl.SSLCertVerificationError):
+        return True
+    text = str(exc).lower()
+    return "certificate_verify_failed" in text or "self-signed certificate" in text
+
+
 def _chunk_text(text, chunk_size=3500):
     text = str(text or "")
     try:
@@ -71,13 +86,23 @@ def _chat_id_candidates(chat_id):
 
 
 class TelegramClient:
-    def __init__(self, token=None, token_env="TELE_BOT_KEY", timeout=20):
+    def __init__(self, token=None, token_env="TELE_BOT_KEY", timeout=20, allow_insecure_ssl=None):
         self.token_env = token_env or "TELE_BOT_KEY"
         self.token = token or get_env_value(self.token_env)
         self.timeout = timeout
+        self.allow_insecure_ssl = _env_truthy("TELEGRAM_INSECURE_SSL") if allow_insecure_ssl is None else bool(allow_insecure_ssl)
 
     def enabled(self):
         return bool(self.token)
+
+    def _urlopen(self, req):
+        try:
+            return urllib.request.urlopen(req, timeout=self.timeout)
+        except Exception as exc:
+            if self.allow_insecure_ssl and _is_ssl_verify_error(exc):
+                context = ssl._create_unverified_context()
+                return urllib.request.urlopen(req, timeout=self.timeout, context=context)
+            raise
 
     def _request(self, method, payload):
         if not self.token:
@@ -86,7 +111,7 @@ class TelegramClient:
         data = urllib.parse.urlencode(payload).encode("utf-8")
         req = urllib.request.Request(url, data=data, method="POST")
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            with self._urlopen(req) as resp:
                 raw = resp.read().decode("utf-8", errors="replace")
             parsed = json.loads(raw) if raw else {}
             if not parsed.get("ok", False):
@@ -117,7 +142,7 @@ class TelegramClient:
             method="POST",
         )
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            with self._urlopen(req) as resp:
                 raw = resp.read().decode("utf-8", errors="replace")
             parsed = json.loads(raw) if raw else {}
             if not parsed.get("ok", False):

@@ -2,6 +2,7 @@
 import os
 
 from .client import TelegramClient, get_env_value
+from .client import _env_truthy
 from .settings import load_settings, settings_path
 
 
@@ -15,6 +16,7 @@ def report_diagnostics(settings=None):
         "token_env": token_env,
         "token_present": bool(token),
         "token_length": len(token),
+        "insecure_ssl": _env_truthy("TELEGRAM_INSECURE_SSL"),
         "report_chat_id": settings.get("report_chat_id", ""),
     }
 
