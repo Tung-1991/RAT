@@ -47,11 +47,121 @@ def _active_symbols(global_cfg):
     symbols = []
     raw = global_cfg.get("BOT_ACTIVE_SYMBOLS") or getattr(config, "BOT_ACTIVE_SYMBOLS", [])
     if isinstance(raw, (list, tuple, set)):
-        symbols.extend(str(s) for s in raw if s)
-    for sym in getattr(config, "COIN_LIST", []):
-        if sym not in symbols:
-            symbols.append(sym)
+        for symbol in raw:
+            symbol = str(symbol or "").strip().upper()
+            if symbol and symbol not in symbols:
+                symbols.append(symbol)
     return symbols
+
+
+def _known_symbols(global_cfg):
+    symbols = []
+    for source in (
+        getattr(config, "COIN_LIST", []),
+        getattr(config, "SYMBOLS", []),
+        global_cfg.get("BOT_ACTIVE_SYMBOLS", []),
+    ):
+        if isinstance(source, (list, tuple, set)):
+            for symbol in source:
+                symbol = str(symbol or "").strip().upper()
+                if symbol and symbol not in symbols:
+                    symbols.append(symbol)
+    return symbols
+
+
+def _add_symbol(out, symbol):
+    symbol = str(symbol or "").strip().upper()
+    if symbol:
+        out.add(symbol)
+
+
+def _symbols_from_live_signals(data):
+    symbols = set()
+    if not isinstance(data, dict):
+        return symbols
+    heartbeat = data.get("brain_heartbeat") or {}
+    for symbol in heartbeat.get("active_symbols", []) if isinstance(heartbeat, dict) else []:
+        _add_symbol(symbols, symbol)
+    for sig in data.get("pending_signals", []) or []:
+        if isinstance(sig, dict):
+            _add_symbol(symbols, sig.get("symbol"))
+    return symbols
+
+
+def _symbols_from_state(data):
+    symbols = set()
+    if not isinstance(data, dict):
+        return symbols
+
+    def walk(value):
+        if isinstance(value, dict):
+            if "symbol" in value:
+                _add_symbol(symbols, value.get("symbol"))
+            for key in ("active_symbols", "BOT_ACTIVE_SYMBOLS", "symbols"):
+                raw = value.get(key)
+                if isinstance(raw, (list, tuple, set)):
+                    for symbol in raw:
+                        _add_symbol(symbols, symbol)
+            for item in value.values():
+                walk(item)
+        elif isinstance(value, list):
+            for item in value:
+                walk(item)
+
+    walk(data)
+    return symbols
+
+
+def _symbols_from_workbook(path):
+    symbols = set()
+    if not path or not os.path.exists(path):
+        return symbols
+    try:
+        from openpyxl import load_workbook
+
+        wb = load_workbook(path, read_only=True, data_only=True)
+        for sheet_name in ("open_trades", "closed_trades"):
+            if sheet_name not in wb.sheetnames:
+                continue
+            ws = wb[sheet_name]
+            rows = ws.iter_rows(values_only=True)
+            headers = next(rows, None) or []
+            try:
+                symbol_idx = list(headers).index("Symbol")
+            except ValueError:
+                continue
+            for row in rows:
+                if row and symbol_idx < len(row):
+                    _add_symbol(symbols, row[symbol_idx])
+        try:
+            wb.close()
+        except Exception:
+            pass
+    except Exception:
+        return symbols
+    return symbols
+
+
+def _relevant_symbols(global_cfg, raw_sources):
+    symbols = set(_active_symbols(global_cfg))
+    sources = raw_sources or {}
+    live_data = ((sources.get("live_signals") or {}).get("data") or {})
+    bot_state = ((sources.get("bot_state") or {}).get("data") or {})
+    symbols.update(_symbols_from_live_signals(live_data))
+    symbols.update(_symbols_from_state(bot_state))
+    symbols.update(_symbols_from_workbook(paths.export_path()))
+    symbols.update(_symbols_from_workbook(paths.history_path()))
+
+    known = _known_symbols(global_cfg)
+    known_set = set(known)
+    if known_set:
+        symbols = {symbol for symbol in symbols if symbol in known_set}
+
+    ordered = []
+    for symbol in known + sorted(symbols):
+        if symbol in symbols and symbol not in ordered:
+            ordered.append(symbol)
+    return ordered
 
 
 def _source_paths():
@@ -121,24 +231,27 @@ def build_snapshot(reason="manual"):
 
     paths.ensure_advisor_dirs()
     global_cfg = storage_manager.load_brain_settings()
-    active_by_symbol = {}
-    for symbol in _active_symbols(global_cfg):
-        try:
-            active_by_symbol[symbol] = storage_manager.get_brain_settings_for_symbol(symbol)
-        except Exception as exc:
-            active_by_symbol[symbol] = {"_advisor_merge_error": str(exc)}
-
     source_paths = _source_paths()
     raw_sources = {
         name: {"path": path, "data": _read_json_file(path)}
         for name, path in source_paths.items()
         if path
     }
+    relevant_symbols = _relevant_symbols(global_cfg, raw_sources)
+    omitted_symbols = [symbol for symbol in _known_symbols(global_cfg) if symbol not in set(relevant_symbols)]
+    active_by_symbol = {}
+    for symbol in relevant_symbols:
+        try:
+            active_by_symbol[symbol] = storage_manager.get_brain_settings_for_symbol(symbol)
+        except Exception as exc:
+            active_by_symbol[symbol] = {"_advisor_merge_error": str(exc)}
 
     config_payload = {
         "config_py": _public_config_values(),
         "active_global": _json_safe(global_cfg),
         "active_by_symbol": _json_safe(active_by_symbol),
+        "relevant_symbols": relevant_symbols,
+        "omitted_symbols": omitted_symbols,
         "raw_sources": _json_safe(raw_sources),
     }
     snapshot_id = _stable_hash(config_payload)

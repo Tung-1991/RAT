@@ -5,7 +5,7 @@ from pathlib import Path
 
 from openpyxl import Workbook, load_workbook
 
-from ai_advisor import api_client, exporter, history, paths
+from ai_advisor import api_client, config_snapshot, exporter, history, paths
 
 
 def _patch_account_dir(monkeypatch, tmp_path):
@@ -496,6 +496,47 @@ def test_api_client_sends_max_output_tokens(monkeypatch, tmp_path):
     assert seen_payloads[-1]["max_output_tokens"] == 4096
 
 
+def test_api_client_local_tpm_guard_blocks_second_large_request(monkeypatch, tmp_path):
+    _patch_account_dir(monkeypatch, tmp_path)
+    export_wb = _new_history_workbook()
+    export_wb.save(paths.export_path())
+    with open(paths.technical_settings_path(), "w", encoding="utf-8") as f:
+        f.write("{}")
+    with open(paths.user_context_path(), "w", encoding="utf-8") as f:
+        f.write("context")
+    with open(paths.advisor_flow_path(), "w", encoding="utf-8") as f:
+        f.write("flow marker")
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return b'{"output_text":"advisor answer"}'
+
+    calls = {"count": 0}
+
+    def fake_urlopen(*_args, **_kwargs):
+        calls["count"] += 1
+        return FakeResponse()
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(api_client.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(api_client, "MODEL_TPM_LIMITS", {"gpt-5.4-mini": 15000})
+    monkeypatch.setattr(api_client, "LOCAL_REQUEST_OVERHEAD_TOKENS", 0)
+
+    first = api_client.send_package_to_api()
+    second = api_client.send_package_to_api()
+
+    assert first["ok"] is True
+    assert second["ok"] is False
+    assert "local TPM guard" in second["error"]
+    assert calls["count"] == 1
+
+
 def test_api_client_sends_web_search_tool_by_default(monkeypatch, tmp_path):
     import json
 
@@ -705,3 +746,60 @@ def test_api_client_applies_prompt_flow_and_context_limits(monkeypatch, tmp_path
     assert "U" * 1500 not in text
     assert "T" * 1500 in text
     assert "T" * 1600 not in text
+
+
+def test_technical_snapshot_limits_active_by_symbol_to_relevant_symbols(monkeypatch, tmp_path):
+    _patch_account_dir(monkeypatch, tmp_path)
+    live_path = tmp_path / "live_signals.json"
+    with open(live_path, "w", encoding="utf-8") as f:
+        f.write('{"pending_signals":[{"symbol":"ETHUSD","action":"BUY","signal_class":"ENTRY"}]}')
+
+    import core.storage_manager as storage_manager
+
+    monkeypatch.setattr(config_snapshot.config, "COIN_LIST", ["BTCUSD", "ETHUSD", "XAUUSD"], raising=False)
+    monkeypatch.setattr(storage_manager, "load_brain_settings", lambda: {"BOT_ACTIVE_SYMBOLS": ["BTCUSD"]})
+    monkeypatch.setattr(
+        storage_manager,
+        "get_brain_settings_for_symbol",
+        lambda symbol: {"symbol_marker": symbol},
+    )
+    monkeypatch.setattr(
+        config_snapshot,
+        "_source_paths",
+        lambda: {
+            "live_signals": str(live_path),
+        },
+    )
+
+    snapshot = config_snapshot.build_snapshot(reason="test")
+    settings = snapshot["settings"]
+
+    assert settings["active_by_symbol"] == {
+        "BTCUSD": {"symbol_marker": "BTCUSD"},
+        "ETHUSD": {"symbol_marker": "ETHUSD"},
+    }
+    assert "XAUUSD" in settings["omitted_symbols"]
+    assert settings["relevant_symbols"] == ["BTCUSD", "ETHUSD"]
+
+
+def test_technical_snapshot_includes_symbols_from_advisor_workbook(monkeypatch, tmp_path):
+    _patch_account_dir(monkeypatch, tmp_path)
+    wb = _new_history_workbook()
+    wb["open_trades"].append(["", "", "ETHUSD"])
+    wb.save(paths.export_path())
+
+    import core.storage_manager as storage_manager
+
+    monkeypatch.setattr(config_snapshot.config, "COIN_LIST", ["BTCUSD", "ETHUSD", "XAUUSD"], raising=False)
+    monkeypatch.setattr(storage_manager, "load_brain_settings", lambda: {"BOT_ACTIVE_SYMBOLS": ["BTCUSD"]})
+    monkeypatch.setattr(
+        storage_manager,
+        "get_brain_settings_for_symbol",
+        lambda symbol: {"symbol_marker": symbol},
+    )
+    monkeypatch.setattr(config_snapshot, "_source_paths", lambda: {})
+
+    settings = config_snapshot.build_snapshot(reason="test")["settings"]
+
+    assert set(settings["active_by_symbol"]) == {"BTCUSD", "ETHUSD"}
+    assert settings["omitted_symbols"] == ["XAUUSD"]

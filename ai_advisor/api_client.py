@@ -3,6 +3,7 @@ import json
 import os
 import shutil
 import ssl
+import time
 import urllib.error
 import urllib.request
 
@@ -36,6 +37,11 @@ MODEL_PRICING_PER_1M = {
     "gpt-5.5": {"input": 5.00, "output": 30.00},
 }
 DEFAULT_MODEL = "gpt-5.4-mini"
+LOCAL_TPM_WINDOW_SECONDS = 60
+LOCAL_REQUEST_OVERHEAD_TOKENS = 10000
+MODEL_TPM_LIMITS = {
+    "gpt-5.4-mini": 200000,
+}
 
 
 DEFAULT_API_SETTINGS = {
@@ -120,6 +126,90 @@ def _get_env_value(name):
 def _urlopen(req):
     context = ssl._create_unverified_context()
     return urllib.request.urlopen(req, context=context)
+
+
+def _api_usage_path():
+    return os.path.join(paths.account_dir(), "advisor_api_usage.json")
+
+
+def _load_api_usage(now=None):
+    now = now or time.time()
+    path = _api_usage_path()
+    if not os.path.exists(path):
+        return []
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        rows = data if isinstance(data, list) else []
+    except Exception:
+        return []
+    return [
+        row
+        for row in rows
+        if isinstance(row, dict)
+        and now - float(row.get("ts", 0.0) or 0.0) < LOCAL_TPM_WINDOW_SECONDS
+    ]
+
+
+def _save_api_usage(rows):
+    path = _api_usage_path()
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp_path = f"{path}.tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(rows, f, indent=2, ensure_ascii=False)
+        os.replace(tmp_path, path)
+    except Exception:
+        pass
+
+
+def _requested_tokens_for_guard(estimate):
+    return int(estimate.get("tokens", 0) or 0) + int(estimate.get("max_output_tokens", 0) or 0) + LOCAL_REQUEST_OVERHEAD_TOKENS
+
+
+def _check_local_tpm_guard(model, requested_tokens):
+    limit = MODEL_TPM_LIMITS.get(model)
+    if not limit:
+        return {"ok": True, "used_tokens": 0, "limit": None, "wait_seconds": 0}
+
+    now = time.time()
+    rows = _load_api_usage(now=now)
+    used_tokens = sum(
+        int(row.get("requested_tokens", 0) or 0)
+        for row in rows
+        if row.get("model") == model
+    )
+    if used_tokens + requested_tokens <= limit:
+        return {"ok": True, "used_tokens": used_tokens, "limit": limit, "wait_seconds": 0}
+
+    oldest = min(
+        (
+            float(row.get("ts", now) or now)
+            for row in rows
+            if row.get("model") == model
+        ),
+        default=now,
+    )
+    wait_seconds = max(1, int(LOCAL_TPM_WINDOW_SECONDS - (now - oldest)) + 1)
+    return {
+        "ok": False,
+        "used_tokens": used_tokens,
+        "limit": limit,
+        "wait_seconds": wait_seconds,
+    }
+
+
+def _record_api_usage(model, requested_tokens):
+    now = time.time()
+    rows = _load_api_usage(now=now)
+    rows.append(
+        {
+            "ts": now,
+            "model": model,
+            "requested_tokens": int(requested_tokens),
+        }
+    )
+    _save_api_usage(rows)
 
 
 def load_api_settings():
@@ -421,6 +511,27 @@ def send_package_to_api(prompt=None, include_previous_response=False):
             payload={"model": model, "estimate": estimate},
         )
         return {"ok": False, "error": msg, "estimate": estimate}
+    requested_tokens = _requested_tokens_for_guard(estimate)
+    guard = _check_local_tpm_guard(model, requested_tokens)
+    if not guard.get("ok"):
+        msg = (
+            f"Advisor API local TPM guard: wait {guard.get('wait_seconds')}s before sending {model}. "
+            f"local_used~{guard.get('used_tokens')} requested~{requested_tokens} limit={guard.get('limit')}."
+        )
+        _stdout_log(msg)
+        history.record_event(
+            "advisor_api_local_tpm_guard",
+            msg,
+            severity="WARN",
+            payload={
+                "model": model,
+                "used_tokens": guard.get("used_tokens"),
+                "requested_tokens": requested_tokens,
+                "limit": guard.get("limit"),
+                "wait_seconds": guard.get("wait_seconds"),
+            },
+        )
+        return {"ok": False, "error": msg, "estimate": estimate, "wait_seconds": guard.get("wait_seconds")}
     _stdout_log(
         "sending "
         f"model={model} endpoint={endpoint} "
@@ -445,6 +556,7 @@ def send_package_to_api(prompt=None, include_previous_response=False):
         method="POST",
     )
     try:
+        _record_api_usage(model, requested_tokens)
         with _urlopen(req) as resp:
             data = json.loads(resp.read().decode("utf-8"))
         text = data.get("output_text")
