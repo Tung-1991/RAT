@@ -3052,6 +3052,12 @@ class BotUI(ctk.CTk):
             color = COL_RED if error else (COL_GREEN if "OK" in status else "gray")
             inline.configure(text="OK" if "OK" in status else ("ERR" if error else "AI"), text_color=color)
 
+    def _advisor_stdout_log(self, message):
+        try:
+            print(f"[AI ADVISOR] {message}", flush=True)
+        except Exception:
+            pass
+
     def _advisor_worker(self, send_api=False, reason="manual"):
         if self._advisor_worker_active:
             return
@@ -3063,6 +3069,13 @@ class BotUI(ctk.CTk):
                 days = int(self.var_advisor_export_days.get() or 7)
             except Exception:
                 days = 7
+            self._advisor_stdout_log(f"worker started reason={reason} send_api={send_api} export_days={days}")
+            self.log_message(
+                f"[AI ADVISOR] Worker started reason={reason} send_api={send_api} export_days={days}",
+                target="manual",
+            )
+            if send_api:
+                self.after(0, lambda: self._set_advisor_status("Advisor exporting before API..."))
             result = generate_advisor_package(
                 export_days=days,
                 save_archive=False,
@@ -3074,8 +3087,20 @@ class BotUI(ctk.CTk):
             if not result.get("ok"):
                 err = result.get("error", "advisor export failed")
                 self.after(0, lambda: self._set_advisor_status("Advisor ERR", err))
+                self._advisor_stdout_log(f"export failed: {err}")
                 self.log_message(f"[AI ADVISOR] Export failed: {err}", error=True, target="manual")
                 return
+            self._advisor_stdout_log(
+                "export ready "
+                f"closed={result.get('export_closed_trades', 0)} "
+                f"open={result.get('open_trades', 0)}"
+            )
+            self.log_message(
+                "[AI ADVISOR] Export ready "
+                f"closed={result.get('export_closed_trades', 0)} "
+                f"open={result.get('open_trades', 0)}",
+                target="manual",
+            )
 
             api_result = None
             telegram_result = None
@@ -3097,6 +3122,14 @@ class BotUI(ctk.CTk):
                         f"web={estimate.get('web_search_enabled')}"
                     )
                     self.after(0, lambda m=status_msg: self._set_advisor_status(m))
+                    self._advisor_stdout_log(
+                        "API sending "
+                        f"model={estimate.get('model')} "
+                        f"chars={estimate.get('chars')} "
+                        f"tokens~{estimate.get('tokens')} "
+                        f"web_search={estimate.get('web_search_enabled')} "
+                        f"include_response={include_response_file}"
+                    )
                     self.log_message(
                         "[AI ADVISOR] API sending "
                         f"model={estimate.get('model')} "
@@ -3120,6 +3153,7 @@ class BotUI(ctk.CTk):
                             0,
                             lambda m=f"Advisor API calling... {mins}m{secs:02d}s": self._set_advisor_status(m),
                         )
+                        self._advisor_stdout_log(f"API still waiting elapsed={mins}m{secs:02d}s")
 
                 threading.Thread(target=api_wait_status, daemon=True).start()
                 api_result = send_package_to_api(include_previous_response=include_response_file)
@@ -3127,6 +3161,7 @@ class BotUI(ctk.CTk):
                 if not api_result.get("ok"):
                     err = api_result.get("error", "API failed")
                     self.after(0, lambda e=err: self._set_advisor_status("Advisor API ERR", e))
+                    self._advisor_stdout_log(f"API failed: {err}")
                     self.log_message(
                         f"[AI ADVISOR] API skipped/failed: {err}",
                         error=True,
@@ -3164,9 +3199,11 @@ class BotUI(ctk.CTk):
             elif telegram_result and not telegram_result.get("skipped"):
                 msg += " | TG WARN"
             self.after(0, lambda m=msg: self._set_advisor_status(m))
+            self._advisor_stdout_log(msg)
             self.log_message(f"[AI ADVISOR] {msg}", target="manual")
         except Exception as exc:
             self.after(0, lambda e=str(exc): self._set_advisor_status("Advisor ERR", e))
+            self._advisor_stdout_log(f"error: {exc}")
             self.log_message(f"[AI ADVISOR] Error: {exc}", error=True, target="manual")
         finally:
             self._advisor_worker_active = False
