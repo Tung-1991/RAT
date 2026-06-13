@@ -30,6 +30,14 @@ def _get_brain_file():
         return os.path.join("data", "brain_settings.json")
 
 
+def _get_telegram_signal_phase_file():
+    try:
+        import core.storage_manager as sm
+        return os.path.join(sm._active_account_dir, "telegram_signal_phases.json")
+    except:
+        return os.path.join("data", "telegram_signal_phases.json")
+
+
 class SignalListener:
     def __init__(
         self,
@@ -67,6 +75,7 @@ class SignalListener:
 
     def start(self):
         if not self.running:
+            self._prime_existing_signals()
             self.running = True
             self.thread = threading.Thread(target=self._listen_loop, daemon=True)
             self.thread.start()
@@ -78,6 +87,77 @@ class SignalListener:
         self.running = False
         if self.thread:
             self.thread.join(timeout=2)
+
+    def _prime_existing_signals(self):
+        signal_file = _get_signal_file()
+        if not os.path.exists(signal_file):
+            return
+        try:
+            with open(signal_file, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+        except Exception:
+            return
+
+        now = time.time()
+        for sig in payload.get("pending_signals", []) or []:
+            sig_id = sig.get("signal_id")
+            if sig_id:
+                self.processed_signals.add(sig_id)
+
+            signal_class = str(sig.get("signal_class") or "ENTRY").upper()
+            symbol = str(sig.get("symbol") or "").upper()
+            action = str(sig.get("action") or "").upper()
+            if signal_class != "ENTRY":
+                continue
+            if not symbol:
+                continue
+
+            try:
+                sig_time = float(sig.get("timestamp", 0) or 0)
+                valid_for = float(sig.get("valid_for", 300) or 300)
+            except Exception:
+                continue
+            if sig_time and now - sig_time > valid_for:
+                continue
+
+            if action == "NONE":
+                self.last_telegram_signal_proposal_action.pop(symbol, None)
+                self._save_telegram_signal_phase(symbol, "")
+            elif action in {"BUY", "SELL"}:
+                self.last_telegram_signal_proposal_action[symbol] = action
+                self._save_telegram_signal_phase(symbol, action)
+
+    def _load_telegram_signal_phases(self):
+        path = _get_telegram_signal_phase_file()
+        if not os.path.exists(path):
+            return {}
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return data if isinstance(data, dict) else {}
+        except Exception:
+            return {}
+
+    def _save_telegram_signal_phase(self, symbol: str, action: str):
+        symbol_key = str(symbol or "").upper()
+        if not symbol_key:
+            return
+
+        data = self._load_telegram_signal_phases()
+        if action:
+            data[symbol_key] = str(action).upper()
+        else:
+            data.pop(symbol_key, None)
+
+        path = _get_telegram_signal_phase_file()
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            tmp_path = f"{path}.tmp"
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            os.replace(tmp_path, path)
+        except Exception as exc:
+            logger.error(f"[Listener] Telegram signal phase save error: {exc}")
 
     def _listen_loop(self):
         while self.running:
@@ -169,10 +249,13 @@ class SignalListener:
         if not symbol_key or action_key not in {"BUY", "SELL"}:
             return False
 
-        if self.last_telegram_signal_proposal_action.get(symbol_key) == action_key:
+        phases = self._load_telegram_signal_phases()
+        last_action = phases.get(symbol_key) or self.last_telegram_signal_proposal_action.get(symbol_key)
+        if last_action == action_key:
             return False
 
         self.last_telegram_signal_proposal_action[symbol_key] = action_key
+        self._save_telegram_signal_phase(symbol_key, action_key)
         return True
 
     def _process_signal(self, signal: dict):
@@ -286,13 +369,14 @@ class SignalListener:
 
         if action == "NONE":
             self.last_telegram_signal_proposal_action.pop(str(symbol or "").upper(), None)
+            self._save_telegram_signal_phase(symbol, "")
             return
 
         if not self.get_auto_trade():
             try:
                 from telegram_notify.signal_bridge import maybe_send_signal_proposal
 
-                if self._should_send_telegram_signal_proposal(symbol, action):
+                if sig_class == "ENTRY" and self._should_send_telegram_signal_proposal(symbol, action):
                     maybe_send_signal_proposal(
                         self.trade_manager,
                         signal,
