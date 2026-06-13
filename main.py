@@ -3080,7 +3080,7 @@ class BotUI(ctk.CTk):
             api_result = None
             telegram_result = None
             if send_api:
-                from ai_advisor.api_client import send_package_to_api
+                from ai_advisor.api_client import estimate_api_payload, send_package_to_api
 
                 response_file_var = getattr(
                     self,
@@ -3088,6 +3088,19 @@ class BotUI(ctk.CTk):
                     getattr(self, "var_advisor_send_previous_response", None),
                 )
                 include_response_file = bool(response_file_var.get()) if response_file_var else False
+                try:
+                    estimate = estimate_api_payload(include_previous_response=include_response_file)
+                    self.log_message(
+                        "[AI ADVISOR] API sending "
+                        f"model={estimate.get('model')} "
+                        f"chars={estimate.get('chars')} "
+                        f"tokens~{estimate.get('tokens')} "
+                        f"web_search={estimate.get('web_search_enabled')} "
+                        f"include_response={include_response_file}",
+                        target="manual",
+                    )
+                except Exception as exc:
+                    self.log_message(f"[AI ADVISOR] API estimate warning: {exc}", error=True, target="manual")
                 api_result = send_package_to_api(include_previous_response=include_response_file)
                 if not api_result.get("ok"):
                     err = api_result.get("error", "API failed")

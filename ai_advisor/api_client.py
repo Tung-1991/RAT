@@ -2,6 +2,7 @@
 import json
 import os
 import shutil
+import ssl
 import urllib.error
 import urllib.request
 
@@ -114,6 +115,11 @@ def _get_env_value(name):
     except Exception:
         pass
     return ""
+
+
+def _urlopen(req):
+    context = ssl._create_unverified_context()
+    return urllib.request.urlopen(req, context=context)
 
 
 def load_api_settings():
@@ -439,7 +445,7 @@ def send_package_to_api(prompt=None, include_previous_response=False):
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req) as resp:
+        with _urlopen(req) as resp:
             data = json.loads(resp.read().decode("utf-8"))
         text = data.get("output_text")
         if not text:
