@@ -201,7 +201,10 @@ def open_advisor_popup(app):
 
     def refresh_telegram_env_cmd(*_args):
         env_name = (var_tg_env.get() or "TELE_BOT_KEY").strip() or "TELE_BOT_KEY"
-        var_tg_env_cmd.set(f'$env:{env_name}="key"')
+        var_tg_env_cmd.set(
+            f'$env:{env_name}="key"; '
+            f'[Environment]::SetEnvironmentVariable("{env_name}", $env:{env_name}, "User")'
+        )
 
     var_tg_env.trace_add("write", refresh_telegram_env_cmd)
     refresh_telegram_env_cmd()
@@ -220,7 +223,7 @@ def open_advisor_popup(app):
     ).pack(anchor="w", padx=10, pady=(8, 2))
     ctk.CTkLabel(
         tg_status,
-        text="Token doc tu ENV, khong luu file.",
+        text="Token doc tu ENV, khong luu file. Set ENV xong can restart app.",
         font=("Roboto", 11, "bold"),
         text_color="#FBC02D",
         anchor="w",
@@ -376,6 +379,16 @@ def open_advisor_popup(app):
             if not text:
                 app._set_advisor_status("Telegram report empty")
                 return
+            diag = telegram_reporter.report_diagnostics()
+            app.log_message(
+                "[TELEGRAM] Report diagnostics: "
+                f"settings={diag.get('settings_path')} "
+                f"env={diag.get('token_env')} "
+                f"token_present={diag.get('token_present')} "
+                f"token_len={diag.get('token_length')} "
+                f"chat={diag.get('report_chat_id')}",
+                target="manual",
+            )
             result = telegram_reporter.send_text_report(
                 text,
                 title="RAT6 Advisor Report",
@@ -389,8 +402,17 @@ def open_advisor_popup(app):
                 )
             else:
                 err = result.get("error", "Telegram report failed")
+                result_diag = result.get("diagnostics") or diag
+                detail = (
+                    f"{err}\n\n"
+                    f"Settings: {result_diag.get('settings_path')}\n"
+                    f"ENV: {result_diag.get('token_env')} "
+                    f"(present={result_diag.get('token_present')}, len={result_diag.get('token_length')})\n"
+                    f"Chat ID: {result_diag.get('report_chat_id')}"
+                )
                 app._set_advisor_status("Telegram report ERR", err)
-                app.log_message(f"[TELEGRAM] Report failed: {err}", error=True, target="manual")
+                app.log_message(f"[TELEGRAM] Report failed: {detail}", error=True, target="manual")
+                messagebox.showerror("Telegram report", detail, parent=sender)
 
         def clear_report():
             txt_report.delete("1.0", "end")

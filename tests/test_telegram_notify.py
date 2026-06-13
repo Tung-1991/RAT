@@ -97,6 +97,24 @@ def test_send_long_message_requires_token(monkeypatch):
     assert "TELE_BOT_KEY" in result["error"]
 
 
+def test_report_diagnostics_does_not_expose_token(monkeypatch, tmp_path):
+    monkeypatch.setattr(settings, "account_dir", lambda: str(tmp_path))
+    settings.save_settings(
+        {
+            "enabled": True,
+            "bot_token_env": "TELE_BOT_KEY",
+            "report_chat_id": "1003772881044",
+        }
+    )
+    monkeypatch.setenv("TELE_BOT_KEY", "123456:secret-token")
+
+    diag = reporter.report_diagnostics()
+
+    assert diag["token_present"] is True
+    assert diag["token_length"] == len("123456:secret-token")
+    assert "secret-token" not in str(diag)
+
+
 def test_manual_text_report_can_bypass_enabled_checkbox(monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "account_dir", lambda: str(tmp_path))
     settings.save_settings(

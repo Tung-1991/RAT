@@ -2,23 +2,41 @@
 import os
 
 from .client import TelegramClient
-from .settings import load_settings
+from .settings import load_settings, settings_path
+
+
+def report_diagnostics(settings=None):
+    settings = settings or load_settings()
+    token_env = settings.get("bot_token_env", "TELE_BOT_KEY")
+    token = os.environ.get(token_env, "")
+    return {
+        "settings_path": settings_path(),
+        "enabled": bool(settings.get("enabled")),
+        "token_env": token_env,
+        "token_present": bool(token),
+        "token_length": len(token),
+        "report_chat_id": settings.get("report_chat_id", ""),
+    }
 
 
 def send_text_report(text, title="RAT6 AI Advisor", require_enabled=True):
     settings = load_settings()
+    diag = report_diagnostics(settings)
     if require_enabled and not settings.get("enabled"):
-        return {"ok": False, "skipped": True, "error": "Telegram report is disabled."}
+        return {"ok": False, "skipped": True, "error": "Telegram report is disabled.", "diagnostics": diag}
     chat_id = settings.get("report_chat_id")
     if not chat_id:
-        return {"ok": False, "error": "Telegram report_chat_id is not configured."}
+        return {"ok": False, "error": "Telegram report_chat_id is not configured.", "diagnostics": diag}
     client = TelegramClient(token_env=settings.get("bot_token_env", "TELE_BOT_KEY"))
-    return client.send_long_message(
+    result = client.send_long_message(
         chat_id,
         text,
         chunk_size=settings.get("chunk_size", 3500),
         title=title,
     )
+    if isinstance(result, dict):
+        result.setdefault("diagnostics", diag)
+    return result
 
 
 def send_advisor_response(path, title="RAT6 AI Advisor Response"):
