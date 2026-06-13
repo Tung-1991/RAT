@@ -2,7 +2,6 @@
 import os
 
 from .client import TelegramClient, get_env_value
-from .client import _env_truthy
 from .settings import load_settings, settings_path
 
 
@@ -10,13 +9,14 @@ def report_diagnostics(settings=None):
     settings = settings or load_settings()
     token_env = settings.get("bot_token_env", "TELE_BOT_KEY")
     token = get_env_value(token_env)
+    insecure_ssl = True
     return {
         "settings_path": settings_path(),
         "enabled": bool(settings.get("enabled")),
         "token_env": token_env,
         "token_present": bool(token),
         "token_length": len(token),
-        "insecure_ssl": _env_truthy("TELEGRAM_INSECURE_SSL"),
+        "insecure_ssl": insecure_ssl,
         "report_chat_id": settings.get("report_chat_id", ""),
     }
 
@@ -29,7 +29,10 @@ def send_text_report(text, title="RAT6 AI Advisor", require_enabled=True):
     chat_id = settings.get("report_chat_id")
     if not chat_id:
         return {"ok": False, "error": "Telegram report_chat_id is not configured.", "diagnostics": diag}
-    client = TelegramClient(token_env=settings.get("bot_token_env", "TELE_BOT_KEY"))
+    client = TelegramClient(
+        token_env=settings.get("bot_token_env", "TELE_BOT_KEY"),
+        allow_insecure_ssl=diag.get("insecure_ssl"),
+    )
     result = client.send_long_message(
         chat_id,
         text,

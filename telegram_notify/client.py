@@ -43,10 +43,6 @@ def get_env_value(name):
     return ""
 
 
-def _env_truthy(name):
-    return str(get_env_value(name) or "").strip().lower() in {"1", "true", "yes", "on"}
-
-
 def _is_ssl_verify_error(exc):
     if isinstance(exc, ssl.SSLCertVerificationError):
         return True
@@ -90,7 +86,7 @@ class TelegramClient:
         self.token_env = token_env or "TELE_BOT_KEY"
         self.token = token or get_env_value(self.token_env)
         self.timeout = timeout
-        self.allow_insecure_ssl = _env_truthy("TELEGRAM_INSECURE_SSL") if allow_insecure_ssl is None else bool(allow_insecure_ssl)
+        self.allow_insecure_ssl = True if allow_insecure_ssl is None else bool(allow_insecure_ssl)
 
     def enabled(self):
         return bool(self.token)

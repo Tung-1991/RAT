@@ -16,6 +16,7 @@ def test_telegram_settings_defaults_and_save_load(monkeypatch, tmp_path):
     assert loaded["control_chat_id"] == "1003941549878"
     assert loaded["control_enabled"] is False
     assert loaded["signal_proposals_enabled"] is False
+    assert loaded["insecure_ssl"] is True
     assert loaded["signal_proposal_cooldown_minutes"] == 15.0
     assert loaded["owner_user_id"] == ""
 
@@ -24,6 +25,7 @@ def test_telegram_settings_defaults_and_save_load(monkeypatch, tmp_path):
             "enabled": True,
             "control_enabled": True,
             "signal_proposals_enabled": True,
+            "insecure_ssl": True,
             "bot_token_env": "TELE_BOT_KEY",
             "report_chat_id": "123",
             "control_chat_id": "456",
@@ -37,6 +39,7 @@ def test_telegram_settings_defaults_and_save_load(monkeypatch, tmp_path):
     assert saved["enabled"] is True
     assert saved["control_enabled"] is True
     assert saved["signal_proposals_enabled"] is True
+    assert saved["insecure_ssl"] is True
     assert saved["signal_proposal_cooldown_minutes"] == 15.0
     assert saved["chunk_size"] == 3900
     assert saved["control_poll_interval_seconds"] == 0.5
