@@ -97,6 +97,29 @@ def test_send_long_message_requires_token(monkeypatch):
     assert "TELE_BOT_KEY" in result["error"]
 
 
+def test_send_long_message_sends_all_chunks(monkeypatch):
+    sent = []
+
+    def fake_send(self, chat_id, text, parse_mode=None):
+        sent.append(text)
+        return {"ok": True, "chat_id": chat_id}
+
+    monkeypatch.setenv("TELE_BOT_KEY", "token")
+    monkeypatch.setattr(TelegramClient, "send_message", fake_send)
+    monkeypatch.setattr("telegram_notify.client.time.sleep", lambda _seconds: None)
+
+    result = TelegramClient(token_env="TELE_BOT_KEY").send_long_message(
+        "1003772881044",
+        "x" * 7000,
+        chunk_size=3500,
+        title="Report",
+    )
+
+    assert result == {"ok": True, "sent": 2}
+    assert sent[0].startswith("Report (1/2)")
+    assert sent[1].startswith("Report (2/2)")
+
+
 def test_report_diagnostics_does_not_expose_token(monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "account_dir", lambda: str(tmp_path))
     settings.save_settings(
