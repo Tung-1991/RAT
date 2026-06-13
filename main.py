@@ -3208,6 +3208,126 @@ class BotUI(ctk.CTk):
         finally:
             self._advisor_worker_active = False
 
+    def _advisor_api_worker(self, reason="api_button"):
+        if self._advisor_worker_active:
+            return
+        self._advisor_worker_active = True
+        api_wait_stop = None
+        try:
+            from ai_advisor import paths as advisor_paths
+            from ai_advisor.api_client import estimate_api_payload, send_package_to_api
+
+            required_files = [
+                ("advisor_export.xlsx", advisor_paths.export_path()),
+                ("technical_settings.json", advisor_paths.technical_settings_path()),
+                ("advisor_flow.md", advisor_paths.advisor_flow_path()),
+                ("user_context.md", advisor_paths.user_context_path()),
+            ]
+            missing = [name for name, path in required_files if not os.path.exists(path)]
+            if missing:
+                msg = "Missing advisor package file(s): " + ", ".join(missing) + ". Generate Advisor Package first."
+                self.after(0, lambda m=msg: self._set_advisor_status("Advisor API ERR", m))
+                self._advisor_stdout_log(msg)
+                self.log_message(f"[AI ADVISOR] API skipped: {msg}", error=True, target="manual")
+                return
+
+            response_file_var = getattr(
+                self,
+                "var_advisor_send_response_file",
+                getattr(self, "var_advisor_send_previous_response", None),
+            )
+            include_response_file = bool(response_file_var.get()) if response_file_var else False
+
+            try:
+                estimate = estimate_api_payload(include_previous_response=include_response_file)
+                status_msg = (
+                    "Advisor API calling "
+                    f"{estimate.get('model')} | "
+                    f"tokens~{estimate.get('tokens')} | "
+                    f"web={estimate.get('web_search_enabled')}"
+                )
+                self.after(0, lambda m=status_msg: self._set_advisor_status(m))
+                self._advisor_stdout_log(
+                    "API sending existing package "
+                    f"reason={reason} "
+                    f"model={estimate.get('model')} "
+                    f"chars={estimate.get('chars')} "
+                    f"tokens~{estimate.get('tokens')} "
+                    f"web_search={estimate.get('web_search_enabled')} "
+                    f"include_response={include_response_file}"
+                )
+                self.log_message(
+                    "[AI ADVISOR] API sending existing package "
+                    f"model={estimate.get('model')} "
+                    f"chars={estimate.get('chars')} "
+                    f"tokens~{estimate.get('tokens')} "
+                    f"web_search={estimate.get('web_search_enabled')} "
+                    f"include_response={include_response_file}",
+                    target="manual",
+                )
+            except Exception as exc:
+                self.log_message(f"[AI ADVISOR] API estimate warning: {exc}", error=True, target="manual")
+
+            api_wait_stop = threading.Event()
+
+            def api_wait_status():
+                started = time.time()
+                while not api_wait_stop.wait(15):
+                    elapsed = int(time.time() - started)
+                    mins = elapsed // 60
+                    secs = elapsed % 60
+                    self.after(
+                        0,
+                        lambda m=f"Advisor API calling... {mins}m{secs:02d}s": self._set_advisor_status(m),
+                    )
+                    self._advisor_stdout_log(f"API still waiting elapsed={mins}m{secs:02d}s")
+
+            threading.Thread(target=api_wait_status, daemon=True).start()
+            api_result = send_package_to_api(include_previous_response=include_response_file)
+            if not api_result.get("ok"):
+                err = api_result.get("error", "API failed")
+                self.after(0, lambda e=err: self._set_advisor_status("Advisor API ERR", e))
+                self._advisor_stdout_log(f"API failed: {err}")
+                self.log_message(f"[AI ADVISOR] API skipped/failed: {err}", error=True, target="manual")
+                return
+
+            telegram_result = None
+            try:
+                from telegram_notify.reporter import send_advisor_response
+
+                telegram_result = send_advisor_response(api_result.get("response"))
+                if telegram_result.get("ok"):
+                    self.log_message(
+                        f"[TELEGRAM] Advisor response sent to report group ({telegram_result.get('sent', 0)} parts).",
+                        target="manual",
+                    )
+                elif not telegram_result.get("skipped"):
+                    self.log_message(
+                        f"[TELEGRAM] Advisor report skipped/failed: {telegram_result.get('error', 'Telegram failed')}",
+                        error=True,
+                        target="manual",
+                    )
+            except Exception as exc:
+                telegram_result = {"ok": False, "error": str(exc)}
+                self.log_message(f"[TELEGRAM] Advisor report error: {exc}", error=True, target="manual")
+
+            msg = "Advisor API OK"
+            if telegram_result and telegram_result.get("ok"):
+                msg += " | TG OK"
+            elif telegram_result and not telegram_result.get("skipped"):
+                msg += " | TG WARN"
+            self.after(0, lambda m=msg: self._set_advisor_status(m))
+            self._advisor_stdout_log(msg)
+            self.log_message(f"[AI ADVISOR] {msg}", target="manual")
+        except Exception as exc:
+            self.after(0, lambda e=str(exc): self._set_advisor_status("Advisor API ERR", e))
+            self._advisor_stdout_log(f"API error: {exc}")
+            self.log_message(f"[AI ADVISOR] API error: {exc}", error=True, target="manual")
+        finally:
+            if api_wait_stop:
+                api_wait_stop.set()
+            self._advisor_worker_active = False
+
     def generate_advisor_package_ui(self):
         if self._advisor_worker_active:
             self._set_advisor_status("Advisor busy")
@@ -3220,7 +3340,7 @@ class BotUI(ctk.CTk):
             self._set_advisor_status("Advisor busy")
             return
         self._set_advisor_status("Advisor API sending...")
-        threading.Thread(target=self._advisor_worker, kwargs={"send_api": True, "reason": "api_button"}, daemon=True).start()
+        threading.Thread(target=self._advisor_api_worker, kwargs={"reason": "api_button"}, daemon=True).start()
 
     def preview_advisor_api_payload(self):
         try:
