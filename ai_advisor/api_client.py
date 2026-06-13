@@ -84,6 +84,38 @@ def _stdout_log(message):
         pass
 
 
+def _get_env_value(name):
+    name = str(name or "").strip()
+    if not name:
+        return ""
+    value = os.environ.get(name, "")
+    if value:
+        return value
+    if os.name != "nt":
+        return ""
+    try:
+        import winreg
+
+        locations = [
+            (winreg.HKEY_CURRENT_USER, "Environment"),
+            (
+                winreg.HKEY_LOCAL_MACHINE,
+                r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment",
+            ),
+        ]
+        for root, path in locations:
+            try:
+                with winreg.OpenKey(root, path) as key:
+                    registry_value, _value_type = winreg.QueryValueEx(key, name)
+                if registry_value:
+                    return str(registry_value)
+            except OSError:
+                continue
+    except Exception:
+        pass
+    return ""
+
+
 def load_api_settings():
     settings = dict(DEFAULT_API_SETTINGS)
     path = paths.advisor_api_settings_path()
@@ -350,7 +382,7 @@ def estimate_api_payload(include_previous_response=False):
 
 
 def send_package_to_api(prompt=None, include_previous_response=False):
-    key = os.environ.get("OPENAI_API_KEY")
+    key = _get_env_value("OPENAI_API_KEY")
     if not key:
         msg = "OPENAI_API_KEY is not configured; API mode skipped."
         _stdout_log(msg)
@@ -364,7 +396,7 @@ def send_package_to_api(prompt=None, include_previous_response=False):
         _stdout_log(msg)
         history.record_event("advisor_api_bad_model", msg, severity="ERROR", payload={"model": model})
         return {"ok": False, "error": msg}
-    endpoint = os.environ.get("ADVISOR_API_URL", "https://api.openai.com/v1/responses")
+    endpoint = _get_env_value("ADVISOR_API_URL") or "https://api.openai.com/v1/responses"
     body_text = build_api_input(include_previous_response=include_previous_response)
     estimate = estimate_api_payload(include_previous_response=include_previous_response)
     if not estimate.get("fits_context"):
@@ -407,7 +439,7 @@ def send_package_to_api(prompt=None, include_previous_response=False):
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req, timeout=90) as resp:
+        with urllib.request.urlopen(req) as resp:
             data = json.loads(resp.read().decode("utf-8"))
         text = data.get("output_text")
         if not text:
