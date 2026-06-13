@@ -69,7 +69,7 @@ def format_signal_proposal(proposal):
     return "\n".join(lines)
 
 
-def maybe_send_signal_proposal(trade_manager, signal, log_cb=None):
+def maybe_send_signal_proposal(trade_manager, signal, log_cb=None, enforce_cooldown=True):
     log = log_cb or (lambda msg, error=False: None)
     settings = load_settings()
     if not settings.get("signal_proposals_enabled"):
@@ -89,13 +89,14 @@ def maybe_send_signal_proposal(trade_manager, signal, log_cb=None):
     if signal_class != "ENTRY" or side not in ("BUY", "SELL") or not symbol:
         return {"ok": False, "skipped": True, "reason": "unsupported_signal"}
 
-    blocked, remaining_s = _is_on_cooldown(
-        symbol,
-        side,
-        settings.get("signal_proposal_cooldown_minutes", 15.0),
-    )
-    if blocked:
-        return {"ok": False, "skipped": True, "reason": "cooldown", "remaining_seconds": remaining_s}
+    if enforce_cooldown:
+        blocked, remaining_s = _is_on_cooldown(
+            symbol,
+            side,
+            settings.get("signal_proposal_cooldown_minutes", 15.0),
+        )
+        if blocked:
+            return {"ok": False, "skipped": True, "reason": "cooldown", "remaining_seconds": remaining_s}
 
     context = (signal or {}).get("context") or {}
     market_mode = (signal or {}).get("market_mode") or context.get("market_mode") or "ANY"

@@ -63,6 +63,7 @@ class SignalListener:
         self.last_safeguard_reason = {}
         self.last_safeguard_time = {}
         self.last_bot_log_time = {}
+        self.last_telegram_signal_proposal_action = {}
 
     def start(self):
         if not self.running:
@@ -160,6 +161,18 @@ class SignalListener:
             return False
 
         self.last_bot_log_time[key] = now
+        return True
+
+    def _should_send_telegram_signal_proposal(self, symbol: str, action: str) -> bool:
+        symbol_key = str(symbol or "").upper()
+        action_key = str(action or "").upper()
+        if not symbol_key or action_key not in {"BUY", "SELL"}:
+            return False
+
+        if self.last_telegram_signal_proposal_action.get(symbol_key) == action_key:
+            return False
+
+        self.last_telegram_signal_proposal_action[symbol_key] = action_key
         return True
 
     def _process_signal(self, signal: dict):
@@ -272,17 +285,20 @@ class SignalListener:
             logger.error(f"[Listener] Lỗi Reverse Check: {e}")
 
         if action == "NONE":
+            self.last_telegram_signal_proposal_action.pop(str(symbol or "").upper(), None)
             return
 
         if not self.get_auto_trade():
             try:
                 from telegram_notify.signal_bridge import maybe_send_signal_proposal
 
-                maybe_send_signal_proposal(
-                    self.trade_manager,
-                    signal,
-                    log_cb=lambda msg, error=False: self.log_ui(msg, error=error),
-                )
+                if self._should_send_telegram_signal_proposal(symbol, action):
+                    maybe_send_signal_proposal(
+                        self.trade_manager,
+                        signal,
+                        enforce_cooldown=False,
+                        log_cb=lambda msg, error=False: self.log_ui(msg, error=error),
+                    )
             except Exception as exc:
                 logger.error(f"[Listener] Telegram signal proposal error: {exc}")
 
